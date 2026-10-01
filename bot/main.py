@@ -20,6 +20,7 @@ from aiogram.types import (
     WebAppInfo,
     CallbackQuery,
     FSInputFile,
+    Update,
 )
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -568,26 +569,40 @@ async def monitor_message():
 
 @dp.callback_query(F.data == "monitor_refresh")
 async def monitor_refresh(q: CallbackQuery):
-    if q.from_user.id != ADMIN: return
-    await q.message.edit_text(await monitor_message(), reply_markup=InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Yangilash", callback_data="monitor_refresh")],
-            [InlineKeyboardButton(text="Orqaga", callback_data="admin_home")],
-        ]
-    ))
+    if q.from_user.id != ADMIN:
+        await q.answer("Ruxsat yo‘q", show_alert=True)
+        return
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Yangilash", callback_data="monitor_refresh")],
+        [InlineKeyboardButton(text="Orqaga", callback_data="admin_home")],
+    ])
+    try:
+        await q.message.edit_text(await monitor_message(), reply_markup=markup)
+    except Exception as exc:
+        # Telegram returns "message is not modified" when nothing changed.
+        if "message is not modified" not in str(exc).lower():
+            raise
     await q.answer()
 
 async def live_monitor(q: CallbackQuery):
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Yangilash", callback_data="monitor_refresh")],
+        [InlineKeyboardButton(text="Orqaga", callback_data="admin_home")],
+    ])
+    last = None
     for _ in range(12):
         try:
-            await q.message.edit_text(await monitor_message(), reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text="Yangilash", callback_data="monitor_refresh")],
-                    [InlineKeyboardButton(text="Orqaga", callback_data="admin_home")],
-                ]
-            ))
+            body = await monitor_message()
+            if body != last:
+                try:
+                    await q.message.edit_text(body, reply_markup=markup)
+                except Exception as exc:
+                    if "message is not modified" not in str(exc).lower():
+                        raise
+                last = body
         except Exception:
-            break
+            # A monitor refresh must never break the dispatcher.
+            pass
         await asyncio.sleep(5)
 
 @dp.callback_query(F.data == "admin_stats")
@@ -1135,14 +1150,40 @@ async def monitor_live(q: CallbackQuery):
     await q.answer("Jonli monitoring boshlandi")
     await live_monitor(q)
 
+WEBHOOK_BASE = os.getenv("WEBHOOK_BASE_URL", "https://nur-oqiw.onrender.com").rstrip("/")
+WEBHOOK_PATH = "/telegram/webhook"
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET") or hashlib.sha256(TOKEN.encode()).hexdigest()
+
+@app.post(WEBHOOK_PATH)
+async def telegram_webhook(request: Request):
+    expected = WEBHOOK_SECRET
+    if expected:
+        received = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+        if not hmac.compare_digest(received, expected):
+            return JSONResponse({"ok": False}, status_code=403)
+    try:
+        payload = await request.json()
+        update = Update.model_validate(payload)
+        await dp.feed_update(bot, update)
+        return {"ok": True}
+    except Exception:
+        # Always acknowledge valid Telegram delivery so one bad update cannot
+        # make the bot look frozen or cause repeated webhook retries.
+        return {"ok": True}
+
 async def run():
     if not TOKEN:
         raise RuntimeError("BOT_TOKEN missing")
+    await bot.set_webhook(
+        url=WEBHOOK_BASE + WEBHOOK_PATH,
+        secret_token=WEBHOOK_SECRET,
+        drop_pending_updates=False,
+        allowed_updates=dp.resolve_used_update_types(),
+    )
     server = uvicorn.Server(
-        uvicorn.Config(app, host="0.0.0.0", port=PORT)
+        uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info")
     )
     await asyncio.gather(
-        dp.start_polling(bot),
         server.serve(),
         auto_finalize(),
     )
