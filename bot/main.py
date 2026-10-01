@@ -1,5 +1,6 @@
 import os
 import asyncio
+import logging
 import json
 import hmac
 import hashlib
@@ -47,8 +48,12 @@ SUB_REQUIRED = os.getenv("FORCE_SUB_REQUIRED", "1").lower() in ("1", "true", "ye
 SUB_CHANNEL = get_setting("subscription_channel", os.getenv("FORCE_SUB_CHANNEL", "@Rustambek_oqiw_orayi"))
 SUB_URL = os.getenv("FORCE_SUB_URL", "https://t.me/Rustambek_oqiw_orayi")
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("nur-oqiw")
+
 dp = Dispatcher()
 bot = Bot(TOKEN)
+WEBHOOK_TASKS = set()
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -1154,6 +1159,13 @@ WEBHOOK_BASE = os.getenv("WEBHOOK_BASE_URL", "https://nur-oqiw.onrender.com").rs
 WEBHOOK_PATH = "/telegram/webhook"
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET") or hashlib.sha256(TOKEN.encode()).hexdigest()
 
+async def _process_webhook_update(update: Update):
+    try:
+        await dp.feed_update(bot, update)
+    except Exception:
+        # One broken update must never kill the bot or block later updates.
+        logger.exception("Unhandled Telegram update error")
+
 @app.post(WEBHOOK_PATH)
 async def telegram_webhook(request: Request):
     expected = WEBHOOK_SECRET
@@ -1164,12 +1176,17 @@ async def telegram_webhook(request: Request):
     try:
         payload = await request.json()
         update = Update.model_validate(payload)
-        await dp.feed_update(bot, update)
+
+        task = asyncio.create_task(_process_webhook_update(update))
+        WEBHOOK_TASKS.add(task)
+        task.add_done_callback(WEBHOOK_TASKS.discard)
+
+        # Respond immediately. A slow PDF, broadcast, monitor update, or any
+        # other handler can no longer hold Telegram's webhook connection open.
         return {"ok": True}
     except Exception:
-        # Always acknowledge valid Telegram delivery so one bad update cannot
-        # make the bot look frozen or cause repeated webhook retries.
-        return {"ok": True}
+        logger.exception("Invalid Telegram webhook payload")
+        return JSONResponse({"ok": False}, status_code=400)
 
 async def run():
     if not TOKEN:
@@ -1177,7 +1194,7 @@ async def run():
     await bot.set_webhook(
         url=WEBHOOK_BASE + WEBHOOK_PATH,
         secret_token=WEBHOOK_SECRET,
-        drop_pending_updates=False,
+        drop_pending_updates=True,
         allowed_updates=dp.resolve_used_update_types(),
     )
     server = uvicorn.Server(
