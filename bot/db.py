@@ -40,3 +40,13 @@ def seed():
  data += [(33,'Shu rasmda to‘g‘ri to‘rtburchakning enini toping.',json.dumps(['6','8','10','12']),'8','choice','fig33',''),(34,'Shu rasmdagi perimetrni toping.',json.dumps(['32','36','40','44']),'40','choice','fig33',''),(35,'Shu rasmdagi yuzani toping.',json.dumps(['72','84','96','108']),'96','choice','fig33','')]
  for i in range(36,46):data.append((i,f'{i}. Yozma javobli sertifikat savoli.', '[]','','written','',''))
  with conn() as c:c.executemany('INSERT INTO questions(id,question,options_json,answer,kind,group_id,image_url) VALUES(?,?,?,?,?,?,?)',data)
+
+
+def ensure_schema():
+    with conn() as c:
+        cols={r["name"] for r in c.execute("PRAGMA table_info(users)").fetchall()}
+        if "state" not in cols:
+            c.execute("ALTER TABLE users ADD COLUMN state TEXT DEFAULT 'code'")
+
+def seed_defaults():
+    init(); ensure_schema(); seed()
