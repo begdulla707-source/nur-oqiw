@@ -150,6 +150,10 @@ def active_questions():
             "SELECT * FROM questions WHERE active=1 ORDER BY id"
         ).fetchall()
 
+def all_questions():
+    with conn() as c:
+        return c.execute("SELECT * FROM questions ORDER BY id").fetchall()
+
 def get_question(qid):
     try:
         qid=int(qid)
@@ -159,6 +163,44 @@ def get_question(qid):
         return c.execute(
             "SELECT * FROM questions WHERE id=? AND active=1",(qid,)
         ).fetchone()
+
+def get_question_any(qid):
+    try:
+        qid=int(qid)
+    except (TypeError,ValueError):
+        return None
+    with conn() as c:
+        return c.execute("SELECT * FROM questions WHERE id=?",(qid,)).fetchone()
+
+def upsert_question(qid,question,options,answer,kind="choice",group_id="",image_url=""):
+    with conn() as c:
+        c.execute(
+            "INSERT INTO questions(id,question,options_json,answer,kind,group_id,active,image_url) "
+            "VALUES(?,?,?,?,?,?,1,?) "
+            "ON CONFLICT(id) DO UPDATE SET question=excluded.question,"
+            "options_json=excluded.options_json,answer=excluded.answer,kind=excluded.kind,"
+            "group_id=excluded.group_id,image_url=excluded.image_url,active=1",
+            (int(qid),str(question),json.dumps(options,ensure_ascii=False),
+             str(answer),str(kind),str(group_id),str(image_url))
+        )
+
+def delete_question(qid):
+    with conn() as c:
+        row=c.execute("SELECT id FROM questions WHERE id=?",(int(qid),)).fetchone()
+        if not row:
+            return False
+        c.execute("DELETE FROM questions WHERE id=?",(int(qid),))
+        return True
+
+def set_active_question_count(n):
+    n=max(0,int(n))
+    with conn() as c:
+        c.execute("UPDATE questions SET active=0")
+        ids=[r["id"] for r in c.execute(
+            "SELECT id FROM questions ORDER BY id LIMIT ?",(n,)
+        ).fetchall()]
+        for qid in ids:
+            c.execute("UPDATE questions SET active=1 WHERE id=?",(qid,))
 
 def replace_questions(items):
     with conn() as c:
