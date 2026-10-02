@@ -1,6 +1,7 @@
 import json
 from aiogram import F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
+from aiogram.dispatcher.event.bases import UNHANDLED
 
 
 def install_subscription_admin(dp, bot, db, admin_id):
@@ -117,7 +118,7 @@ def install_subscription_admin(dp, bot, db, admin_id):
     async def sub_edit(q: CallbackQuery):
         if q.from_user.id != admin_id: return
         db.update_user(admin_id,state="admin_sub_edit")
-        await q.message.edit_text("Tahrirlash formatı:\n@eski_kanal | @yangi_kanal",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data="sub_menu")]])); await q.answer()
+        await q.message.edit_text("Tahrirlash formati:\n@eski_kanal | @yangi_kanal",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data="sub_menu")]])); await q.answer()
 
     @dp.callback_query(F.data == "sub_test")
     async def sub_test(q: CallbackQuery):
@@ -131,7 +132,8 @@ def install_subscription_admin(dp, bot, db, admin_id):
         await q.message.edit_text("KANAL TEKSHIRUVI\n\n"+("\n".join(lines) if lines else "Kanal yo‘q."),reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data="sub_menu")]])); await q.answer()
 
     async def admin_text_handler(message: Message):
-        if message.from_user.id != admin_id or not message.text: return False
+        if message.from_user.id != admin_id or not message.text:
+            return UNHANDLED
         value=message.text.strip()
         u=db.get_user(admin_id); state=u["state"] if u else ""
         if value == "Majburiy obuna" and state in ("admin",""):
@@ -148,7 +150,7 @@ def install_subscription_admin(dp, bot, db, admin_id):
                 await message.answer("Format: @eski_kanal | @yangi_kanal"); return True
             old,new=normalize_channel(parts[0]),normalize_channel(parts[1])
             save([new if x==old else x for x in channels()]); db.update_user(admin_id,state="admin"); await show_menu(message); return True
-        return False
+        return UNHANDLED
 
     dp.message.register(admin_text_handler, F.from_user.id == admin_id)
     try:
