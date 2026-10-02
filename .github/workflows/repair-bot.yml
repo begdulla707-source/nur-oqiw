@@ -1,0 +1,58 @@
+name: Repair bot flow
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  repair:
+    if: ${{ !contains(github.event.head_commit.message, '[bot-repair]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch backend
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('bot/main.py'); s=p.read_text(encoding='utf-8')
+          old='''app.add_middleware(\n    CORSMiddleware,\n    allow_origins=["https://nukuspro.uz", "https://www.nukuspro.uz"],\n    allow_credentials=True,\n    allow_methods=["*"],\n    allow_headers=["*"],\n)'''
+          new='''WEB_ORIGINS=[x.strip().rstrip("/") for x in os.getenv("WEBAPP_ORIGINS", "https://nukuspro.uz,https://www.nukuspro.uz").split(",") if x.strip()]\napp.add_middleware(\n    CORSMiddleware, allow_origins=WEB_ORIGINS, allow_credentials=True,\n    allow_methods=["GET","POST","OPTIONS"], allow_headers=["Content-Type","X-Admin-Key"],\n)'''
+          s=s.replace(old,new)
+          old='''    update_user(m.from_user.id, state="code", code_ok=0)\n    await m.answer("NUR O‘QIW ORAYI — Milliy sertifikat boti.\\n\\nKirish kodini kiriting:")'''
+          new='''    if not await subscribed(m.from_user.id):\n        update_user(m.from_user.id, state="subscribe", code_ok=0)\n        await m.answer("NUR O‘QIW ORAYI — Milliy sertifikat boti.\\n\\nTestga kirishdan oldin kanalga obuna bo‘ling.", reply_markup=sub_kb()); return\n    update_user(m.from_user.id, state="name", code_ok=0)\n    await m.answer("📝 Ro‘yxatdan o‘tish\\n\\n👤 Ism, Familiya kiriting:")'''
+          s=s.replace(old,new)
+          s=s.replace('update_user(q.from_user.id, state="name", code_ok=1)','update_user(q.from_user.id, state="name", code_ok=0)')
+          old='''    update_user(m.from_user.id, state="ready")\n    await m.answer(\n        "✅ Xush kelibsiz!\\n\\n👤 " + (u["full_name"] or "—") +\n        "\\n📱 " + phone +\n        "\\n\\nTelegram akkauntingiz bog‘landi!\\n\\n🧮 Endi siz test yecha olasiz!",\n        reply_markup=web()\n    )'''
+          new='''    update_user(m.from_user.id, state="code", code_ok=0)\n    await m.answer("✅ Xush kelibsiz!\\n\\n👤 " + (u["full_name"] or "—") + "\\n📱 " + phone + "\\n\\nTelegram akkauntingiz bog‘landi!\\n\\n🔐 Testga kirish kodini kiriting:")'''
+          s=s.replace(old,new)
+          old='''            update_user(m.from_user.id, state="ready")\n            await m.answer(\n                "✅ Xush kelibsiz!\\n\\n👤 " + (u["full_name"] or "—") +\n                "\\n📱 " + text_value +\n                "\\n\\nTelegram akkauntingiz bog‘landi!\\n\\n🧮 Endi siz test yecha olasiz!",\n                reply_markup=web()\n            )'''
+          new='''            update_user(m.from_user.id, state="code", code_ok=0)\n            await m.answer("✅ Xush kelibsiz!\\n\\n👤 " + (u["full_name"] or "—") + "\\n📱 " + text_value + "\\n\\nTelegram akkauntingiz bog‘landi!\\n\\n🔐 Testga kirish kodini kiriting:")'''
+          s=s.replace(old,new)
+          old='''        update_user(m.from_user.id, state="name", code_ok=1)\n        await m.answer("📝 Ro‘yxatdan o‘tish\\n\\n👤 Ism, Familiya kiriting:")'''
+          new='''        u=get_user(m.from_user.id)\n        if not u or not u["full_name"] or not u["phone"]:\n            update_user(m.from_user.id, state="name", code_ok=0); await m.answer("Avval ism, familiya va telefon raqamingizni kiriting."); return\n        update_user(m.from_user.id, state="ready", code_ok=1)\n        await m.answer("Kod qabul qilindi. Testga kirish mumkin.", reply_markup=web())'''
+          s=s.replace(old,new)
+          marker='''async def finalize_user(tid, reason="Vaqt tugadi."):\n'''
+          if marker in s:
+            a=s.index(marker); b=s.index('\n@app.get("/api/state")',a)
+            s=s[:a]+'''async def discard_user(tid, reason="Test yopildi."):\n    u=get_user(tid)\n    if not u or u["submitted"]: return False\n    update_user(tid, started_at=None, answers_json="{}", submitted=0, score=0, grade="", finished_at=None)\n    try: await bot.send_message(tid, reason + " Yakunlanmagan urinish hisoblanmadi.")\n    except Exception: pass\n    return True\n'''+s[b:]
+          s=s.replace('await finalize_user(u["telegram_id"], reason="Admin testni yopdi.")','await discard_user(u["telegram_id"], reason="Admin test yopildi.")').replace('await finalize_user(tid)','await discard_user(tid)')
+          s=s.replace('''if u["submitted"]:\n        return {"ok": False, "error": "already_submitted", "score": u["score"], "grade": u["grade"]}''','''if u["submitted"]:\n        return {"ok": False, "error": "already_submitted", "score": u["score"], "grade": u["grade"], "full_name": u["full_name"] or ""}''')
+          s=s.replace('''        "ok": True,\n        "answers": json.loads(u["answers_json"] or "{}"),''','''        "ok": True,\n        "full_name": u["full_name"] or "",\n        "answers": json.loads(u["answers_json"] or "{}"),''')
+          s=s.replace('''    if not u or not u["code_ok"] or u["submitted"]:\n        return {"ok": False, "error": "not_authorized"}\n    if expired(u):\n        await discard_user(tid)''','''    if not u or not u["code_ok"] or u["submitted"]:\n        return {"ok": False, "error": "not_authorized"}\n    if not open_now() or expired(u):\n        await discard_user(tid)''')
+          s=s.replace('''    if not u["started_at"]:\n        return {"ok": False, "error": "not_started"}\n    if u["submitted"]:''','''    if not u["started_at"]:\n        return {"ok": False, "error": "not_started"}\n    if not open_now() or expired(u):\n        await discard_user(tid); return {"ok": False, "error": "test_closed"}\n    if u["submitted"]:''')
+          s=s.replace('users = all_users()\n    for i,u in enumerate(users,1):','users = [u for u in all_users() if u["submitted"]]\n    for i,u in enumerate(users,1):',1)
+          if 'RATE_BUCKET=' not in s:
+            inject='''from collections import defaultdict,deque\nRATE_BUCKET=defaultdict(deque); RATE_LIMIT=120; RATE_WINDOW=60\n@app.middleware("http")\nasync def abuse_guard(request: Request, call_next):\n    if request.url.path.startswith("/api/"):\n        ip=request.client.host if request.client else "unknown"; now=datetime.now(timezone.utc).timestamp(); q=RATE_BUCKET[ip]\n        while q and now-q[0]>RATE_WINDOW:q.popleft()\n        if len(q)>=RATE_LIMIT:return JSONResponse({"ok":False,"error":"rate_limited"},status_code=429,headers={"Retry-After":"60"})\n        q.append(now)\n    return await call_next(request)\n\n'''
+            s=s.replace('@app.get("/health")',inject+'@app.get("/health")',1)
+          p.write_text(s,encoding='utf-8')
+          d=Path('bot/db.py'); x=d.read_text(encoding='utf-8'); x=x.replace('c=sqlite3.connect(DB)','c=sqlite3.connect(DB, timeout=30)\n    c.execute("PRAGMA journal_mode=WAL")\n    c.execute("PRAGMA busy_timeout=30000")'); d.write_text(x,encoding='utf-8')
+      - name: Validate
+        run: python -m py_compile bot/main.py bot/db.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bot/main.py bot/db.py
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: bot flow and test result rules [bot-repair]"
+          git push
