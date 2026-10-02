@@ -17,14 +17,13 @@ def install_subscription_admin(dp, bot, db, admin_id):
                     return [str(x).strip() for x in data if str(x).strip()]
             except Exception:
                 pass
-        old = get_setting("subscription_channel", "")
-        return [old] if old else []
+        return []
 
     def normalize_channel(value):
         value = str(value).strip()
         if value.startswith("https://t.me/"):
             return "@" + value.rstrip("/").split("/")[-1]
-        if not value.startswith("@"):
+        if not value.startswith("@") and not value.startswith("-"):
             value = "@" + value
         return value
 
@@ -35,12 +34,11 @@ def install_subscription_admin(dp, bot, db, admin_id):
             if x and x not in seen:
                 clean.append(x); seen.add(x)
         set_setting("subscription_channels", json.dumps(clean, ensure_ascii=False))
-        if clean:
-            set_setting("subscription_channel", clean[0])
+        set_setting("subscription_channel", clean[0] if clean else "")
         return clean
 
     def required():
-        return get_setting("subscription_required", "1").lower() in ("1","true","yes","on")
+        return get_setting("subscription_required", "0").lower() in ("1","true","yes","on")
 
     def menu():
         items=channels()
@@ -56,10 +54,10 @@ def install_subscription_admin(dp, bot, db, admin_id):
         return f"MAJBURIY OBUNA\n\nHolat: {status}\nKanallar: {len(items)}", InlineKeyboardMarkup(inline_keyboard=rows)
 
     def sub_keyboard():
-        items=channels()
-        rows=[]
+        items=channels(); rows=[]
         for i,ch in enumerate(items,1):
-            rows.append([InlineKeyboardButton(text=f"{i}. {ch} — OBUNA", url=f"https://t.me/{ch.lstrip('@')}")])
+            if str(ch).startswith("@"):
+                rows.append([InlineKeyboardButton(text=f"{i}. {ch} — OBUNA", url=f"https://t.me/{ch.lstrip('@')}")])
         rows.append([InlineKeyboardButton(text="OBUNANI TEKSHIRISH", callback_data="check_sub")])
         return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -77,12 +75,12 @@ def install_subscription_admin(dp, bot, db, admin_id):
         return True
 
     async def show_menu(target):
-        text,markup=menu()
-        await target.answer(text, reply_markup=markup)
+        text,markup=menu(); await target.answer(text, reply_markup=markup)
 
     @dp.callback_query(F.data == "sub_on")
     async def sub_on(q: CallbackQuery):
         if q.from_user.id != admin_id: return await q.answer("Ruxsat yo‘q", show_alert=True)
+        if not channels(): return await q.answer("Avval kamida bitta kanal qo‘shing.", show_alert=True)
         set_setting("subscription_required","1"); await q.answer("Majburiy obuna yoqildi"); await show_menu(q.message)
 
     @dp.callback_query(F.data == "sub_off")
@@ -98,27 +96,26 @@ def install_subscription_admin(dp, bot, db, admin_id):
     @dp.callback_query(F.data == "sub_list")
     async def sub_list(q: CallbackQuery):
         if q.from_user.id != admin_id: return await q.answer("Ruxsat yo‘q", show_alert=True)
-        items=channels()
-        body="KANALLAR\n\n"+("\n".join(f"{i}. {x}" for i,x in enumerate(items,1)) if items else "Hozircha kanal qo‘shilmagan.")
+        items=channels(); body="KANALLAR\n\n"+("\n".join(f"{i}. {x}" for i,x in enumerate(items,1)) if items else "Hozircha kanal qo‘shilmagan.")
         await q.message.edit_text(body,reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data="sub_menu")]])); await q.answer()
 
     @dp.callback_query(F.data == "sub_add")
     async def sub_add(q: CallbackQuery):
         if q.from_user.id != admin_id: return
         db.update_user(admin_id,state="admin_sub_add")
-        await q.message.edit_text("Kanal username yoki t.me linkini yuboring.\nMasalan: @Rustambek_oqiw_orayi",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data="sub_menu")]])); await q.answer()
+        await q.message.edit_text("Kanal username yoki t.me linkini yuboring.\nMasalan: @kanal_nomi\nPrivate kanal: -1001234567890 | https://t.me/+invite",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data="sub_menu")]])); await q.answer()
 
     @dp.callback_query(F.data == "sub_remove")
     async def sub_remove(q: CallbackQuery):
         if q.from_user.id != admin_id: return
         db.update_user(admin_id,state="admin_sub_remove")
-        await q.message.edit_text("O‘chiriladigan kanal username yoki linkini yuboring.",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data="sub_menu")]])); await q.answer()
+        await q.message.edit_text("O‘chiriladigan kanal username yoki chat ID sini yuboring.",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data="sub_menu")]])); await q.answer()
 
     @dp.callback_query(F.data == "sub_edit")
     async def sub_edit(q: CallbackQuery):
         if q.from_user.id != admin_id: return
         db.update_user(admin_id,state="admin_sub_edit")
-        await q.message.edit_text("Tahrirlash formati:\n@eski_kanal | @yangi_kanal",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data="sub_menu")]])); await q.answer()
+        await q.message.edit_text("Tahrirlash formati:\n@eski_kanal | @yangi_kanal\nPrivate kanal uchun chat ID va invite linkdan foydalaning.",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data="sub_menu")]])); await q.answer()
 
     @dp.callback_query(F.data == "sub_test")
     async def sub_test(q: CallbackQuery):
@@ -132,29 +129,22 @@ def install_subscription_admin(dp, bot, db, admin_id):
         await q.message.edit_text("KANAL TEKSHIRUVI\n\n"+("\n".join(lines) if lines else "Kanal yo‘q."),reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data="sub_menu")]])); await q.answer()
 
     async def admin_text_handler(message: Message):
-        if message.from_user.id != admin_id or not message.text:
-            return UNHANDLED
-        value=message.text.strip()
-        u=db.get_user(admin_id); state=u["state"] if u else ""
+        if message.from_user.id != admin_id or not message.text: return UNHANDLED
+        value=message.text.strip(); u=db.get_user(admin_id); state=u["state"] if u else ""
         if value == "Majburiy obuna" and state in ("admin",""):
-            db.update_user(admin_id,state="admin")
-            await show_menu(message)
-            return True
+            db.update_user(admin_id,state="admin"); await show_menu(message); return True
         if state == "admin_sub_add":
             save(channels()+[value]); db.update_user(admin_id,state="admin"); await show_menu(message); return True
         if state == "admin_sub_remove":
             target=normalize_channel(value); save([x for x in channels() if x != target]); db.update_user(admin_id,state="admin"); await show_menu(message); return True
         if state == "admin_sub_edit":
             parts=[x.strip() for x in value.split("|",1)]
-            if len(parts)!=2:
-                await message.answer("Format: @eski_kanal | @yangi_kanal"); return True
-            old,new=normalize_channel(parts[0]),normalize_channel(parts[1])
-            save([new if x==old else x for x in channels()]); db.update_user(admin_id,state="admin"); await show_menu(message); return True
+            if len(parts)!=2: await message.answer("Format: @eski_kanal | @yangi_kanal"); return True
+            old,new=normalize_channel(parts[0]),normalize_channel(parts[1]); save([new if x==old else x for x in channels()]); db.update_user(admin_id,state="admin"); await show_menu(message); return True
         return UNHANDLED
 
     dp.message.register(admin_text_handler, F.from_user.id == admin_id)
     try:
         h=dp.message.handlers.pop(); dp.message.handlers.insert(0,h)
-    except Exception:
-        pass
+    except Exception: pass
     return check, sub_keyboard
