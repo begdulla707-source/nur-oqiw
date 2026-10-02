@@ -6,7 +6,9 @@ DB=Path(__file__).resolve().parent.parent/"data"/"app.db"
 DB.parent.mkdir(exist_ok=True)
 
 def conn():
-    c=sqlite3.connect(DB)
+    c=sqlite3.connect(DB, timeout=30)
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA busy_timeout=30000")
     c.row_factory=sqlite3.Row
     return c
 

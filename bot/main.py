@@ -55,12 +55,10 @@ dp = Dispatcher()
 bot = Bot(TOKEN)
 WEBHOOK_TASKS = set()
 app = FastAPI()
+WEB_ORIGINS=[x.strip().rstrip("/") for x in os.getenv("WEBAPP_ORIGINS", "https://nukuspro.uz,https://www.nukuspro.uz").split(",") if x.strip()]
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://nukuspro.uz", "https://www.nukuspro.uz"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    CORSMiddleware, allow_origins=WEB_ORIGINS, allow_credentials=True,
+    allow_methods=["GET","POST","OPTIONS"], allow_headers=["Content-Type","X-Admin-Key"],
 )
 
 def times():
@@ -262,19 +260,25 @@ async def start(m: Message):
         update_user(m.from_user.id, state="admin")
         await m.answer("NUR O‘QIW ORAYI\n\nAdmin boshqaruv paneli.", reply_markup=admin_kb())
         return
-    update_user(m.from_user.id, state="code", code_ok=0)
-    await m.answer("NUR O‘QIW ORAYI — Milliy sertifikat boti.\n\nKirish kodini kiriting:")
+    if not await subscribed(m.from_user.id):
+        update_user(m.from_user.id, state="subscribe", code_ok=0)
+        await m.answer("NUR O‘QIW ORAYI — Milliy sertifikat boti.\n\nTestga kirishdan oldin kanalga obuna bo‘ling.", reply_markup=sub_kb()); return
+    update_user(m.from_user.id, state="name", code_ok=0)
+    await m.answer("📝 Ro‘yxatdan o‘tish\n\n👤 Ism, Familiya kiriting:")
 
 @dp.message(Command("stars"))
 async def stars(m: Message):
     ensure_user(m.from_user.id)
-    update_user(m.from_user.id, state="code", code_ok=0)
-    await m.answer("NUR O‘QIW ORAYI — Milliy sertifikat boti.\n\nKirish kodini kiriting:")
+    if not await subscribed(m.from_user.id):
+        update_user(m.from_user.id, state="subscribe", code_ok=0)
+        await m.answer("NUR O‘QIW ORAYI — Milliy sertifikat boti.\n\nTestga kirishdan oldin kanalga obuna bo‘ling.", reply_markup=sub_kb()); return
+    update_user(m.from_user.id, state="name", code_ok=0)
+    await m.answer("📝 Ro‘yxatdan o‘tish\n\n👤 Ism, Familiya kiriting:")
 
 @dp.callback_query(F.data == "check_sub")
 async def check_sub(q: CallbackQuery):
     if await subscribed(q.from_user.id):
-        update_user(q.from_user.id, state="name", code_ok=1)
+        update_user(q.from_user.id, state="name", code_ok=0)
         await q.message.answer("📝 Ro‘yxatdan o‘tish\n\n👤 Ism, Familiya kiriting:")
     else:
         await q.message.answer("Kanalga obuna bo‘lish topilmadi. Avval kanalga obuna bo‘ling.")
@@ -291,13 +295,8 @@ async def contact(m: Message):
         await m.answer("Telefon raqami sizning Telegram akkauntingizga tegishli bo‘lishi kerak.")
         return
     upsert_user(m.from_user.id, u["full_name"], phone)
-    update_user(m.from_user.id, state="ready")
-    await m.answer(
-        "✅ Xush kelibsiz!\n\n👤 " + (u["full_name"] or "—") +
-        "\n📱 " + phone +
-        "\n\nTelegram akkauntingiz bog‘landi!\n\n🧮 Endi siz test yecha olasiz!",
-        reply_markup=web()
-    )
+    update_user(m.from_user.id, state="code", code_ok=0)
+    await m.answer("✅ Xush kelibsiz!\n\n👤 " + (u["full_name"] or "—") + "\n📱 " + phone + "\n\nTelegram akkauntingiz bog‘landi!\n\n🔐 Testga kirish kodini kiriting:")
 
 @dp.callback_query(F.data == "admin_home")
 async def admin_home(q: CallbackQuery):
@@ -358,7 +357,7 @@ async def mode_closed(q: CallbackQuery):
     for u in all_users():
         if u["started_at"] and not u["submitted"]:
             try:
-                await finalize_user(u["telegram_id"], reason="Admin testni yopdi.")
+                await discard_user(u["telegram_id"], reason="Admin test yopildi.")
             except Exception:
                 pass
     await q.answer()
@@ -857,8 +856,11 @@ async def text_handler(m: Message):
             update_user(m.from_user.id, state="subscribe", code_ok=1)
             await m.answer("Testga kirish uchun kanalga obuna bo‘ling.", reply_markup=sub_kb())
             return
-        update_user(m.from_user.id, state="name", code_ok=1)
-        await m.answer("📝 Ro‘yxatdan o‘tish\n\n👤 Ism, Familiya kiriting:")
+        u=get_user(m.from_user.id)
+        if not u or not u["full_name"] or not u["phone"]:
+            update_user(m.from_user.id, state="name", code_ok=0); await m.answer("Avval ism, familiya va telefon raqamingizni kiriting."); return
+        update_user(m.from_user.id, state="ready", code_ok=1)
+        await m.answer("Kod qabul qilindi. Testga kirish mumkin.", reply_markup=web())
         return
 
     if st == "subscribe":
@@ -881,13 +883,8 @@ async def text_handler(m: Message):
     if st == "phone":
         if re.fullmatch(r"\+998\d{9}", text_value):
             upsert_user(m.from_user.id, u["full_name"], text_value)
-            update_user(m.from_user.id, state="ready")
-            await m.answer(
-                "✅ Xush kelibsiz!\n\n👤 " + (u["full_name"] or "—") +
-                "\n📱 " + text_value +
-                "\n\nTelegram akkauntingiz bog‘landi!\n\n🧮 Endi siz test yecha olasiz!",
-                reply_markup=web()
-            )
+            update_user(m.from_user.id, state="code", code_ok=0)
+            await m.answer("✅ Xush kelibsiz!\n\n👤 " + (u["full_name"] or "—") + "\n📱 " + text_value + "\n\nTelegram akkauntingiz bog‘landi!\n\n🔐 Testga kirish kodini kiriting:")
         else:
             await m.answer("Telefon raqami noto‘g‘ri.\nFormat: +998901234567")
         return
@@ -899,6 +896,17 @@ async def text_handler(m: Message):
             s,e = times()
             await m.answer(f"Test hozir yopiq. Vaqt: {s}–{e}.")
         return
+
+from collections import defaultdict,deque
+RATE_BUCKET=defaultdict(deque); RATE_LIMIT=120; RATE_WINDOW=60
+@app.middleware("http")
+async def abuse_guard(request: Request, call_next):
+    if request.url.path.startswith("/api/"):
+        ip=request.client.host if request.client else "unknown"; now=datetime.now(timezone.utc).timestamp(); q=RATE_BUCKET[ip]
+        while q and now-q[0]>RATE_WINDOW:q.popleft()
+        if len(q)>=RATE_LIMIT:return JSONResponse({"ok":False,"error":"rate_limited"},status_code=429,headers={"Retry-After":"60"})
+        q.append(now)
+    return await call_next(request)
 
 @app.get("/health")
 def health():
@@ -919,19 +927,12 @@ def telegram_user(init_data):
     except Exception:
         return None
 
-async def finalize_user(tid, reason="Vaqt tugadi."):
-    u = get_user(tid)
-    if not u or u["submitted"]:
-        return False
-    answers = json.loads(u["answers_json"] or "{}")
-    record_stats(answers)
-    score = weighted_score(answers)
-    grade = grade_for(score)
-    finish_user(tid, score, grade, datetime.now(TZ).isoformat(), answers)
-    try:
-        await bot.send_message(tid, f"Test yakunlandi.\n\nBall: {score:.2f}\nBaho: {grade}\n\n{reason}")
-    except Exception:
-        pass
+async def discard_user(tid, reason="Test yopildi."):
+    u=get_user(tid)
+    if not u or u["submitted"]: return False
+    update_user(tid, started_at=None, answers_json="{}", submitted=0, score=0, grade="", finished_at=None)
+    try: await bot.send_message(tid, reason + " Yakunlanmagan urinish hisoblanmadi.")
+    except Exception: pass
     return True
 
 @app.get("/api/state")
@@ -941,11 +942,11 @@ async def api_state(request: Request):
     if not u or not u["code_ok"]:
         return JSONResponse({"ok": False, "error": "not_authorized"}, status_code=401)
     if u["submitted"]:
-        return {"ok": False, "error": "already_submitted", "score": u["score"], "grade": u["grade"]}
+        return {"ok": False, "error": "already_submitted", "score": u["score"], "grade": u["grade"], "full_name": u["full_name"] or ""}
     if not open_now() and not u["started_at"]:
         return {"ok": False, "error": "test_closed"}
     if u["started_at"] and expired(u):
-        await finalize_user(tid)
+        await discard_user(tid)
         return {"ok": False, "error": "test_closed"}
     if not u["started_at"]:
         update_user(tid, started_at=datetime.now(TZ).isoformat())
@@ -956,6 +957,7 @@ async def api_state(request: Request):
     ends = min(st + timedelta(hours=1), close)
     return {
         "ok": True,
+        "full_name": u["full_name"] or "",
         "answers": json.loads(u["answers_json"] or "{}"),
         "ends_at": ends.isoformat(),
         "started_at": u["started_at"],
@@ -982,8 +984,8 @@ async def answer_api(p: dict):
     u = get_user(tid) if tid else None
     if not u or not u["code_ok"] or u["submitted"]:
         return {"ok": False, "error": "not_authorized"}
-    if expired(u):
-        await finalize_user(tid)
+    if not open_now() or expired(u):
+        await discard_user(tid)
         return {"ok": False, "error": "test_closed"}
     q = get_question(p.get("question_id"))
     if not q:
@@ -1013,6 +1015,8 @@ async def finish_api(p: dict):
         return {"ok": False, "error": "not_authorized"}
     if not u["started_at"]:
         return {"ok": False, "error": "not_started"}
+    if not open_now() or expired(u):
+        await discard_user(tid); return {"ok": False, "error": "test_closed"}
     if u["submitted"]:
         return {"ok": True, "score": u["score"], "grade": u["grade"]}
     answers = json.loads(u["answers_json"] or "{}")
@@ -1109,7 +1113,7 @@ def make_pdf(path):
         rightMargin=24,leftMargin=24,topMargin=24,bottomMargin=24
     )
     rows = [["№","Ism Familiya","Ball","Baho"]]
-    users = all_users()
+    users = [u for u in all_users() if u["submitted"]]
     for i,u in enumerate(users,1):
         rows.append([str(i), u["full_name"] or "—", f"{u['score']:.2f}", u["grade"] or "—"])
     story = [
