@@ -1,0 +1,33 @@
+name: Fix profile back navigation
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch back button
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('bot/db.py')
+          s=p.read_text(encoding='utf-8')
+          old='''    if d=="profile_back":\n        await query.message.edit_text(_profile_text(u),reply_markup=_profile_kb()); await query.answer(); return\n'''
+          new='''    if d=="profile_back":\n        await query.message.edit_text(f"Profil menyusi: {u['full_name'] or 'Ismsiz'}",reply_markup=_profile_kb()); await query.answer(); return\n'''
+          if old in s:
+              s=s.replace(old,new,1)
+              p.write_text(s,encoding='utf-8')
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bot/db.py
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Fix profile back navigation'
+          git push
