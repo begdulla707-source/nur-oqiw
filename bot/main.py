@@ -443,7 +443,11 @@ async def auto_finalize():
         await asyncio.sleep(10)
 WEBHOOK_BASE=os.getenv("WEBHOOK_BASE_URL","https://nur-oqiw.onrender.com").rstrip("/");WEBHOOK_PATH="/telegram/webhook";WEBHOOK_SECRET=os.getenv("WEBHOOK_SECRET") or hashlib.sha256(TOKEN.encode()).hexdigest()
 async def process_update(update:Update):
-    try:await dp.feed_update(bot,update)
+    try:
+        # A single slow Telegram/API/database operation must never block a user update for a minute.
+        await asyncio.wait_for(dp.feed_update(bot,update), timeout=15)
+    except asyncio.TimeoutError:
+        logger.error("Telegram update timed out after 15 seconds")
     except Exception:logger.exception("Telegram update failed")
 @app.post(WEBHOOK_PATH)
 async def telegram_webhook(request:Request):
