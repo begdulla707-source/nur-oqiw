@@ -115,10 +115,28 @@ async def discard_user(tid,reason="Test yopildi."):
     return True
 async def finalize_user(tid): return await discard_user(tid,"Test vaqti tugadi.")
 def make_pdf(path):
-    styles=getSampleStyleSheet(); users=[u for u in all_registered_users() if u["submitted"]]
-    rows=[["№","Ism Familiya","Ball","Baho"]]+[[str(i),u["full_name"] or "—",f"{float(u['score'] or 0):.2f}",u["grade"] or "—"] for i,u in enumerate(users,1)]
-    doc=SimpleDocTemplate(path,pagesize=landscape(A4),rightMargin=24,leftMargin=24,topMargin=24,bottomMargin=24); story=[Paragraph("NUR O‘QIW ORAYI — TEST NATIJALARI",styles["Title"]),Paragraph(f"Ishtirokchilar: {len(users)}",styles["Heading2"]),Spacer(1,10)]
-    table=Table(rows,repeatRows=1,colWidths=[35,430,80,70]); table.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.5,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.HexColor("#eeeeee")),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold")])); story.append(table); doc.build(story)
+    users=[u for u in all_registered_users() if u["started_at"] or u["submitted"]]
+    styles=getSampleStyleSheet()
+    rows=[["№","Ism Familiya","Kirilgan vaqt","Tugagan vaqt","Ball","Baho","Holat"]]
+    def fmt_dt(value):
+        if not value: return "—"
+        try: return datetime.fromisoformat(str(value)).astimezone(TZ).strftime("%d.%m.%Y %H:%M")
+        except Exception: return str(value)[:16]
+    for i,u in enumerate(users,1):
+        status="Yakunlangan" if u["submitted"] else ("Faol" if user_open(u) else "Yakunlanmagan")
+        rows.append([str(i),u["full_name"] or "—",fmt_dt(u["started_at"]),fmt_dt(u["finished_at"]),f'{float(u["score"] or 0):.2f}',u["grade"] or "—",status])
+    doc=SimpleDocTemplate(path,pagesize=landscape(A4),rightMargin=18,leftMargin=18,topMargin=24,bottomMargin=24)
+    story=[Paragraph("NUR O‘QIW ORAYI — TEST NATIJALARI",styles["Title"]),Paragraph(f"Test vaqti: {times()[0]}–{times()[1]} · Testga kirganlar: {len(users)}",styles["Heading2"]),Spacer(1,10)]
+    table=Table(rows,repeatRows=1,colWidths=[28,190,105,105,60,55,95])
+    table.setStyle(TableStyle([
+        ("GRID",(0,0),(-1,-1),.5,colors.grey),
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#eeeeee")),
+        ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+        ("FONTSIZE",(0,0),(-1,-1),8.5),
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE")
+    ]))
+    story.append(table)
+    doc.build(story)
 
 @dp.message(Command("start"))
 async def start(m:Message):
