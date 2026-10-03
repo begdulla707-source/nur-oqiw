@@ -130,8 +130,19 @@ def register(dp, bot, webapp_url):
         _,tier,uid_s=q.data.split(":"); uid=int(uid_s); u=get_user(uid)
         if not u: await q.answer("User topilmadi",show_alert=True); return
         set_tier(uid,tier,ADMIN); label="Premium 💠" if tier=="premium" else "Default"
-        try: await bot.send_message(uid,f"Tarifingiz yangilandi: {label}.")
-        except Exception: pass
+        sent=False
+        for attempt in range(3):
+            try:
+                await bot.send_message(uid,f"Tarifingiz yangilandi: {label}.")
+                sent=True
+                break
+            except Exception as e:
+                import asyncio
+                if attempt<2:
+                    await asyncio.sleep(1.5*(attempt+1))
+                else:
+                    import logging
+                    logging.getLogger("nur-oqiw").warning("Tariff notification to %s failed: %s",uid,e)
         await q.message.edit_text(f"SAQLANDI\n\n{u['full_name'] or 'Ismsiz'}\nID: {uid}\nTarif: {label}",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Tariflar ro‘yxati",callback_data="tf_list")]])); await q.answer("Tarif saqlandi")
 
     # This handler catches the registration code before main.py's generic text handler.
