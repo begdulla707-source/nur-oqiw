@@ -1,7 +1,6 @@
 import os
 from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.dispatcher.event.bases import SkipHandler
 from .db import ensure_user, get_user, all_registered_users, is_premium, set_tier, update_user
 
 ADMIN = int(os.getenv("ADMIN_CHAT_ID", "8379731556"))
@@ -81,7 +80,13 @@ def register(dp, bot, webapp_url):
         await m.answer("\n".join(lines)[:4000])
 
     @r.message(F.text == "Yordam")
-    async def help_(m:Message): await m.answer("Yordam uchun administratorga murojaat qiling.")
+    async def help_(m:Message):
+        await m.answer(
+            "YORDAM\n\nSavol yoki muammo bo‘lsa administratorga yozing.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="ADMINISTRATORGA YOZISH", url=f"tg://user?id={ADMIN}")
+            ]])
+        )
 
     @r.callback_query(F.data == "pf_tariffs")
     async def pf_tariffs(q:CallbackQuery): await q.message.answer(tariff_text(),reply_markup=tariff_kb()); await q.answer()
@@ -144,19 +149,5 @@ def register(dp, bot, webapp_url):
                     import logging
                     logging.getLogger("nur-oqiw").warning("Tariff notification to %s failed: %s",uid,e)
         await q.message.edit_text(f"SAQLANDI\n\n{u['full_name'] or 'Ismsiz'}\nID: {uid}\nTarif: {label}",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Tariflar ro‘yxati",callback_data="tf_list")]])); await q.answer("Tarif saqlandi")
-
-    # This handler catches the registration code before main.py's generic text handler.
-    # For every other text it yields control to the original registration/admin flow.
-    @r.message(F.text)
-    async def profile_fallback(m:Message):
-        u=get_user(m.from_user.id) or ensure_user(m.from_user.id)
-        if m.from_user.id!=ADMIN and (u["state"] or "") == "code":
-            from .db import get_setting
-            expected=get_setting("access_code",os.getenv("ACCESS_CODE","0924"))
-            if m.text.strip()==str(expected):
-                update_user(m.from_user.id,code_ok=1,state="ready")
-                await m.answer("🎉 Ro‘yxatdan o‘tish tugadi!\n\nProfilingiz saqlandi. Endi botdan istalgan vaqtda foydalanishingiz mumkin.",reply_markup=user_menu())
-                return
-        raise SkipHandler
 
     dp.include_router(r)
