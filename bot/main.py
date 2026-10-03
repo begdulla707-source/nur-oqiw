@@ -168,11 +168,8 @@ async def text_handler(m:Message):
             set_setting("test_end",text);update_user(ADMIN,state="admin");await m.answer("Tugash vaqti saqlandi.",reply_markup=admin_kb());return
         if st=="admin_code": set_setting("access_code",text);update_user(ADMIN,state="admin");await m.answer("Kod saqlandi.",reply_markup=admin_kb());return
         if st=="admin_broadcast":
-            users=all_registered_users();ok=0
-            for x in users:
-                try:await bot.send_message(x["telegram_id"],text);ok+=1
-                except:pass
-            update_user(ADMIN,state="admin");await m.answer(f"Yuborildi: {ok}/{len(users)}",reply_markup=admin_kb());return
+            ok,total=await broadcast_notification(text)
+            update_user(ADMIN,state="admin");await m.answer(f"Yuborildi: {ok}/{total}",reply_markup=admin_kb());return
         if st=="admin_qadd":
             try:q=parse_question_payload(text);upsert_question(q[0],q[1],q[2],q[3],q[4],q[5],q[6]);update_user(ADMIN,state="admin");await m.answer("Savol qo‘shildi.",reply_markup=admin_kb())
             except Exception as e:await m.answer(f"Xato: {e}")
@@ -414,20 +411,63 @@ async def cleanup_loop():
         except Exception as e:
             logger.exception("cleanup_loop: %s", e)
 
+WEBHOOK_URL=os.getenv("WEBHOOK_URL","https://nur-oqiw.onrender.com/telegram/webhook")
+WEBHOOK_SECRET=os.getenv("WEBHOOK_SECRET","nur_oqiw_webhook")
+
+@app.post("/telegram/webhook")
+async def telegram_webhook(request: Request):
+    secret=request.headers.get("X-Telegram-Bot-Api-Secret-Token","")
+    if WEBHOOK_SECRET and secret!=WEBHOOK_SECRET:
+        return JSONResponse({"ok":False},status_code=403)
+    try:
+        data=await request.json()
+        update=Update.model_validate(data)
+        await dp.feed_update(bot,update)
+        return {"ok":True}
+    except Exception as e:
+        logger.exception("Telegram webhook error: %s",e)
+        return JSONResponse({"ok":False},status_code=500)
+
+async def send_notification(tid,text):
+    for attempt in range(3):
+        try:
+            await bot.send_message(tid,text)
+            return True
+        except Exception as e:
+            logger.warning("Notification to %s failed (attempt %s): %s",tid,attempt+1,e)
+            if attempt<2:
+                await asyncio.sleep(1.5*(attempt+1))
+    return False
+
+async def broadcast_notification(text):
+    users=all_registered_users()
+    ok=0
+    for u in users:
+        if await send_notification(u["telegram_id"],text):
+            ok+=1
+        await asyncio.sleep(0.05)
+    return ok,len(users)
+
 async def main():
-    await bot.delete_webhook(drop_pending_updates=False)
-    logger.info("Bot starting — polling")
+    logger.info("Bot starting — webhook mode")
     cleanup_task = asyncio.create_task(cleanup_loop())
     server = uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info"))
-    polling_task = asyncio.create_task(dp.start_polling(bot))
     server_task = asyncio.create_task(server.serve())
     try:
-        await asyncio.gather(polling_task, server_task)
+        await bot.set_webhook(
+            WEBHOOK_URL,
+            secret_token=WEBHOOK_SECRET,
+            drop_pending_updates=False,
+            allowed_updates=dp.resolve_used_update_types(),
+        )
+        logger.info("Telegram webhook set: %s",WEBHOOK_URL)
+        await server_task
     finally:
-        for task in (polling_task, server_task, cleanup_task):
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(polling_task, server_task, cleanup_task, return_exceptions=True)
+        if not server_task.done():
+            server_task.cancel()
+        if not cleanup_task.done():
+            cleanup_task.cancel()
+        await asyncio.gather(server_task,cleanup_task,return_exceptions=True)
         try:
             await bot.session.close()
         except Exception:
