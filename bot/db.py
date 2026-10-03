@@ -334,7 +334,7 @@ async def _premium_callback(query, **data):
     tid=query.from_user.id; d=query.data or ""; bot=data["bot"]
     u=ensure_user(tid)
     if d=="profile_back":
-        await query.message.edit_text(_profile_text(u),reply_markup=_profile_kb()); await query.answer(); return
+        await query.message.edit_text(f"Profil menyusi: {u['full_name'] or 'Ismsiz'}",reply_markup=_profile_kb()); await query.answer(); return
     if d=="profile_tariffs":
         await query.message.edit_text("TARIFLAR\n\n1 — Default\n• Oddiy user funksiyalari\n• Reklamalar mavjud\n• Premium nishon yo‘q\n• Userlar ro‘yxati ko‘rinadi, lekin boshqa userga yozish yopiq\n\n2 — Premium 💠\n• Reklamalarsiz\n• 💠 Premium nishon\n• Userlar ro‘yxatidan Telegram profiliga yozish\n• Premium userlarga mo‘ljallangan qo‘shimcha imkoniyatlar\n\nPremium tarifni olish uchun admin bilan bog‘laning.",reply_markup=_tariff_kb()); await query.answer(); return
     if d=="tariff_default_info":
