@@ -1,0 +1,34 @@
+name: Fix profile message pass-through
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch message fallback
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('bot/db.py')
+          s=p.read_text(encoding='utf-8')
+          old='    await data["handler"](message, data)'
+          if old in s:
+              s=s.replace(old,'    raise SkipHandler',1)
+              p.write_text(s,encoding='utf-8')
+          else:
+              print('message fallback already patched')
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bot/db.py
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Fix profile router message pass-through'
+          git push
