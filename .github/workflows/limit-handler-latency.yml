@@ -1,0 +1,32 @@
+name: Limit Telegram handler latency
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add update timeout
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('bot/main.py')
+          s=p.read_text(encoding='utf-8')
+          old='''async def process_update(update:Update):\n    try:await dp.feed_update(bot,update)\n    except Exception:logger.exception("Telegram update failed")'''
+          new='''async def process_update(update:Update):\n    try:\n        # A single slow Telegram/API/database operation must never block a user update for a minute.\n        await asyncio.wait_for(dp.feed_update(bot,update), timeout=15)\n    except asyncio.TimeoutError:\n        logger.error("Telegram update timed out after 15 seconds")\n    except Exception:logger.exception("Telegram update failed")'''
+          if old not in s: raise SystemExit('process_update block not found')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+      - name: Commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bot/main.py
+          git commit -m 'Prevent Telegram update handlers from hanging indefinitely'
+          git push
