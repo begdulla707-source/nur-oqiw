@@ -312,7 +312,7 @@ async def _profile_router_handler(message, bot, data):
         await message.answer(f"✅ Kod qabul qilindi!\n\n{status}\n\nProfilingiz saqlandi.",reply_markup=_user_menu())
         await message.answer("Testga kirish:",reply_markup=_InlineKeyboardMarkup(inline_keyboard=[[_InlineKeyboardButton(text="TESTNI BOSHLASH",web_app=_WebAppInfo(url=_WEBAPP_URL))]]))
         return
-    await data["handler"](message, data)
+    raise SkipHandler
 
 
 def _test_open_for_profile():
