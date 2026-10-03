@@ -1,0 +1,212 @@
+name: Upgrade profiles and tariffs
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch bot
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('bot/main.py')
+          s=p.read_text(encoding='utf-8')
+
+          # Admin bottom menu: add tariff management.
+          old='[KeyboardButton(text="Majburiy obuna"),KeyboardButton(text="PDF natijalar")]]'
+          new='[KeyboardButton(text="Majburiy obuna"),KeyboardButton(text="PDF natijalar")],[KeyboardButton(text="Tariflar")]]'
+          if old in s and 'KeyboardButton(text="Tariflar")' not in s[s.find('def admin_kb'):s.find('def settings_kb')]:
+              s=s.replace(old,new,1)
+
+          # User keyboard with profile/tariffs and WebApp button.
+          marker='def settings_kb():'
+          if 'def user_kb():' not in s:
+              insert='''def user_kb():
+    return ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text="Testni ochish",web_app=WebAppInfo(url=WEBAPP))],
+        [KeyboardButton(text="Profilim"),KeyboardButton(text="Tariflar")],
+        [KeyboardButton(text="Userlar ro‘yxati"),KeyboardButton(text="Mening natijam")],
+        [KeyboardButton(text="Yordam")]
+    ],resize_keyboard=True,is_persistent=True)
+
+def profile_inline():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Tariflar haqida",callback_data="user_tariffs")],
+        [InlineKeyboardButton(text="Batafsil statistika 💠",callback_data="premium_stats")],
+        [InlineKeyboardButton(text="Userlar ro‘yxati",callback_data="user_list")]
+    ])
+
+def tariff_inline():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="1 — Default",callback_data="tariff_info_default")],
+        [InlineKeyboardButton(text="2 — Premium 💠",callback_data="tariff_info_premium")],
+        [InlineKeyboardButton(text="Orqaga",callback_data="profile_back")]
+    ])
+
+def tariff_admin_inline():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Userlar / tariflar",callback_data="admin_tariff_users")],
+        [InlineKeyboardButton(text="Premium userlar",callback_data="admin_tariff_premium")],
+        [InlineKeyboardButton(text="Default userlar",callback_data="admin_tariff_default")],
+        [InlineKeyboardButton(text="Premium berish",callback_data="admin_tariff_grant")],
+        [InlineKeyboardButton(text="Premiumni olish",callback_data="admin_tariff_revoke")],
+        [InlineKeyboardButton(text="Tarif ma’lumotlari",callback_data="admin_tariff_info")],
+        [InlineKeyboardButton(text="Orqaga",callback_data="admin_home")]
+    ])
+
+def _profile_body(u):
+    tier="Premium 💠" if str(u["tier"] or "default")=="premium" else "Default"
+    return f"PROFILIM\\n\\n👤 Ism-familiya: {u['full_name'] or '—'}\\n📱 Telefon: {u['phone'] or '—'}\\n🆔 Telegram ID: {u['telegram_id']}\\n💠 Tarif: {tier}\\n\\nRo‘yxatdan o‘tgan: {u['registered_at'] or '—'}"
+
+def _tariff_text(kind):
+    if kind=="premium":
+        return "PREMIUM 💠\\n\\n• Reklamasiz foydalanish rejimi\\n• Batafsil natija va shaxsiy statistika\\n• Userlar ro‘yxatidan Telegram profiliga bevosita yozish\\n• Premium 💠 nishon\\n\\nPremium tarifni olish uchun admin bilan bog‘laning."
+    return "DEFAULT\\n\\n• Oddiy test va natija\\n• Userlar ro‘yxatini ko‘rish\\n• Premium funksiyalar yopiq\\n• Premium 💠 nishon yo‘q\\n\\nPremium tarif admin tomonidan Telegram ID orqali beriladi."
+
+def _tariff_user_rows(mode="all"):
+    users=all_registered_users()
+    if mode=="premium": users=[u for u in users if str(u["tier"] or "default")=="premium"]
+    if mode=="default": users=[u for u in users if str(u["tier"] or "default")!="premium"]
+    lines=[f"{i}. {'💠 ' if str(u['tier'] or 'default')=='premium' else ''}{u['full_name'] or 'Ismsiz'} — ID: {u['telegram_id']} — {'PREMIUM' if str(u['tier'] or 'default')=='premium' else 'DEFAULT'}" for i,u in enumerate(users,1)]
+    return users, ("\\n".join(lines) if lines else "User topilmadi.")
+
+# Profile/user menu handlers are placed before the project's catch-all message handler.
+@dp.message(F.text=="Profilim")
+async def user_profile(m:Message):
+    u=ensure_user(m.from_user.id)
+    if m.from_user.id==ADMIN: return await m.answer("Admin uchun user profili emas, admin panel ishlatiladi.",reply_markup=admin_kb())
+    await m.answer(_profile_body(u),reply_markup=profile_inline())
+
+@dp.message(F.text=="Tariflar")
+async def user_tariffs(m:Message):
+    if m.from_user.id==ADMIN: return await m.answer("TARIFLAR BOSHQARUVI",reply_markup=tariff_admin_inline())
+    await m.answer("TARIFLAR\\n\\n1 — Default\\n2 — Premium 💠\\n\\nQuyidagi tugmalardan tarif tafsilotini ko‘ring.",reply_markup=tariff_inline())
+
+@dp.message(F.text=="Userlar ro‘yxati")
+async def user_list_message(m:Message):
+    u=ensure_user(m.from_user.id)
+    users,body=_tariff_user_rows()
+    if not is_premium(m.from_user.id):
+        return await m.answer("USERLAR RO‘YXATI\\n\\nRo‘yxatni ko‘rish mumkin, ammo boshqa userning Telegram profiliga yozish uchun Premium 💠 kerak.\\n\\nPremium olish: Tariflar → Premium 💠")
+    rows=[]
+    for x in users[:60]:
+        name=(x["full_name"] or "Ismsiz")[:32]
+        mark="💠 " if str(x["tier"] or "default")=="premium" else ""
+        rows.append([InlineKeyboardButton(text=f"{mark}{name}",url=f"tg://user?id={int(x['telegram_id'])}")])
+    rows.append([InlineKeyboardButton(text="Orqaga",callback_data="profile_back")])
+    await m.answer("USERLAR RO‘YXATI\\n\\nPremium 💠 rejimda userni tanlab Telegram profiliga yozishingiz mumkin.",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+@dp.message(F.text=="Mening natijam")
+async def my_result(m:Message):
+    u=ensure_user(m.from_user.id)
+    if not u["submitted"]: return await m.answer("Sizda hali yakunlangan test natijasi yo‘q.")
+    await m.answer(f"MENING NATIJAM\\n\\n👤 {u['full_name'] or '—'}\\n📊 Ball: {float(u['score'] or 0):.2f}\\n🏅 Baho: {u['grade'] or '—'}")
+
+@dp.message(F.text=="Yordam")
+async def user_help(m:Message):
+    await m.answer("Yordam\\n\\nTestga kirish: Testni ochish\\nProfil: Profilim\\nTariflar: Tariflar\\nNatija: Mening natijam\\nPremium: Tariflar bo‘limidan ma’lumot oling.")
+
+@dp.callback_query(F.data=="profile_back")
+async def profile_back(q:CallbackQuery):
+    u=ensure_user(q.from_user.id)
+    await q.message.edit_text(_profile_body(u),reply_markup=profile_inline()); await q.answer()
+
+@dp.callback_query(F.data=="user_tariffs")
+async def user_tariffs_cb(q:CallbackQuery):
+    await q.message.edit_text("TARIFLAR\\n\\nDefault — oddiy foydalanish.\\nPremium 💠 — kengaytirilgan imkoniyatlar.",reply_markup=tariff_inline()); await q.answer()
+
+@dp.callback_query(F.data=="tariff_info_default")
+async def tariff_default_info(q:CallbackQuery):
+    await q.message.edit_text(_tariff_text("default"),reply_markup=tariff_inline()); await q.answer()
+
+@dp.callback_query(F.data=="tariff_info_premium")
+async def tariff_premium_info(q:CallbackQuery):
+    await q.message.edit_text(_tariff_text("premium"),reply_markup=tariff_inline()); await q.answer()
+
+@dp.callback_query(F.data=="premium_stats")
+async def premium_stats(q:CallbackQuery):
+    if not is_premium(q.from_user.id):
+        return await q.answer("Bu funksiya Premium 💠 uchun.",show_alert=True)
+    u=ensure_user(q.from_user.id); done=1 if u["submitted"] else 0
+    score=float(u["score"] or 0); grade=u["grade"] or "—"
+    await q.message.edit_text(f"PREMIUM STATISTIKA 💠\\n\\nYakunlangan testlar: {done}\\nOxirgi ball: {score:.2f}\\nBaho: {grade}\\n\\nPremium sizga kengaytirilgan natija ko‘rinishini beradi.",reply_markup=profile_inline()); await q.answer()
+
+@dp.callback_query(F.data=="user_list")
+async def user_list_cb(q:CallbackQuery):
+    if not is_premium(q.from_user.id): return await q.answer("Userlar bilan Telegram orqali bog‘lanish Premium 💠 uchun.",show_alert=True)
+    users,_=_tariff_user_rows(); rows=[]
+    for x in users[:60]:
+        name=(x["full_name"] or "Ismsiz")[:32]; mark="💠 " if str(x["tier"] or "default")=="premium" else ""
+        rows.append([InlineKeyboardButton(text=f"{mark}{name}",url=f"tg://user?id={int(x['telegram_id'])}")])
+    rows.append([InlineKeyboardButton(text="Orqaga",callback_data="profile_back")])
+    await q.message.edit_text("USERLAR RO‘YXATI",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)); await q.answer()
+
+# Admin tariff control.
+@dp.callback_query(F.data.startswith("admin_tariff_"))
+async def admin_tariff_actions(q:CallbackQuery):
+    if q.from_user.id!=ADMIN: return await q.answer("Ruxsat yo‘q",show_alert=True)
+    action=q.data.removeprefix("admin_tariff_")
+    if action=="users":
+        users,body=_tariff_user_rows(); await q.message.edit_text("USERLAR VA TARIFLAR\\n\\n"+body[:3800],reply_markup=tariff_admin_inline()); await q.answer(); return
+    if action in ("premium","default"):
+        users,body=_tariff_user_rows(action); await q.message.edit_text(("PREMIUM USERLAR 💠\\n\\n" if action=="premium" else "DEFAULT USERLAR\\n\\n")+body[:3800],reply_markup=tariff_admin_inline()); await q.answer(); return
+    if action=="info":
+        await q.message.edit_text("TARIFLAR\\n\\nDEFAULT: oddiy test, oddiy profil va natija.\\n\\nPREMIUM 💠: batafsil statistika, userlar ro‘yxatidan Telegram profiliga bevosita yozish va premium nishon.\\n\\nPremium tarifni admin Telegram ID orqali beradi.",reply_markup=tariff_admin_inline()); await q.answer(); return
+    if action in ("grant","revoke"):
+        update_user(ADMIN,state="admin_tariff_grant" if action=="grant" else "admin_tariff_revoke")
+        await q.message.edit_text("User Telegram ID sini yuboring.\\nMasalan: 123456789\\n\\nKeyin tasdiqlash tugmasi chiqadi."); await q.answer(); return
+    await q.answer()
+
+@dp.callback_query(F.data.startswith("tariff_confirm_"))
+async def tariff_confirm(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return await q.answer("Ruxsat yo‘q",show_alert=True)
+    _,_,tier,uid=q.data.split("_"); uid=int(uid); u=get_user(uid)
+    if not u:return await q.answer("User topilmadi",show_alert=True)
+    set_tier(uid,tier,ADMIN)
+    label="Premium 💠" if tier=="premium" else "Default"
+    await q.message.edit_text(f"TARIF YANGILANDI\\n\\n👤 {u['full_name'] or '—'}\\n🆔 {uid}\\n💠 {label}",reply_markup=tariff_admin_inline()); await q.answer("Saqlandi")
+    try: await bot.send_message(uid,f"Tarifingiz yangilandi: {label}.")
+    except Exception: pass
+
+'''
+              s=s.replace(marker,insert+marker,1)
+
+          # Make admin tariff button actually open admin tariff controls.
+          needle='        if text=="PDF natijalar": path="/tmp/nur_results.pdf"; make_pdf(path); await bot.send_document(ADMIN,document=FSInputFile(path)); await m.answer("PDF yuborildi.",reply_markup=admin_kb()); return\n'
+          if needle in s and 'if text=="Tariflar":' not in s[s.find(needle):s.find('@dp.message()',s.find(needle)+1)]:
+              s=s.replace(needle,needle+'        if text=="Tariflar": await m.answer("TARIFLAR BOSHQARUVI",reply_markup=tariff_admin_inline()); return\n',1)
+
+          # Add admin tariff ID input states to the existing catch-all state machine.
+          marker2='    if st=="admin_broadcast":\n'
+          if marker2 in s and 'st in ("admin_tariff_grant","admin_tariff_revoke")' not in s:
+              ins='''    if st in ("admin_tariff_grant","admin_tariff_revoke") and m.from_user.id==ADMIN:
+        try: uid=int(text)
+        except ValueError: return await m.answer("Telegram ID faqat raqam bo‘lsin.")
+        target=get_user(uid)
+        if not target: return await m.answer("Bu ID bilan user topilmadi.")
+        tier="premium" if st=="admin_tariff_grant" else "default"
+        update_user(ADMIN,state="admin")
+        kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="TASDIQLASH",callback_data=f"tariff_confirm_{tier}_{uid}")],[InlineKeyboardButton(text="Bekor qilish",callback_data="admin_home")]])
+        return await m.answer(f"TARIFNI TASDIQLASH\\n\\n👤 {target['full_name'] or '—'}\\n🆔 {uid}\\n\\nYangi tarif: {'Premium 💠' if tier=='premium' else 'Default'}\\n\\nTasdiqlaysizmi?",reply_markup=kb)
+'''
+              s=s.replace(marker2,ins+marker2,1)
+
+          # After successful registration/code, show the persistent user keyboard.
+          s=s.replace('reply_markup=web_kb())','reply_markup=user_kb())',1)
+
+          p.write_text(s,encoding='utf-8')
+      - name: Commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bot/main.py
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Add complete profile and tariff management'
+          git push
