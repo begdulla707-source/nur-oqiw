@@ -29,6 +29,11 @@ logging.basicConfig(level=logging.INFO); logger=logging.getLogger("nur-oqiw")
 dp=Dispatcher(); bot=Bot(TOKEN); app=FastAPI()
 app.add_middleware(CORSMiddleware,allow_origins=WEB_ORIGINS,allow_credentials=True,allow_methods=["GET","POST","OPTIONS"],allow_headers=["Content-Type","X-Admin-Key"])
 
+# Register profile/tariff handlers before the project's catch-all message handler.
+# The module only consumes its own exact buttons/callbacks and leaves all other states to main.py.
+from .profile_features import register as register_profile_features
+register_profile_features(dp, bot, WEBAPP)
+
 def setting_bool(key,default=False): return str(get_setting(key,"1" if default else "0")).lower() in ("1","true","yes","on")
 def times(): return get_setting("test_start",os.getenv("TEST_START","08:30")),get_setting("test_end",os.getenv("TEST_END","09:30"))
 def code_value(): return get_setting("access_code",os.getenv("ACCESS_CODE","0924"))
@@ -155,67 +160,56 @@ async def text_handler(m:Message):
         if text=="PDF natijalar": path="/tmp/nur_results.pdf"; make_pdf(path); await bot.send_document(ADMIN,document=FSInputFile(path)); await m.answer("PDF yuborildi.",reply_markup=admin_kb()); return
         if st=="admin_start":
             try:time.fromisoformat(text)
-            except ValueError:await m.answer("Masalan: 08:30");return
-            set_setting("test_start",text);update_user(ADMIN,state="admin");await m.answer("Boshlanish saqlandi.",reply_markup=admin_kb());return
+            except:await m.answer("Vaqt HH:MM formatida bo‘lsin.");return
+            set_setting("test_start",text);update_user(ADMIN,state="admin");await m.answer("Boshlanish vaqti saqlandi.",reply_markup=admin_kb());return
         if st=="admin_end":
             try:time.fromisoformat(text)
-            except ValueError:await m.answer("Masalan: 09:30");return
-            set_setting("test_end",text);update_user(ADMIN,state="admin");await m.answer("Tugash saqlandi.",reply_markup=admin_kb());return
+            except:await m.answer("Vaqt HH:MM formatida bo‘lsin.");return
+            set_setting("test_end",text);update_user(ADMIN,state="admin");await m.answer("Tugash vaqti saqlandi.",reply_markup=admin_kb());return
         if st=="admin_code": set_setting("access_code",text);update_user(ADMIN,state="admin");await m.answer("Kod saqlandi.",reply_markup=admin_kb());return
         if st=="admin_broadcast":
-            sent=failed=0
-            for usr in all_registered_users():
-                try:await bot.send_message(usr["telegram_id"],text);sent+=1;await asyncio.sleep(.035)
-                except Exception:failed+=1
-            update_user(ADMIN,state="admin");await m.answer(f"Bildirishnoma tugadi.\nYuborildi: {sent}\nXato: {failed}",reply_markup=admin_kb());return
-        if st=="admin_sub_add":
-            ch=text; chans=sub_channels()
-            if ch not in chans:chans.append(ch)
-            set_setting("subscription_channels","\n".join(chans));update_user(ADMIN,state="admin");await m.answer(f"Kanal qo‘shildi: {ch}",reply_markup=admin_kb());return
-        if st=="admin_sub_delete":
-            chans=sub_channels()
-            try:idx=int(text)-1;removed=chans.pop(idx)
-            except Exception:await m.answer("Kanal raqamini yozing.");return
-            set_setting("subscription_channels","\n".join(chans));update_user(ADMIN,state="admin");await m.answer(f"O‘chirildi: {removed}",reply_markup=admin_kb());return
-        if st=="admin_sub_edit":
-            try:n,new=text.split("|",1);idx=int(n)-1;chans=sub_channels();chans[idx]=new.strip();set_setting("subscription_channels","\n".join(chans))
-            except Exception:await m.answer("Format: 1|@yangi_kanal");return
-            update_user(ADMIN,state="admin");await m.answer("Kanal tahrirlandi.",reply_markup=admin_kb());return
-        if st.startswith("admin_qedit_"):
-            try:old=int(st.rsplit("_",1)[1]);vals=parse_question_payload(text,get_question(old));upsert_question(*vals);update_user(ADMIN,state="admin");await m.answer(f"Savol {vals[0]} yangilandi.",reply_markup=admin_kb())
+            users=all_registered_users();ok=0
+            for x in users:
+                try:await bot.send_message(x["telegram_id"],text);ok+=1
+                except:pass
+            update_user(ADMIN,state="admin");await m.answer(f"Yuborildi: {ok}/{len(users)}",reply_markup=admin_kb());return
+        if st=="admin_qadd":
+            try:q=parse_question_payload(text);upsert_question(q[0],q[1],q[2],q[3],q[4],q[5],q[6]);update_user(ADMIN,state="admin");await m.answer("Savol qo‘shildi.",reply_markup=admin_kb())
             except Exception as e:await m.answer(f"Xato: {e}")
             return
-        if st=="admin_qadd":
-            try:vals=parse_question_payload(text);upsert_question(*vals);update_user(ADMIN,state="admin");await m.answer(f"Savol {vals[0]} saqlandi.",reply_markup=admin_kb())
+        if st.startswith("admin_qedit_"):
+            try:q=parse_question_payload(text,get_question_any(int(st.rsplit("_",1)[1])));upsert_question(q[0],q[1],q[2],q[3],q[4],q[5],q[6]);update_user(ADMIN,state="admin");await m.answer("Savol yangilandi.",reply_markup=admin_kb())
             except Exception as e:await m.answer(f"Xato: {e}")
             return
         if st=="admin_qdelete":
-            try:qid=int(text);ok=delete_question(qid)
-            except:ok=False
-            if ok:update_user(ADMIN,state="admin")
-            await m.answer("O‘chirildi." if ok else "Savol topilmadi.",reply_markup=admin_kb());return
-        if st=="admin_qcount":
-            try:n=int(text);assert 1<=n<=100;set_active_question_count(n);update_user(ADMIN,state="admin");await m.answer(f"{n} ta faol savol.",reply_markup=admin_kb())
-            except:await m.answer("1–100 oralig‘ida son.")
+            try:delete_question(int(text));update_user(ADMIN,state="admin");await m.answer("Savol o‘chirildi.",reply_markup=admin_kb())
+            except:await m.answer("Savol raqamini kiriting.")
             return
-        if text.lower() in ("orqaga","back"):update_user(ADMIN,state="admin");await m.answer("Admin boshqaruv paneli.",reply_markup=admin_kb());return
-    if st=="code":
-        if text!=code_value():await m.answer("Kirish kodi noto‘g‘ri.");return
-        if not open_now():s,e=times();await m.answer(f"Kod qabul qilindi, lekin test hozir yopiq.\n\nTest vaqti: {s}–{e}.");return
-        if not await subscribed(m.from_user.id):update_user(m.from_user.id,state="subscribe",code_ok=1);await m.answer("Avval majburiy kanallarga obuna bo‘ling.",reply_markup=sub_kb());return
-        u=get_user(m.from_user.id)
-        if not u or not u["full_name"] or not u["phone"]:update_user(m.from_user.id,state="name",code_ok=0);await m.answer("Avval ism, familiya va telefon raqamingizni kiriting.");return
-        update_user(m.from_user.id,state="ready",code_ok=1);await m.answer("Kod qabul qilindi. Test ochiq — kirishingiz mumkin.",reply_markup=web_kb());return
-    if st=="subscribe":await m.answer("Barcha majburiy kanallarga obuna bo‘ling va tekshirish tugmasini bosing.",reply_markup=sub_kb());return
+        if st=="admin_qcount":
+            try:set_active_question_count(int(text));update_user(ADMIN,state="admin");await m.answer(f"Faol savollar: {len(active_questions())}",reply_markup=admin_kb())
+            except:await m.answer("Son kiriting.")
+            return
+        if st=="admin_sub_add":
+            chans=sub_channels();
+            if text not in chans:chans.append(text);set_setting("subscription_channels","\n".join(chans))
+            update_user(ADMIN,state="admin");await m.answer("Kanal qo‘shildi.",reply_markup=admin_kb());return
+        if st=="admin_sub_delete":
+            try:i=int(text)-1;chans=sub_channels();del chans[i];set_setting("subscription_channels","\n".join(chans));update_user(ADMIN,state="admin");await m.answer("Kanal o‘chirildi.",reply_markup=admin_kb())
+            except:await m.answer("Raqamni to‘g‘ri kiriting.")
+            return
+        if st=="admin_sub_edit":
+            try:i,new=text.split("|",1);chans=sub_channels();chans[int(i)-1]=new.strip();set_setting("subscription_channels","\n".join(chans));update_user(ADMIN,state="admin");await m.answer("Kanal tahrirlandi.",reply_markup=admin_kb())
+            except:await m.answer("Format: 1|@kanal_nomi")
+            return
+        if st.startswith("admin_"): return
     if st=="name":
-        if len(text)<3:await m.answer("Ism va familiyangizni to‘liqroq kiriting.");return
-        upsert_user(m.from_user.id,text);update_user(m.from_user.id,state="phone");await m.answer("QABUL QILINDI\n\n📱 Telefon raqamingizni kiriting:\n\nFormat: +998901234567\nMisol: +998901234567",reply_markup=phone_kb());return
-    if st=="phone":
-        if not re.fullmatch(r"\+998\d{9}",text):await m.answer("Format: +998901234567",reply_markup=phone_kb());return
-        upsert_user(m.from_user.id,u["full_name"],text);update_user(m.from_user.id,state="code",code_ok=0);await m.answer(f"✅ Xush kelibsiz!\n\n👤 {u['full_name'] or '—'}\n📱 {text}\n\nTelegram akkauntingiz bog‘landi!\n\n🔐 Testga kirish kodini kiriting:",reply_markup=ReplyKeyboardRemove());return
-    if st=="ready":
-        if open_now():await m.answer("Test ochiq — kirishingiz mumkin.",reply_markup=web_kb())
-        else:s,e=times();await m.answer(f"Test hozir yopiq.\n\nTest vaqti: {s}–{e}.")
+        if len(text)<3:await m.answer("Ism va familiyangizni to‘liq kiriting.");return
+        upsert_user(m.from_user.id,text);update_user(m.from_user.id,state="phone");await m.answer("📱 Telefon raqamingizni yuboring:",reply_markup=phone_kb());return
+    if st=="code":
+        if text!=code_value():await m.answer("❌ Kod noto‘g‘ri. Qayta kiriting:");return
+        update_user(m.from_user.id,code_ok=1,state="ready");await m.answer("🎉 Ro‘yxatdan o‘tish tugadi!\n\nTestga kirishingiz mumkin.",reply_markup=web_kb());return
+    if st=="ready": await m.answer("Testga kirish:",reply_markup=web_kb());return
+    await m.answer("Testga kirish:",reply_markup=web_kb())
 
 @dp.callback_query(F.data=="admin_home")
 async def admin_home(q:CallbackQuery):
@@ -389,74 +383,34 @@ async def answer_api(p:dict):
     q=get_question(p.get("question_id"));
     if not q:return {"ok":False,"error":"question_not_found"}
     answers=json.loads(u["answers_json"] or "{}");key=str(q["id"])
-    if key in answers:return {"ok":False,"error":"answer_locked","correct":normalize(answers[key])==normalize(q["answer"]),"saved_answer":answers[key]}
-    value=str(p.get("answer","")).strip()
-    if not value:return {"ok":False,"error":"empty_answer"}
-    answers[key]=value;save_answers(tid,answers);return {"ok":True,"locked":True,"correct":bool(q["answer"]) and normalize(value)==normalize(q["answer"]),"saved_answer":value}
-@app.post("/api/finish")
-async def finish_api(p:dict):
+    if key in answers:return {"ok":False,"error":"answer_locked","correct":normalize(answers[key])==normalize(q["answer"])}
+    answers[key]=p.get("answer","");save_answers(tid,answers);return {"ok":True,"correct":normalize(answers[key])==normalize(q["answer"])}
+@app.post("/api/submit")
+async def submit_api(p:dict):
     tid=telegram_user(p.get("initData",""));u=get_user(tid) if tid else None
     if not u or not u["code_ok"]:return {"ok":False,"error":"not_authorized"}
-    if not u["started_at"]:return {"ok":False,"error":"not_started"}
+    if u["submitted"]:return {"ok":False,"error":"already_submitted"}
     if not open_now() or expired(u):await discard_user(tid);return {"ok":False,"error":"test_closed"}
-    if u["submitted"]:return {"ok":True,"score":u["score"],"grade":u["grade"]}
-    answers=json.loads(u["answers_json"] or "{}");record_stats(answers);score=weighted_score(answers);grade=grade_for(score);finish_user(tid,score,grade,datetime.now(TZ).isoformat(),answers);return {"ok":True,"score":score,"grade":grade,"full_name":u["full_name"] or ""}
-def admin_ok(r:Request):return bool(os.getenv("ADMIN_KEY")) and r.headers.get("X-Admin-Key")==os.getenv("ADMIN_KEY")
-@app.post("/admin/settings")
-async def admin_settings_api(p:dict,r:Request):
-    if not admin_ok(r):return {"ok":False,"error":"admin key noto‘g‘ri"}
-    for k,key in (("start","test_start"),("end","test_end"),("code","access_code")):
-        if p.get(k):set_setting(key,p[k])
-    if p.get("mode") in ("auto","open","closed"):set_setting("test_mode",p["mode"])
-    return {"ok":True,"test":times(),"mode":test_mode()}
-@app.post("/admin/questions")
-async def admin_questions_api(p:dict,r:Request):
-    if not admin_ok(r):return {"ok":False,"error":"admin key noto‘g‘ri"}
-    items=p if isinstance(p,list) else p.get("questions",[])
-    if not items or len(items)>100:return {"ok":False,"error":"1–100 ta savol bo‘lishi kerak"}
-    rows=[(int(x.get("id",i)),str(x.get("question","")),json.dumps(x.get("options",[]),ensure_ascii=False),str(x.get("answer","")),str(x.get("kind","choice")),str(x.get("group_id","")),str(x.get("image_url",""))) for i,x in enumerate(items,1)];replace_questions(rows);return {"ok":True,"count":len(active_questions())}
-@app.get("/admin/users")
-async def admin_users_api(r:Request):
-    if not admin_ok(r):return {"ok":False,"error":"admin key noto‘g‘ri"}
-    return {"ok":True,"users":[dict(x) for x in all_registered_users()]}
-@app.post("/admin/pdf")
-async def admin_pdf(r:Request):
-    if not admin_ok(r):return {"ok":False,"error":"admin key noto‘g‘ri"}
-    path="/tmp/nur_results.pdf";make_pdf(path);await bot.send_document(ADMIN,document=FSInputFile(path));return {"ok":True}
-@app.post("/admin/broadcast")
-async def broadcast(p:dict,r:Request):
-    if not admin_ok(r):return {"ok":False,"error":"admin key noto‘g‘ri"}
-    txt=str(p.get("text","")).strip();sent=failed=0
-    for u in all_registered_users():
-        try:await bot.send_message(u["telegram_id"],txt);sent+=1;await asyncio.sleep(.035)
-        except Exception:failed+=1
-    return {"ok":True,"sent":sent,"failed":failed}
-async def auto_finalize():
+    answers=json.loads(u["answers_json"] or "{}");qs=active_questions();correct=sum(1 for q in qs if normalize(answers.get(str(q["id"]),""))==normalize(q["answer"]));score=round(correct/len(qs)*100,2) if qs else 0;grade=grade_for(score);update_user(tid,score=score,grade=grade,submitted=1,finished_at=datetime.now(TZ).isoformat());return {"ok":True,"score":score,"grade":grade,"full_name":u["full_name"] or ""}
+@app.post("/api/admin/questions")
+async def api_admin_questions(p:dict):
+    if p.get("key")!=os.getenv("ADMIN_API_KEY",""):return JSONResponse({"ok":False},status_code=403)
+    return {"ok":True,"questions":[dict(q) for q in all_questions()]}
+
+@app.get("/",include_in_schema=False)
+async def root():return {"ok":True,"service":"nur-oqiw","health":"/health"}
+@app.get("/api/ping")
+def ping():return {"ok":True}
+async def main():
+    await bot.delete_webhook(drop_pending_updates=False)
+    logger.info("Bot starting — polling")
+    asyncio.create_task(cleanup_loop())
+    await dp.start_polling(bot)
+if __name__=="__main__":asyncio.run(main())
+async def cleanup_loop():
     while True:
         try:
+            await asyncio.sleep(10)
             for u in all_registered_users():
-                if expired(u):await finalize_user(u["telegram_id"])
-            now=datetime.now(TZ);_,end=times();key=f"pdf_sent_{now.date().isoformat()}"
-            if now.time()>=time.fromisoformat(end) and not get_setting(key,"") and any(u["submitted"] for u in all_registered_users()):
-                path="/tmp/nur_results.pdf";make_pdf(path);await bot.send_document(ADMIN,document=FSInputFile(path));set_setting(key,"1")
-        except Exception:logger.exception("auto_finalize")
-        await asyncio.sleep(10)
-WEBHOOK_BASE=os.getenv("WEBHOOK_BASE_URL","https://nur-oqiw.onrender.com").rstrip("/");WEBHOOK_PATH="/telegram/webhook";WEBHOOK_SECRET=os.getenv("WEBHOOK_SECRET") or hashlib.sha256(TOKEN.encode()).hexdigest()
-async def process_update(update:Update):
-    try:
-        # A single slow Telegram/API/database operation must never block a user update for a minute.
-        await asyncio.wait_for(dp.feed_update(bot,update), timeout=15)
-    except asyncio.TimeoutError:
-        logger.error("Telegram update timed out after 15 seconds")
-    except Exception:logger.exception("Telegram update failed")
-@app.post(WEBHOOK_PATH)
-async def telegram_webhook(request:Request):
-    if WEBHOOK_SECRET and not hmac.compare_digest(request.headers.get("X-Telegram-Bot-Api-Secret-Token",""),WEBHOOK_SECRET):return JSONResponse({"ok":False},status_code=403)
-    try:
-        update=Update.model_validate(await request.json());asyncio.create_task(process_update(update));return {"ok":True}
-    except Exception:logger.exception("webhook");return JSONResponse({"ok":False},status_code=400)
-async def run():
-    if not TOKEN:raise RuntimeError("BOT_TOKEN missing")
-    await bot.set_webhook(url=WEBHOOK_BASE+WEBHOOK_PATH,secret_token=WEBHOOK_SECRET,drop_pending_updates=True,allowed_updates=dp.resolve_used_update_types())
-    server=uvicorn.Server(uvicorn.Config(app,host="0.0.0.0",port=PORT,log_level="info"));await asyncio.gather(server.serve(),auto_finalize())
-if __name__=="__main__":asyncio.run(run())
+                if u["started_at"] and not u["submitted"] and expired(u):await finalize_user(u["telegram_id"])
+        except Exception as e:logger.exception("cleanup_loop: %s",e)
