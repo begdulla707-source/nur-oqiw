@@ -140,7 +140,7 @@ def make_pdf(path):
 
 @dp.message(Command("start"))
 async def start(m:Message):
-    ensure_user(m.from_user.id)
+    u=ensure_user(m.from_user.id)
     if m.from_user.id==ADMIN:
         update_user(ADMIN,state="admin"); await m.answer("NUR O‘QIW ORAYI\n\nAdmin boshqaruv paneli.",reply_markup=admin_kb()); return
     if u["code_ok"] and u["full_name"] and u["phone"]:
