@@ -31,7 +31,7 @@ app.add_middleware(CORSMiddleware,allow_origins=WEB_ORIGINS,allow_credentials=Tr
 
 # Register profile/tariff handlers before the project's catch-all message handler.
 # The module only consumes its own exact buttons/callbacks and leaves all other states to main.py.
-from .profile_features import register as register_profile_features
+from .profile_features import register as register_profile_features, user_menu, admin_tariff_list
 register_profile_features(dp, bot, WEBAPP)
 
 def setting_bool(key,default=False): return str(get_setting(key,"1" if default else "0")).lower() in ("1","true","yes","on")
@@ -143,6 +143,10 @@ async def start(m:Message):
     ensure_user(m.from_user.id)
     if m.from_user.id==ADMIN:
         update_user(ADMIN,state="admin"); await m.answer("NUR O‘QIW ORAYI\n\nAdmin boshqaruv paneli.",reply_markup=admin_kb()); return
+    if u["code_ok"] and u["full_name"] and u["phone"]:
+        update_user(m.from_user.id,state="ready")
+        await m.answer("NUR O‘QIW ORAYI\n\nXush kelibsiz! Profil va tarif bo‘limlaridan foydalanishingiz mumkin.",reply_markup=user_menu())
+        return
     if not await subscribed(m.from_user.id):
         update_user(m.from_user.id,state="subscribe",code_ok=0); await m.answer("NUR O‘QIW ORAYI — Milliy sertifikat boti.\n\nTestga kirishdan oldin majburiy kanallarga obuna bo‘ling.",reply_markup=sub_kb()); return
     update_user(m.from_user.id,state="name",code_ok=0); await m.answer("📝 Ro‘yxatdan o‘tish\n\n👤 Ism, Familiya kiriting:",reply_markup=ReplyKeyboardRemove())
@@ -166,6 +170,8 @@ async def text_handler(m:Message):
     if not m.text:return
     u=ensure_user(m.from_user.id); st=u["state"] or "code"; text=m.text.strip()
     if m.from_user.id==ADMIN:
+        if text=="Tariflar":
+            await m.answer("TARIFLAR BOSHQARUVI\n\nBarcha /start bosgan userlar:",reply_markup=admin_tariff_list()); return
         if text=="Test sozlamalari":
             s,e=times(); await m.answer(f"TEST SOZLAMALARI\n\nBoshlanish: {s}\nTugash: {e}\nKod: {code_value()}\nRejim: {test_mode()}",reply_markup=settings_kb()); return
         if text=="Ishtirokchilar":
