@@ -165,7 +165,7 @@ async def contact(m:Message):
     phone=m.contact.phone_number; upsert_user(m.from_user.id,u["full_name"],phone); update_user(m.from_user.id,state="code",code_ok=0)
     await m.answer(f"✅ Xush kelibsiz!\n\n👤 {u['full_name'] or '—'}\n📱 {phone}\n\nTelegram akkauntingiz bog‘landi!\n\n🔐 Testga kirish kodini kiriting:",reply_markup=ReplyKeyboardRemove())
 
-@dp.message()
+@dp.message(F.text & ~F.text.in_({"Profilim","Tariflar","Testni boshlash","Mening natijam","Userlar ro‘yxati","Yordam"}))
 async def text_handler(m:Message):
     if not m.text:return
     u=ensure_user(m.from_user.id); st=u["state"] or "code"; text=m.text.strip()
