@@ -1,0 +1,31 @@
+name: Fix aiogram SkipHandler import
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replace invalid import
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('bot/profile_features.py')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('from aiogram.exceptions import SkipHandler','from aiogram.dispatcher.event.bases import SkipHandler')
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bot/profile_features.py
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Fix SkipHandler import for aiogram 3.31'
+          git push
