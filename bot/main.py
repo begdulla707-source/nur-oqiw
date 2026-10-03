@@ -205,8 +205,7 @@ async def text_handler(m:Message):
         if not await subscribed(m.from_user.id):update_user(m.from_user.id,state="subscribe",code_ok=1);await m.answer("Avval majburiy kanallarga obuna bo‘ling.",reply_markup=sub_kb());return
         u=get_user(m.from_user.id)
         if not u or not u["full_name"] or not u["phone"]:update_user(m.from_user.id,state="name",code_ok=0);await m.answer("Avval ism, familiya va telefon raqamingizni kiriting.");return
-        update_user(m.from_user.id,state="ready",code_ok=1);await m.answer("Kod qabul qilindi. Test ochiq — kirishingiz mumkin.",reply_markup=web_kb())
-        return
+        update_user(m.from_user.id,state="ready",code_ok=1);await m.answer("Kod qabul qilindi. Test ochiq — kirishingiz mumkin.",reply_markup=web_kb());return
     if st=="subscribe":await m.answer("Barcha majburiy kanallarga obuna bo‘ling va tekshirish tugmasini bosing.",reply_markup=sub_kb());return
     if st=="name":
         if len(text)<3:await m.answer("Ism va familiyangizni to‘liqroq kiriting.");return
@@ -229,3 +228,231 @@ async def admin_stats(q:CallbackQuery):
 @dp.callback_query(F.data=="monitor_refresh")
 async def monitor_refresh(q:CallbackQuery):
     if q.from_user.id!=ADMIN:return
+    try:await q.message.edit_text(await monitor_message(),reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Yangilash",callback_data="monitor_refresh")],[InlineKeyboardButton(text="Orqaga",callback_data="admin_home")]]))
+    except Exception as e:
+        if "not modified" not in str(e).lower():raise
+    await q.answer()
+async def monitor_live_loop(q):
+    last=""
+    for _ in range(12):
+        body=await monitor_message()
+        if body!=last:
+            try:await q.message.edit_text(body,reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Yangilash",callback_data="monitor_refresh")],[InlineKeyboardButton(text="Orqaga",callback_data="admin_home")]]))
+            except Exception:pass
+            last=body
+        await asyncio.sleep(5)
+@dp.callback_query(F.data=="monitor_live")
+async def monitor_live(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    await q.answer("Jonli monitoring boshlandi");await monitor_live_loop(q)
+@dp.callback_query(F.data=="set_start")
+async def cb_set_start(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    update_user(ADMIN,state="admin_start");await q.message.edit_text("Boshlanish vaqtini yozing. Masalan: 08:30");await q.answer()
+@dp.callback_query(F.data=="set_end")
+async def cb_set_end(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    update_user(ADMIN,state="admin_end");await q.message.edit_text("Tugash vaqtini yozing. Masalan: 09:30");await q.answer()
+@dp.callback_query(F.data=="set_code")
+async def cb_set_code(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    update_user(ADMIN,state="admin_code");await q.message.edit_text("Yangi kirish kodini yozing:");await q.answer()
+@dp.callback_query(F.data=="mode_open")
+async def cb_open(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    set_setting("test_mode","open");await q.message.edit_text("Test ochiq.",reply_markup=settings_kb());await q.answer()
+@dp.callback_query(F.data=="mode_auto")
+async def cb_auto(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    set_setting("test_mode","auto");await q.message.edit_text("Avto rejim yoqildi.",reply_markup=settings_kb());await q.answer()
+@dp.callback_query(F.data=="mode_closed")
+async def cb_closed(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    set_setting("test_mode","closed")
+    for u in all_registered_users():
+        if u["started_at"] and not u["submitted"]:await discard_user(u["telegram_id"],"Admin testni yopdi.")
+    await q.message.edit_text("Test yopildi. Tugallanmagan urinishlar hisoblanmadi.",reply_markup=settings_kb());await q.answer()
+@dp.callback_query(F.data=="test_status")
+async def cb_status(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    s,e=times();await q.message.edit_text(f"TEST HOLATI\n\n{'OCHIQ' if open_now() else 'YOPIQ'}\nRejim: {test_mode()}\nVaqt: {s}–{e}\nFaol: {sum(user_open(u) for u in all_registered_users())}",reply_markup=settings_kb());await q.answer()
+@dp.callback_query(F.data=="admin_questions")
+async def admin_questions(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    await q.message.edit_text(f"SAVOLLAR\n\nFaol: {len(active_questions())}",reply_markup=question_menu_kb());await q.answer()
+@dp.callback_query(F.data=="q_pick")
+async def q_pick(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    await q.message.edit_text("Savolni tanlang:",reply_markup=question_picker());await q.answer()
+@dp.callback_query(F.data.startswith("qpage_"))
+async def q_page(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    await q.message.edit_reply_markup(reply_markup=question_picker(int(q.data.split("_")[1])));await q.answer()
+@dp.callback_query(F.data.startswith("qsel_"))
+async def qsel(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    qid=int(q.data.split("_")[1]);row=get_question(qid)
+    if not row:return await q.answer("Topilmadi",show_alert=True)
+    opts=json.loads(row["options_json"] or "[]");body=f"{qid}. {row['question']}\n"+("\n".join(f"{chr(65+i)}. {x}" for i,x in enumerate(opts)) if opts else "Yozma savol")+f"\nTo‘g‘ri: {row['answer']}";update_user(ADMIN,state=f"admin_qedit_{qid}")
+    await q.message.edit_text(body+"\n\nYuboring:\nID|savol|1|A|B|C|D",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data="admin_questions")]]));await q.answer()
+@dp.callback_query(F.data=="q_add")
+async def qadd(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    update_user(ADMIN,state="admin_qadd");await q.message.edit_text("Choice: ID|savol|1|A|B|C|D\nYozma: ID|savol|written|javob");await q.answer()
+@dp.callback_query(F.data=="q_delete")
+async def qdelete(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    update_user(ADMIN,state="admin_qdelete");await q.message.edit_text("Savol raqamini yozing.");await q.answer()
+@dp.callback_query(F.data=="q_count")
+async def qcount(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    update_user(ADMIN,state="admin_qcount");await q.message.edit_text(f"Hozir {len(active_questions())} ta. Yangi sonni yozing.");await q.answer()
+@dp.callback_query(F.data=="q_list")
+async def qlist(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    text="BARCHA SAVOLLAR\n\n"+"\n".join(f"{x['id']}. {x['question'][:100]}" for x in active_questions());await q.message.edit_text(text[:3900]);await q.answer()
+@dp.callback_query(F.data=="q_format")
+async def qformat(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    await q.message.edit_text("Variantli: ID|savol|1|A|B|C|D\nYozma: ID|savol|written|javob\nRasm: ID|savol|1|A|B|C|D|group|image_url");await q.answer()
+@dp.callback_query(F.data=="sub_on")
+async def sub_on(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    if not sub_channels():return await q.answer("Avval kanal qo‘shing.",show_alert=True)
+    set_setting("subscription_enabled","1");await q.message.edit_text("Majburiy obuna YOQILDI.",reply_markup=sub_admin_kb());await q.answer()
+@dp.callback_query(F.data=="sub_off")
+async def sub_off(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    set_setting("subscription_enabled","0");await q.message.edit_text("Majburiy obuna O‘CHIRILDI.",reply_markup=sub_admin_kb());await q.answer()
+@dp.callback_query(F.data=="sub_add")
+async def sub_add(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    update_user(ADMIN,state="admin_sub_add");await q.message.edit_text("Kanal username yoki linkini yuboring.\nMasalan: @kanal_nomi");await q.answer()
+@dp.callback_query(F.data=="sub_delete")
+async def sub_delete(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    update_user(ADMIN,state="admin_sub_delete");chans=sub_channels();await q.message.edit_text("O‘chirish uchun raqam:\n\n"+"\n".join(f"{i}. {c}" for i,c in enumerate(chans,1)) if chans else "Kanal qo‘shilmagan.");await q.answer()
+@dp.callback_query(F.data=="sub_edit")
+async def sub_edit(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    update_user(ADMIN,state="admin_sub_edit");await q.message.edit_text("Format: 1|@yangi_kanal");await q.answer()
+@dp.callback_query(F.data=="sub_list")
+async def sub_list(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    chans=sub_channels();body=f"Holat: {'YOQILGAN' if sub_required() else 'O‘CHIRILGAN'}\n\n"+"\n".join(f"{i}. {c}" for i,c in enumerate(chans,1)) if chans else "Kanal qo‘shilmagan.";await q.message.edit_text(body,reply_markup=sub_admin_kb());await q.answer()
+@dp.callback_query(F.data.startswith("adm_user_"))
+async def adm_user(q:CallbackQuery):
+    if q.from_user.id!=ADMIN:return
+    tid=int(q.data.split("_")[-1]);u=get_user(tid)
+    if not u:return
+    await q.message.edit_text(f"ISHTIROKCHI\n\nIsm: {u['full_name'] or '—'}\nTelefon: {u['phone'] or '—'}\nID: {tid}\nBall: {float(u['score'] or 0):.2f}\nBaho: {u['grade'] or '—'}\nJavoblar: {progress_text(u)}\nHolat: {'Yakunlangan' if u['submitted'] else 'Faol' if user_open(u) else 'Kutmoqda'}",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data="admin_home")]]));await q.answer()
+
+async def monitor_message():
+    users=all_registered_users();active=[u for u in users if user_open(u)];s,e=times();lines=["REAL-TIME MONITOR","",f"Test: {'OCHIQ' if open_now() else 'YOPIQ'} · {s}–{e}",f"Ro‘yxatdan o‘tgan: {len(users)} · Faol: {len(active)}",""]
+    lines += [f"{i}. {u['full_name'] or '—'} · {progress_text(u)}" for i,u in enumerate(active[:40],1)]
+    if not active:lines.append("Hozir faol qatnashchi yo‘q.")
+    return "\n".join(lines)
+async def stats_text():
+    users=all_registered_users();fin=[u for u in users if u["submitted"]];act=[u for u in users if user_open(u)];avg=sum(float(u["score"] or 0) for u in fin)/len(fin) if fin else 0
+    return f"STATISTIKA\n\nRo‘yxatdan o‘tgan: {len(users)}\nTestni yakunlagan: {len(fin)}\nFaol: {len(act)}\nO‘rtacha ball: {avg:.2f}"
+def telegram_user(init_data):
+    try:
+        data=dict(parse_qsl(init_data or "",keep_blank_values=True));received=data.pop("hash",None);auth=int(data.get("auth_date","0"));user=json.loads(data.get("user","{}"));tid=int(user.get("id"));check="\n".join(k+"="+data[k] for k in sorted(data));secret=hmac.new(b"WebAppData",TOKEN.encode(),hashlib.sha256).digest();calc=hmac.new(secret,check.encode(),hashlib.sha256).hexdigest();return tid if received and hmac.compare_digest(calc,received) and datetime.now(timezone.utc).timestamp()-auth<=86400 else None
+    except Exception:return None
+@app.middleware("http")
+async def abuse_guard(request:Request,call_next):
+    if request.url.path.startswith("/api/"):
+        ip=request.client.host if request.client else "unknown";now=datetime.now(timezone.utc).timestamp();q=RATE_BUCKET[ip]
+        while q and now-q[0]>RATE_WINDOW:q.popleft()
+        if len(q)>=RATE_LIMIT:return JSONResponse({"ok":False,"error":"rate_limited"},status_code=429,headers={"Retry-After":"60"})
+        q.append(now)
+    return await call_next(request)
+@app.get("/health")
+def health():return {"ok":True,"test":times(),"mode":test_mode(),"questions":len(active_questions()),"subscription_enabled":sub_required()}
+@app.get("/api/state")
+async def api_state(request:Request):
+    tid=telegram_user(request.query_params.get("initData",""));u=get_user(tid) if tid else None;s,e=times()
+    if not u or not u["code_ok"]:return JSONResponse({"ok":False,"error":"not_authorized"},status_code=401)
+    if u["submitted"]:return {"ok":False,"error":"already_submitted","score":u["score"],"grade":u["grade"],"full_name":u["full_name"] or ""}
+    if not open_now() and not u["started_at"]:return {"ok":False,"error":"test_closed","test_open":False,"start":s,"end":e,"mode":test_mode()}
+    if u["started_at"] and expired(u):await discard_user(tid);return {"ok":False,"error":"test_closed","test_open":False,"start":s,"end":e}
+    if not u["started_at"]:update_user(tid,started_at=datetime.now(TZ).isoformat());u=get_user(tid)
+    st=datetime.fromisoformat(u["started_at"]);close=datetime.combine(st.date(),time.fromisoformat(e),tzinfo=TZ);ends=min(st+timedelta(hours=1),close)
+    return {"ok":True,"full_name":u["full_name"] or "","answers":json.loads(u["answers_json"] or "{}"),"ends_at":ends.isoformat(),"started_at":u["started_at"],"total_questions":len(active_questions()),"test_open":True,"start":s,"end":e,"mode":test_mode()}
+@app.get("/api/questions")
+def questions():return [{"id":q["id"],"question":q["question"],"options":json.loads(q["options_json"] or "[]"),"kind":q["kind"],"group_id":q["group_id"],"image_url":q["image_url"]} for q in active_questions()]
+@app.post("/api/answer")
+async def answer_api(p:dict):
+    tid=telegram_user(p.get("initData",""));u=get_user(tid) if tid else None
+    if not u or not u["code_ok"] or u["submitted"]:return {"ok":False,"error":"not_authorized"}
+    if not open_now() or expired(u):await discard_user(tid);return {"ok":False,"error":"test_closed"}
+    q=get_question(p.get("question_id"));
+    if not q:return {"ok":False,"error":"question_not_found"}
+    answers=json.loads(u["answers_json"] or "{}");key=str(q["id"])
+    if key in answers:return {"ok":False,"error":"answer_locked","correct":normalize(answers[key])==normalize(q["answer"]),"saved_answer":answers[key]}
+    value=str(p.get("answer","")).strip()
+    if not value:return {"ok":False,"error":"empty_answer"}
+    answers[key]=value;save_answers(tid,answers);return {"ok":True,"locked":True,"correct":bool(q["answer"]) and normalize(value)==normalize(q["answer"]),"saved_answer":value}
+@app.post("/api/finish")
+async def finish_api(p:dict):
+    tid=telegram_user(p.get("initData",""));u=get_user(tid) if tid else None
+    if not u or not u["code_ok"]:return {"ok":False,"error":"not_authorized"}
+    if not u["started_at"]:return {"ok":False,"error":"not_started"}
+    if not open_now() or expired(u):await discard_user(tid);return {"ok":False,"error":"test_closed"}
+    if u["submitted"]:return {"ok":True,"score":u["score"],"grade":u["grade"]}
+    answers=json.loads(u["answers_json"] or "{}");record_stats(answers);score=weighted_score(answers);grade=grade_for(score);finish_user(tid,score,grade,datetime.now(TZ).isoformat(),answers);return {"ok":True,"score":score,"grade":grade,"full_name":u["full_name"] or ""}
+def admin_ok(r:Request):return bool(os.getenv("ADMIN_KEY")) and r.headers.get("X-Admin-Key")==os.getenv("ADMIN_KEY")
+@app.post("/admin/settings")
+async def admin_settings_api(p:dict,r:Request):
+    if not admin_ok(r):return {"ok":False,"error":"admin key noto‘g‘ri"}
+    for k,key in (("start","test_start"),("end","test_end"),("code","access_code")):
+        if p.get(k):set_setting(key,p[k])
+    if p.get("mode") in ("auto","open","closed"):set_setting("test_mode",p["mode"])
+    return {"ok":True,"test":times(),"mode":test_mode()}
+@app.post("/admin/questions")
+async def admin_questions_api(p:dict,r:Request):
+    if not admin_ok(r):return {"ok":False,"error":"admin key noto‘g‘ri"}
+    items=p if isinstance(p,list) else p.get("questions",[])
+    if not items or len(items)>100:return {"ok":False,"error":"1–100 ta savol bo‘lishi kerak"}
+    rows=[(int(x.get("id",i)),str(x.get("question","")),json.dumps(x.get("options",[]),ensure_ascii=False),str(x.get("answer","")),str(x.get("kind","choice")),str(x.get("group_id","")),str(x.get("image_url",""))) for i,x in enumerate(items,1)];replace_questions(rows);return {"ok":True,"count":len(active_questions())}
+@app.get("/admin/users")
+async def admin_users_api(r:Request):
+    if not admin_ok(r):return {"ok":False,"error":"admin key noto‘g‘ri"}
+    return {"ok":True,"users":[dict(x) for x in all_registered_users()]}
+@app.post("/admin/pdf")
+async def admin_pdf(r:Request):
+    if not admin_ok(r):return {"ok":False,"error":"admin key noto‘g‘ri"}
+    path="/tmp/nur_results.pdf";make_pdf(path);await bot.send_document(ADMIN,document=FSInputFile(path));return {"ok":True}
+@app.post("/admin/broadcast")
+async def broadcast(p:dict,r:Request):
+    if not admin_ok(r):return {"ok":False,"error":"admin key noto‘g‘ri"}
+    txt=str(p.get("text","")).strip();sent=failed=0
+    for u in all_registered_users():
+        try:await bot.send_message(u["telegram_id"],txt);sent+=1;await asyncio.sleep(.035)
+        except Exception:failed+=1
+    return {"ok":True,"sent":sent,"failed":failed}
+async def auto_finalize():
+    while True:
+        try:
+            for u in all_registered_users():
+                if expired(u):await finalize_user(u["telegram_id"])
+            now=datetime.now(TZ);_,end=times();key=f"pdf_sent_{now.date().isoformat()}"
+            if now.time()>=time.fromisoformat(end) and not get_setting(key,"") and any(u["submitted"] for u in all_registered_users()):
+                path="/tmp/nur_results.pdf";make_pdf(path);await bot.send_document(ADMIN,document=FSInputFile(path));set_setting(key,"1")
+        except Exception:logger.exception("auto_finalize")
+        await asyncio.sleep(10)
+WEBHOOK_BASE=os.getenv("WEBHOOK_BASE_URL","https://nur-oqiw.onrender.com").rstrip("/");WEBHOOK_PATH="/telegram/webhook";WEBHOOK_SECRET=os.getenv("WEBHOOK_SECRET") or hashlib.sha256(TOKEN.encode()).hexdigest()
+async def process_update(update:Update):
+    try:await dp.feed_update(bot,update)
+    except Exception:logger.exception("Telegram update failed")
+@app.post(WEBHOOK_PATH)
+async def telegram_webhook(request:Request):
+    if WEBHOOK_SECRET and not hmac.compare_digest(request.headers.get("X-Telegram-Bot-Api-Secret-Token",""),WEBHOOK_SECRET):return JSONResponse({"ok":False},status_code=403)
+    try:
+        update=Update.model_validate(await request.json());asyncio.create_task(process_update(update));return {"ok":True}
+    except Exception:logger.exception("webhook");return JSONResponse({"ok":False},status_code=400)
+async def run():
+    if not TOKEN:raise RuntimeError("BOT_TOKEN missing")
+    await bot.set_webhook(url=WEBHOOK_BASE+WEBHOOK_PATH,secret_token=WEBHOOK_SECRET,drop_pending_updates=True,allowed_updates=dp.resolve_used_update_types())
+    server=uvicorn.Server(uvicorn.Config(app,host="0.0.0.0",port=PORT,log_level="info"));await asyncio.gather(server.serve(),auto_finalize())
+if __name__=="__main__":asyncio.run(run())
