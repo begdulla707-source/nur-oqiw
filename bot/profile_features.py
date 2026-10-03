@@ -1,7 +1,7 @@
 import os
 from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.exceptions import SkipHandler
+from aiogram.dispatcher.event.bases import SkipHandler
 from .db import ensure_user, get_user, all_registered_users, is_premium, set_tier, update_user
 
 ADMIN = int(os.getenv("ADMIN_CHAT_ID", "8379731556"))
