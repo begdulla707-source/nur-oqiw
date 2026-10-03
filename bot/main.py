@@ -401,16 +401,37 @@ async def api_admin_questions(p:dict):
 async def root():return {"ok":True,"service":"nur-oqiw","health":"/health"}
 @app.get("/api/ping")
 def ping():return {"ok":True}
-async def main():
-    await bot.delete_webhook(drop_pending_updates=False)
-    logger.info("Bot starting — polling")
-    asyncio.create_task(cleanup_loop())
-    await dp.start_polling(bot)
-if __name__=="__main__":asyncio.run(main())
 async def cleanup_loop():
     while True:
         try:
             await asyncio.sleep(10)
             for u in all_registered_users():
-                if u["started_at"] and not u["submitted"] and expired(u):await finalize_user(u["telegram_id"])
-        except Exception as e:logger.exception("cleanup_loop: %s",e)
+                if u["started_at"] and not u["submitted"]:
+                    if expired(u):
+                        await finalize_user(u["telegram_id"])
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.exception("cleanup_loop: %s", e)
+
+async def main():
+    await bot.delete_webhook(drop_pending_updates=False)
+    logger.info("Bot starting — polling")
+    cleanup_task = asyncio.create_task(cleanup_loop())
+    server = uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info"))
+    polling_task = asyncio.create_task(dp.start_polling(bot))
+    server_task = asyncio.create_task(server.serve())
+    try:
+        await asyncio.gather(polling_task, server_task)
+    finally:
+        for task in (polling_task, server_task, cleanup_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(polling_task, server_task, cleanup_task, return_exceptions=True)
+        try:
+            await bot.session.close()
+        except Exception:
+            pass
+
+if __name__=="__main__":
+    asyncio.run(main())
