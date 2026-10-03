@@ -214,6 +214,7 @@ def seed_defaults():init();ensure_schema();seed()
 # This router is installed before the project's catch-all message handler. It therefore
 # adds the new profile/tariff system without replacing the existing test/admin handlers.
 from aiogram import Router, F as _F
+from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.filters import Command as _Command
 from aiogram.types import ReplyKeyboardMarkup as _ReplyKeyboardMarkup, KeyboardButton as _KeyboardButton, InlineKeyboardMarkup as _InlineKeyboardMarkup, InlineKeyboardButton as _InlineKeyboardButton, WebAppInfo as _WebAppInfo
 _premium_router = Router(name="profile_tariff_router")
@@ -372,7 +373,7 @@ async def _premium_callback(query, **data):
             rows.append([_InlineKeyboardButton(text=f"{i}. {mark} {(x['full_name'] or 'Ismsiz')[:22]} — {x['telegram_id']}",callback_data=f"tariff_user_{x['telegram_id']}")])
         rows.append([_InlineKeyboardButton(text="Admin panel",callback_data="admin_tariff_back")])
         await query.message.edit_text("TARIFLAR — USERLAR\n\nUserni tanlang:",reply_markup=_InlineKeyboardMarkup(inline_keyboard=rows)); await query.answer(); return
-    await data["handler"](query, data)
+    raise SkipHandler
 
 # Install this router before the existing project handlers. The original handlers remain intact.
 try:
