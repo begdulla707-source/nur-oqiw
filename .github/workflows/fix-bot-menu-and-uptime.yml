@@ -1,0 +1,46 @@
+name: Fix bot menu and responsiveness
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch bot UI and safe Telegram edits
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          p=Path('bot/db.py')
+          s=p.read_text(encoding='utf-8')
+          old='''    return _ReplyKeyboardMarkup(keyboard=[\n        [_KeyboardButton(text="Profilim"), _KeyboardButton(text="Testni boshlash")],\n        [_KeyboardButton(text="Userlar ro‘yxati"), _KeyboardButton(text="Mening natijam")],\n        [_KeyboardButton(text="Yordam")]\n    ], resize_keyboard=True, is_persistent=True)'''
+          new='''    return _ReplyKeyboardMarkup(keyboard=[\n        [_KeyboardButton(text="Testni boshlash"), _KeyboardButton(text="Profilim")],\n        [_KeyboardButton(text="Tarif sotib olish"), _KeyboardButton(text="Userlar ro‘yxati")],\n        [_KeyboardButton(text="Mening natijam"), _KeyboardButton(text="Yordam")]\n    ], resize_keyboard=True, is_persistent=True)'''
+          if old in s: s=s.replace(old,new,1)
+          old2='''    if text=="Profilim" and u["code_ok"]:\n        await message.answer(_profile_text(u),reply_markup=_profile_kb())\n        return'''
+          new2='''    if text=="Profilim" and u["code_ok"]:\n        await message.answer(_profile_text(u),reply_markup=_profile_kb())\n        return\n    if text=="Tarif sotib olish" and u["code_ok"]:\n        await message.answer("TARIFLAR\\n\\n1 — Default\\n• Oddiy user tarifi\\n• Reklamalar mavjud\\n• 💠 Premium nishon yo‘q\\n• Boshqa userlarga Telegram orqali yozish yopiq\\n\\n2 — Premium 💠\\n• Reklamalarsiz\\n• 💠 Premium nishon\\n• Userlar ro‘yxatidan Telegram profiliga yozish\\n• Kengaytirilgan shaxsiy statistika\\n\\nPremium tarifni olish uchun admin bilan bog‘laning.",reply_markup=_InlineKeyboardMarkup(inline_keyboard=[[_InlineKeyboardButton(text="Premium 💠 olish",callback_data="buy_premium")],[_InlineKeyboardButton(text="Tariflar haqida",callback_data="profile_tariffs")]]))\n        return'''
+          if old2 in s: s=s.replace(old2,new2,1)
+          old3='''    if d=="profile_tariffs":'''
+          new3='''    if d=="buy_premium":\n        await query.message.answer(f"Premium 💠 tarifini olish uchun admin bilan bog‘laning.",reply_markup=_InlineKeyboardMarkup(inline_keyboard=[[_InlineKeyboardButton(text="Admin bilan bog‘lanish",url=f"tg://user?id={ADMIN_ID}")],[ _InlineKeyboardButton(text="Tariflar haqida",callback_data="profile_tariffs")]]))\n        await query.answer("Premium olish so‘rovi tayyor")\n        return\n    if d=="profile_tariffs":'''
+          if old3 in s: s=s.replace(old3,new3,1)
+          p.write_text(s,encoding='utf-8')
+
+          p=Path('bot/main.py')
+          s=p.read_text(encoding='utf-8')
+          old='''[KeyboardButton(text="Majburiy obuna"),KeyboardButton(text="PDF natijalar")]],resize_keyboard=True)'''
+          new='''[KeyboardButton(text="Majburiy obuna"),KeyboardButton(text="PDF natijalar")],[KeyboardButton(text="Tariflar")]],resize_keyboard=True)'''
+          if old in s: s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+      - name: Commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bot/db.py bot/main.py
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Add tariff purchase button and admin tariff menu'
+          git push
