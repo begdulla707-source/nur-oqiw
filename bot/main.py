@@ -54,7 +54,7 @@ def sub_kb():
     rows=[[InlineKeyboardButton(text=f"KANALGA OBUNA BO‘LISH {i+1}",url=(c if c.startswith("http") else "https://t.me/"+c.lstrip("@")))] for i,c in enumerate(sub_channels())]
     rows.append([InlineKeyboardButton(text="OBUNANI TEKSHIRISH",callback_data="check_sub")]); return InlineKeyboardMarkup(inline_keyboard=rows)
 def admin_kb():
-    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Test sozlamalari"),KeyboardButton(text="Ishtirokchilar")],[KeyboardButton(text="Savollar"),KeyboardButton(text="Statistika")],[KeyboardButton(text="Real-time monitor"),KeyboardButton(text="Bildirishnoma")],[KeyboardButton(text="Majburiy obuna"),KeyboardButton(text="PDF natijalar")]],resize_keyboard=True)
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Test sozlamalari"),KeyboardButton(text="Ishtirokchilar")],[KeyboardButton(text="Savollar"),KeyboardButton(text="Statistika")],[KeyboardButton(text="Real-time monitor"),KeyboardButton(text="Bildirishnoma")],[KeyboardButton(text="Majburiy obuna"),KeyboardButton(text="PDF natijalar")],[KeyboardButton(text="Tariflar")]],resize_keyboard=True)
 def settings_kb():
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Boshlanish vaqti",callback_data="set_start"),InlineKeyboardButton(text="Tugash vaqti",callback_data="set_end")],[InlineKeyboardButton(text="Kirish kodi",callback_data="set_code")],[InlineKeyboardButton(text="Testni OCHISH",callback_data="mode_open"),InlineKeyboardButton(text="Testni YOPISH",callback_data="mode_closed")],[InlineKeyboardButton(text="Avto rejim",callback_data="mode_auto"),InlineKeyboardButton(text="Test holati",callback_data="test_status")],[InlineKeyboardButton(text="Orqaga",callback_data="admin_home")]])
 def sub_admin_kb():

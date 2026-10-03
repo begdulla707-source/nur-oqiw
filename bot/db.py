@@ -224,9 +224,9 @@ _WEBAPP_URL = os.getenv("WEBAPP_URL", "https://nukuspro.uz")
 
 def _user_menu():
     return _ReplyKeyboardMarkup(keyboard=[
-        [_KeyboardButton(text="Profilim"), _KeyboardButton(text="Testni boshlash")],
-        [_KeyboardButton(text="Userlar ro‘yxati"), _KeyboardButton(text="Mening natijam")],
-        [_KeyboardButton(text="Yordam")]
+        [_KeyboardButton(text="Testni boshlash"), _KeyboardButton(text="Profilim")],
+        [_KeyboardButton(text="Tarif sotib olish"), _KeyboardButton(text="Userlar ro‘yxati")],
+        [_KeyboardButton(text="Mening natijam"), _KeyboardButton(text="Yordam")]
     ], resize_keyboard=True, is_persistent=True)
 
 def _admin_menu():
@@ -294,6 +294,9 @@ async def _profile_router_handler(message, bot, data):
     if text=="Profilim" and u["code_ok"]:
         await message.answer(_profile_text(u),reply_markup=_profile_kb())
         return
+    if text=="Tarif sotib olish" and u["code_ok"]:
+        await message.answer("TARIFLAR\n\n1 — Default\n• Oddiy user tarifi\n• Reklamalar mavjud\n• 💠 Premium nishon yo‘q\n• Boshqa userlarga Telegram orqali yozish yopiq\n\n2 — Premium 💠\n• Reklamalarsiz\n• 💠 Premium nishon\n• Userlar ro‘yxatidan Telegram profiliga yozish\n• Kengaytirilgan shaxsiy statistika\n\nPremium tarifni olish uchun admin bilan bog‘laning.",reply_markup=_InlineKeyboardMarkup(inline_keyboard=[[_InlineKeyboardButton(text="Premium 💠 olish",callback_data="buy_premium")],[_InlineKeyboardButton(text="Tariflar haqida",callback_data="profile_tariffs")]]))
+        return
     if text=="Userlar ro‘yxati" and u["code_ok"]:
         await message.answer("USERLAR RO‘YXATI\n\n💠 — Premium tarif.\n\n" + ("Premium tarifda user nomini bosib Telegram profiliga yozish mumkin." if is_premium(tid) else "Default tarifda ro‘yxat ko‘rinadi, lekin boshqa userga o‘tish/yazish yopiq."), reply_markup=_user_list_kb(tid))
         return
@@ -335,6 +338,10 @@ async def _premium_callback(query, **data):
     u=ensure_user(tid)
     if d=="profile_back":
         await query.message.edit_text(f"Profil menyusi: {u['full_name'] or 'Ismsiz'}",reply_markup=_profile_kb()); await query.answer(); return
+    if d=="buy_premium":
+        await query.message.answer(f"Premium 💠 tarifini olish uchun admin bilan bog‘laning.",reply_markup=_InlineKeyboardMarkup(inline_keyboard=[[_InlineKeyboardButton(text="Admin bilan bog‘lanish",url=f"tg://user?id={ADMIN_ID}")],[ _InlineKeyboardButton(text="Tariflar haqida",callback_data="profile_tariffs")]]))
+        await query.answer("Premium olish so‘rovi tayyor")
+        return
     if d=="profile_tariffs":
         await query.message.edit_text("TARIFLAR\n\n1 — Default\n• Oddiy user funksiyalari\n• Reklamalar mavjud\n• Premium nishon yo‘q\n• Userlar ro‘yxati ko‘rinadi, lekin boshqa userga yozish yopiq\n\n2 — Premium 💠\n• Reklamalarsiz\n• 💠 Premium nishon\n• Userlar ro‘yxatidan Telegram profiliga yozish\n• Premium userlarga mo‘ljallangan qo‘shimcha imkoniyatlar\n\nPremium tarifni olish uchun admin bilan bog‘laning.",reply_markup=_tariff_kb()); await query.answer(); return
     if d=="tariff_default_info":
