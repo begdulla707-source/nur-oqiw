@@ -117,10 +117,8 @@ async def telegram_webhook(request:Request):
         update=Update.model_validate(await request.json());asyncio.create_task(dp.feed_update(bot,update));return {'ok':True}
     except Exception as e:logger.exception('webhook: %s',e);return JSONResponse({'ok':False},status_code=400)
 
-# Import the feature router only after main module initialization. This avoids the circular
-# main -> profile_features -> main import that previously crashed Render deployments.
-from .profile_features import register as register_profile_features
-register_profile_features(dp,bot,WEBAPP)
+from .features_v2 import register as register_features
+register_features(__import__(__name__,fromlist=['*']),dp,bot,WEBAPP)
 
 async def main():
     cleanup=asyncio.create_task(cleanup_loop());server=uvicorn.Server(uvicorn.Config(app,host='0.0.0.0',port=PORT,log_level='info'));task=asyncio.create_task(server.serve())
