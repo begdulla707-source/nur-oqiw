@@ -44,7 +44,8 @@ def profile_text(u):
     tier="Premium 💠" if str(u["tier"] or "default")=="premium" else "Default"
     t=get_test(u["test_id"]) if u["test_id"] else None
     a=get_attempt(t["test_id"],u["telegram_id"]) if t else None
-    return f"PROFILIM\n\nIsm-familiya: {u['full_name'] or '—'}\nTelefon: {u['phone'] or '—'}\nTelegram ID: {u['telegram_id']}\nTarif: {tier}\nTest: {t['name'] if t else 'Tanlanmagan'}\nKod: {t['code'] if t else '—'}\nNatija: {f'{float(a["score"] or 0):.2f} · {a["grade"] or "—"}' if a and a["submitted"] else 'Yakunlanmagan'}"
+    result_text=(f"{float(a['score'] or 0):.2f} · {a['grade'] or '—'}" if a and a["submitted"] else "Yakunlanmagan")
+    return f"PROFILIM\n\nIsm-familiya: {u['full_name'] or '—'}\nTelefon: {u['phone'] or '—'}\nTelegram ID: {u['telegram_id']}\nTarif: {tier}\nTest: {t['name'] if t else 'Tanlanmagan'}\nKod: {t['code'] if t else '—'}\nNatija: {result_text}"
 
 def tariff_text():
     return "TARIFLAR\n\nDEFAULT\n• Oddiy test qatnashchisi\n• Asosiy natija va profil\n\nPREMIUM 💠\n• Premium belgi\n• Kengaytirilgan statistika\n• Natijalarni ko‘rish\n\nPremium tarif uchun administratorga murojaat qiling."
