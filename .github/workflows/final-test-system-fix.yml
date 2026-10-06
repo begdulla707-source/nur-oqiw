@@ -1,0 +1,78 @@
+name: Final test system fix
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: ${{ !contains(github.event.head_commit.message, '[final-test-fix]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch files
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('bot/main.py'); s=p.read_text()
+          s=s.replace('from aiogram.filters import Command', 'from aiogram.filters import Command, CommandStart')
+          s=s.replace('load_dotenv(); init(); seed_defaults()', 'load_dotenv(); init(); ensure_schema(); seed()')
+          s=s.replace('WEBAPP=os.getenv("WEBAPP_URL","https://nukuspro.uz")', 'WEBAPP=os.getenv("WEBAPP_URL","https://nur-oqiw.uz")')
+          s=s.replace('WEB_ORIGINS=[x.strip().rstrip("/") for x in os.getenv("WEBAPP_ORIGINS","https://nukuspro.uz,https://www.nukuspro.uz").split(",") if x.strip()]', 'WEB_ORIGINS=[x.strip().rstrip("/") for x in os.getenv("WEBAPP_ORIGINS","https://nur-oqiw.uz,https://www.nur-oqiw.uz,https://nur-oqiw-santizz.vercel.app,https://nur-oqiw-three.vercel.app").split(",") if x.strip()]')
+          s=s.replace('allow_credentials=True,allow_methods=', 'allow_credentials=False,allow_methods=')
+          s=s.replace('@dp.message(Command("start"))', '@dp.message(CommandStart(deep_link=False))')
+          old='phone=m.contact.phone_number;upsert_user(m.from_user.id,u["full_name"],phone);update_user(m.from_user.id,state="code",code_ok=0)'
+          new='phone=m.contact.phone_number;upsert_user(m.from_user.id,u["full_name"],phone);u=get_user(m.from_user.id)\n    if u["test_id"] and get_test(u["test_id"]): update_user(m.from_user.id,state="test_code",code_ok=0)\n    else: update_user(m.from_user.id,state="code",code_ok=0)'
+          s=s.replace(old,new)
+          old2='if st=="code":\n        if text!=code_value():await m.answer("❌ Kod noto‘g‘ri. Qayta kiriting:");return\n        update_user(m.from_user.id,code_ok=1,state="ready");await m.answer("🎉 Ro‘yxatdan o‘tish tugadi!\\n\\nTestga kirishingiz mumkin.",reply_markup=web_kb());return'
+          new2='if st in ("code","test_code"):\n        t=get_test_by_code(text)\n        if not t or (st=="code" and text.casefold()!=code_value().casefold()): await m.answer("Kod noto‘g‘ri. Qayta kiriting:");return\n        update_user(m.from_user.id,code_ok=1,state="ready",test_id=t["test_id"]);ensure_attempt(t["test_id"],m.from_user.id)\n        await m.answer(f"Test tanlandi: {t[\'name\']}\\n\\nTestni boshlashingiz mumkin.",reply_markup=user_menu());return'
+          s=s.replace(old2,new2)
+          p.write_text(s)
+
+          p=Path('app/test/page.js'); s=p.read_text()
+          s=s.replace('function Written({q,answer,onSave,initData})','function Written({q,answer,onSave,initData,code})')
+          s=s.replace('<Written key={q.id} q={q} answer={answers[q.id]} onSave=','<Written key={q.id} q={q} answer={answers[q.id]} code={code} onSave=')
+          p.write_text(s)
+
+          p=Path('bot/profile_features.py'); s=p.read_text()
+          s=s.replace('[InlineKeyboardButton(text="PDF natijalar",callback_data=f"mt_pdf:{tid}")],','[InlineKeyboardButton(text="Natijalar",callback_data=f"mt_results:{tid}")],[InlineKeyboardButton(text="PDF natijalar",callback_data=f"mt_pdf:{tid}")],')
+          if 'F.data.startswith("mt_results:")' not in s:
+            marker='    @r.callback_query(F.data.startswith("mt_pdf:"))'
+            handler='''    @r.callback_query(F.data.startswith("mt_results:"))
+    async def mt_results(q:CallbackQuery):
+        if q.from_user.id!=ADMIN:return
+        tid=q.data.split(":",1)[1];t=get_test(tid);attempts=all_attempts_for_test(tid)
+        lines=[f"{t['name']} — NATIJALAR",""]
+        for i,a in enumerate(attempts,1):
+            status="Yakunlangan" if a["submitted"] else ("Faol" if a["status"]=="active" else "Yakunlanmagan")
+            lines.append(f"{i}. {a['full_name'] or 'Ismsiz'} · {float(a['score'] or 0):.2f} · {a['grade'] or '—'} · {status}")
+        await q.message.edit_text(("\\n".join(lines) if attempts else f"{t['name']}\\n\\nHali qatnashchi yo‘q.")[:3900],reply_markup=_test_kb(tid));await q.answer()
+
+'''
+            s=s.replace(marker,handler+marker)
+          pos=s.find('    @app.post("/api/test/finish")')
+          if pos>=0:
+            end=s.find('\n_register_api()',pos); block=s[pos:end]
+            block=block.replace('if not _test_open(t) or _test_expired(a,t):return {"ok":False,"error":"test_closed"}','expired_now=_test_expired(a,t)\n        if not _test_open(t) and not expired_now:return {"ok":False,"error":"test_closed"}',1)
+            s=s[:pos]+block+s[end:]
+          p.write_text(s)
+
+          p=Path('app/admin/page.js')
+          p.write_text("""'use client';\nimport {useState} from 'react';\nconst API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw.onrender.com';\nexport default function Admin(){const[key,setKey]=useState('');const[data,setData]=useState(null);const[err,setErr]=useState('');async function load(){try{const r=await fetch(API+'/api/admin/tests',{headers:{'X-Admin-Key':key}});const j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'Ruxsat yo‘q');setData(j);setErr('')}catch(e){setErr(e.message)}}return <main style={{maxWidth:900,margin:'40px auto',padding:20,fontFamily:'Arial'}}><h1>NUR O‘QIW ORAYI — ADMIN</h1><p>Testlar va qatnashchilar.</p><div style={{display:'flex',gap:8}}><input value={key} onChange={e=>setKey(e.target.value)} placeholder='Admin API kaliti' style={{flex:1,padding:12,border:'1px solid #ddd',borderRadius:10}}/><button onClick={load} style={{padding:'12px 18px',border:0,borderRadius:10,background:'#111318',color:'#fff'}}>Kirish</button></div>{err&&<p style={{color:'#b42318'}}>{err}</p>}{data?.tests?.map(t=><section key={t.test_id} style={{marginTop:14,padding:16,border:'1px solid #ddd',borderRadius:14}}><b>{t.name}</b><div>Kod: {t.code} · Savollar: {t.questions} · Holat: {t.mode}</div><div>Qatnashchilar: {t.participants}</div></section>)}</main>}""")
+          if '/api/admin/tests' not in s:
+            marker='\n_register_api()'
+            api='''
+    @app.get("/api/admin/tests")
+    async def admin_tests(request):
+        if request.headers.get("X-Admin-Key","")!=os.getenv("ADMIN_API_KEY",""):return JSONResponse({"ok":False,"error":"forbidden"},status_code=403)
+        return {"ok":True,"tests":[{"test_id":t["test_id"],"code":t["code"],"name":t["name"],"mode":t["mode"],"questions":len(questions_for_test(t["test_id"])),"participants":len(all_attempts_for_test(t["test_id"]))} for t in all_tests()]}
+'''
+            s=s.replace(marker,api+marker,1)
+          p.write_text(s)
+
+      - name: Commit
+        run: |
+          git config user.name "nur-oqiw-fix-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bot/main.py bot/profile_features.py app/test/page.js app/admin/page.js
+          git diff --cached --quiet || (git commit -m "[final-test-fix] stabilize bot, mini app, results" && git push)
