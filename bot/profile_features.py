@@ -248,9 +248,10 @@ def register(dp,bot,webapp_url):
     async def mt_key(q:CallbackQuery):
         if q.from_user.id!=ADMIN:return await q.answer("Ruxsat yo‘q",show_alert=True)
         tid=q.data.split(":",1)[1]
+        cq=q
         set_setting("admin_test_id",tid);update_user(ADMIN,state=f"mt_key:{tid}")
-        await q.message.edit_text("TO‘G‘RI JAVOBLAR KALITI\n\nFaqat javob kalitini kiriting.\nFormat: 1-A, 2-C, 3-B, 4-D\n\nBir nechta javobni vergul yoki yangi qatorda yozish mumkin.")
-        await q.answer()
+        await cq.message.edit_text("TO‘G‘RI JAVOBLAR KALITI\n\nFaqat javob kalitini kiriting.\nFormat: 1-A, 2-C, 3-B, 4-D\n\nBir nechta javobni vergul yoki yangi qatorda yozish mumkin.")
+        await cq.answer()
 
     @r.callback_query(F.data.startswith("mt_q:"))
     async def mt_q(q:CallbackQuery):
@@ -314,7 +315,7 @@ def register(dp,bot,webapp_url):
                     upsert_test_question(tid,num,q["question"],opts,answer,q["kind"],q["group_id"],q["image_url"])
                     changed+=1
                 update_user(ADMIN,state="admin")
-                await q.message.answer(f"{changed} ta to‘g‘ri javob saqlandi.",reply_markup=_test_kb(tid))
+                await cq.message.answer(f"{changed} ta to‘g‘ri javob saqlandi.",reply_markup=_test_kb(tid))
             except Exception as e:await m.answer(f"Xato: {e}")
             return
         if st.startswith("mt_addq:"):
