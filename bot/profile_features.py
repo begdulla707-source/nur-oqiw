@@ -59,6 +59,7 @@ def _test_list_kb():
 def _test_kb(tid):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Savollarni boshqarish",callback_data=f"mt_q:{tid}")],
+        [InlineKeyboardButton(text="To‘g‘ri javoblar kaliti",callback_data=f"mt_key:{tid}")],
         [InlineKeyboardButton(text="Yangi savol qo‘shish",callback_data=f"mt_addq:{tid}")],
         [InlineKeyboardButton(text="Test havolasini olish",callback_data=f"mt_link:{tid}")],
         [InlineKeyboardButton(text="TESTNI OCHISH",callback_data=f"mt_open:{tid}"),InlineKeyboardButton(text="YOPISH",callback_data=f"mt_close:{tid}")],
@@ -243,6 +244,14 @@ def register(dp,bot,webapp_url):
     async def mt_addq(q:CallbackQuery):
         if q.from_user.id!=ADMIN:return
         tid=q.data.split(":",1)[1];set_setting("admin_test_id",tid);update_user(ADMIN,state=f"mt_addq:{tid}");await q.message.edit_text("Yangi savol\n\nChoice:\n1|Savol matni|3|A|B|C|D\n\nYozma:\n1|Savol matni|written|to‘g‘ri javob\n\n3 — to‘g‘ri variant (A=1 B=2 C=3 D=4).",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data=f"mt_sel:{tid}")]]));await q.answer()
+    @r.callback_query(F.data.startswith("mt_key:"))
+    async def mt_key(q:CallbackQuery):
+        if q.from_user.id!=ADMIN:return await q.answer("Ruxsat yo‘q",show_alert=True)
+        tid=q.data.split(":",1)[1]
+        set_setting("admin_test_id",tid);update_user(ADMIN,state=f"mt_key:{tid}")
+        await q.message.edit_text("TO‘G‘RI JAVOBLAR KALITI\n\nFaqat javob kalitini kiriting.\nFormat: 1-A, 2-C, 3-B, 4-D\n\nBir nechta javobni vergul yoki yangi qatorda yozish mumkin.")
+        await q.answer()
+
     @r.callback_query(F.data.startswith("mt_q:"))
     async def mt_q(q:CallbackQuery):
         if q.from_user.id!=ADMIN:return
@@ -287,6 +296,25 @@ def register(dp,bot,webapp_url):
                 if get_test_by_code(code):raise ValueError("Bu kod allaqachon mavjud")
                 t=create_test(name,code,start,end,"auto");update_user(ADMIN,state="admin");set_setting("admin_test_id",t["test_id"])
                 await m.answer(f"TEST YARATILDI\n\n{t['name']}\nKod: {t['code']}\nSavollar: 0",reply_markup=_test_kb(t["test_id"]))
+            except Exception as e:await m.answer(f"Xato: {e}")
+            return
+        if st.startswith("mt_key:"):
+            tid=st.split(":",1)[1]
+            try:
+                pairs=[x.strip() for x in re.split(r"[,;\n]+",m.text) if x.strip()]
+                changed=0
+                for pair in pairs:
+                    mm=re.fullmatch(r"(\d+)\s*[-:]\s*([ABCDabcd])",pair)
+                    if not mm:raise ValueError(f"Noto‘g‘ri format: {pair}")
+                    num=int(mm.group(1));letter=mm.group(2).upper();q=get_question_for_test(tid,num)
+                    if not q:raise ValueError(f"{num}-savol topilmadi")
+                    opts=json.loads(q["options_json"] or "[]")
+                    if len(opts)!=4:raise ValueError(f"{num}-savol 4 variantli emas")
+                    answer=opts[ord(letter)-65]
+                    upsert_test_question(tid,num,q["question"],opts,answer,q["kind"],q["group_id"],q["image_url"])
+                    changed+=1
+                update_user(ADMIN,state="admin")
+                await q.message.answer(f"{changed} ta to‘g‘ri javob saqlandi.",reply_markup=_test_kb(tid))
             except Exception as e:await m.answer(f"Xato: {e}")
             return
         if st.startswith("mt_addq:"):
