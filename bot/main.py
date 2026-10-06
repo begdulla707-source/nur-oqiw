@@ -22,8 +22,7 @@ dp=Dispatcher();bot=Bot(TOKEN);app=FastAPI();app.add_middleware(CORSMiddleware,a
 
 def telegram_user(raw):
     try:
-        d=dict(parse_qsl(raw or '',keep_blank_values=True));received=d.pop('hash',None);auth=int(d.get('auth_date','0'));u=json.loads(d.get('user','{}'));tid=int(u['id']);check='\n'.join(k+'='+d[k] for k in sorted(d));secret=hmac.new(b'WebAppData',TOKEN.encode(),hashlib.sha256).digest();calc=hmac.new(secret,check.encode(),hashlib.sha256).hexdigest()
-        return tid if received and hmac.compare_digest(calc,received) and datetime.now(timezone.utc).timestamp()-auth<=86400 else None
+        d=dict(parse_qsl(raw or '',keep_blank_values=True));received=d.pop('hash',None);auth=int(d.get('auth_date','0'));u=json.loads(d.get('user','{}'));tid=int(u['id']);check='\n'.join(k+'='+d[k] for k in sorted(d));secret=hmac.new(b'WebAppData',TOKEN.encode(),hashlib.sha256).digest();calc=hmac.new(secret,check.encode(),hashlib.sha256).hexdigest();return tid if received and hmac.compare_digest(calc,received) and datetime.now(timezone.utc).timestamp()-auth<=86400 else None
     except Exception:return None
 
 def sub_required():return str(get_setting('subscription_required',get_setting('subscription_enabled','0'))).lower() in ('1','true','yes','on')
@@ -47,15 +46,12 @@ def sub_kb():
     rows=[[InlineKeyboardButton(text='KANALGA OBUNA BO‘LISH',url=(c if c.startswith('http') else 'https://t.me/'+c.lstrip('@')))] for c in sub_channels()];rows.append([InlineKeyboardButton(text='OBUNANI TEKSHIRISH',callback_data='check_sub')]);return InlineKeyboardMarkup(inline_keyboard=rows)
 def admin_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test sozlamalari'),KeyboardButton(text='Ishtirokchilar')],[KeyboardButton(text='Savollar'),KeyboardButton(text='Statistika')],[KeyboardButton(text='Real-time monitor'),KeyboardButton(text='Bildirishnoma')],[KeyboardButton(text='Majburiy obuna'),KeyboardButton(text='PDF natijalar')],[KeyboardButton(text='Tariflar')]],resize_keyboard=True)
 
-def _register_legacy_api():
-    @app.get('/api/ping')
-    async def ping():return {'ok':True}
-    @app.get('/health')
-    async def health():return {'ok':True,'service':'nur-oqiw','tests':len(all_tests()),'questions':sum(len(questions_for_test(t['test_id'])) for t in all_tests())}
-_register_legacy_api()
+@app.get('/api/ping')
+async def ping():return {'ok':True}
+@app.get('/health')
+async def health():return {'ok':True,'service':'nur-oqiw','tests':len(all_tests()),'questions':sum(len(questions_for_test(t['test_id'])) for t in all_tests())}
 
-# Profile/test router must be imported only after app, bot, TZ and telegram_user exist.
-from .profile_features import register as register_profile_features,admin_tariff_list
+from .profile_features import register as register_profile_features
 register_profile_features(dp,bot,WEBAPP)
 
 @dp.message(CommandStart(deep_link=False))
@@ -63,8 +59,7 @@ async def start(m:Message):
     u=ensure_user(m.from_user.id)
     if m.from_user.id==ADMIN:update_user(ADMIN,state='admin');await m.answer('NUR O‘QIW ORAYI\n\nAdmin boshqaruv paneli.',reply_markup=admin_kb());return
     if not await subscribed(m.from_user.id):update_user(m.from_user.id,state='subscribe',code_ok=0);await m.answer('Testga kirishdan oldin majburiy kanallarga obuna bo‘ling.',reply_markup=sub_kb());return
-    if u['full_name'] and u['phone'] and u['code_ok']:
-        update_user(m.from_user.id,state='ready');await m.answer('Xush kelibsiz!',reply_markup=user_menu());return
+    if u['full_name'] and u['phone'] and u['code_ok']:update_user(m.from_user.id,state='ready');await m.answer('Xush kelibsiz!',reply_markup=user_menu());return
     update_user(m.from_user.id,state='name',code_ok=0);await m.answer('Ro‘yxatdan o‘tish\n\nIsm, Familiya kiriting:',reply_markup=ReplyKeyboardRemove())
 
 @dp.callback_query(F.data=='check_sub')
@@ -78,11 +73,10 @@ async def contact(m:Message):
     u=ensure_user(m.from_user.id)
     if u['state']!='phone':await m.answer('Avval ism, familiyangizni kiriting.');return
     if m.contact.user_id and m.contact.user_id!=m.from_user.id:await m.answer('O‘zingizning Telegram raqamingizni yuboring.');return
-    upsert_user(m.from_user.id,u['full_name'],m.contact.phone_number);u=get_user(m.from_user.id)
-    update_user(m.from_user.id,state='test_code' if u['test_id'] else 'code',code_ok=0)
-    await m.answer('Telefon raqamingiz saqlandi.\n\nTest kodini kiriting:',reply_markup=ReplyKeyboardRemove())
+    upsert_user(m.from_user.id,u['full_name'],m.contact.phone_number);u=get_user(m.from_user.id);update_user(m.from_user.id,state='test_code' if u['test_id'] else 'code',code_ok=0);await m.answer('Telefon raqamingiz saqlandi.\n\nTest kodini kiriting:',reply_markup=ReplyKeyboardRemove())
 
-@dp.message(F.text & (F.from_user.id!=ADMIN))
+MENU_TEXTS={'Profilim','Tariflar','Testni boshlash','Mening natijam','Userlar ro‘yxati','Yordam'}
+@dp.message(F.text & (F.from_user.id!=ADMIN) & ~F.text.in_(MENU_TEXTS))
 async def registration_text(m:Message):
     u=ensure_user(m.from_user.id);st=u['state'] or 'code';text=m.text.strip()
     if st=='name':
@@ -128,8 +122,6 @@ async def telegram_webhook(request:Request):
 
 async def main():
     cleanup=asyncio.create_task(cleanup_loop());server=uvicorn.Server(uvicorn.Config(app,host='0.0.0.0',port=PORT,log_level='info'));task=asyncio.create_task(server.serve())
-    try:
-        await bot.set_webhook(WEBHOOK_URL,secret_token=WEBHOOK_SECRET,drop_pending_updates=False,allowed_updates=dp.resolve_used_update_types());await task
-    finally:
-        cleanup.cancel();task.cancel();await asyncio.gather(cleanup,task,return_exceptions=True);await bot.session.close()
+    try:await bot.set_webhook(WEBHOOK_URL,secret_token=WEBHOOK_SECRET,drop_pending_updates=False,allowed_updates=dp.resolve_used_update_types());await task
+    finally:cleanup.cancel();task.cancel();await asyncio.gather(cleanup,task,return_exceptions=True);await bot.session.close()
 if __name__=='__main__':asyncio.run(main())
