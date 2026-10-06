@@ -1,0 +1,169 @@
+name: Fix bot latency and test system
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: "!startsWith(github.event.head_commit.message, '[auto-fix]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch bot and test flows
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p=Path('bot/main.py')
+          s=p.read_text(encoding='utf-8')
+
+          old='''    if st=="code":
+        if text!=code_value():await m.answer("❌ Kod noto‘g‘ri. Qayta kiriting:");return
+        update_user(m.from_user.id,code_ok=1,state="ready");await m.answer("🎉 Ro‘yxatdan o‘tish tugadi!\\n\\nTestga kirishingiz mumkin.",reply_markup=web_kb());return
+    if st=="ready": await m.answer("Testga kirish:",reply_markup=web_kb());return
+'''
+          new='''    if st=="code":
+        current_test=get_test(u["test_id"]) if u["test_id"] else None
+        expected_code=current_test["code"] if current_test else code_value()
+        if text.casefold()!=str(expected_code).casefold():await m.answer("❌ Kod noto‘g‘ri. Qayta kiriting:");return
+        update_user(m.from_user.id,code_ok=1,state="ready");await m.answer("🎉 Ro‘yxatdan o‘tish tugadi!\\n\\nTestga kirishingiz mumkin.",reply_markup=user_menu());return
+    if st=="ready": await m.answer("Testga kirish:",reply_markup=user_menu());return
+'''
+          if old not in s: raise SystemExit('main registration block not found')
+          s=s.replace(old,new,1)
+
+          old_web='''        data=await request.json()
+        update=Update.model_validate(data)
+        await dp.feed_update(bot,update)
+        return {"ok":True}
+    except Exception as e:
+        logger.exception("Telegram webhook error: %s",e)
+        return JSONResponse({"ok":False},status_code=500)
+'''
+          new_web='''        data=await request.json()
+        update=Update.model_validate(data)
+        async def process_update():
+            try:
+                await dp.feed_update(bot,update)
+            except Exception as e:
+                logger.exception("Telegram update processing error: %s",e)
+        asyncio.create_task(process_update())
+        return {"ok":True}
+    except Exception as e:
+        logger.exception("Telegram webhook parse error: %s",e)
+        return JSONResponse({"ok":False},status_code=400)
+'''
+          if old_web not in s: raise SystemExit('webhook block not found')
+          s=s.replace(old_web,new_web,1)
+
+          old_mon='''    except Exception as e:
+        if "not modified" not in str(e).lower():raise
+    await q.answer()
+'''
+          new_mon='''    except Exception as e:
+        if "not modified" not in str(e).lower():raise
+    try: await q.answer()
+    except Exception: pass
+'''
+          if old_mon in s: s=s.replace(old_mon,new_mon,1)
+
+          p.write_text(s,encoding='utf-8')
+
+          p=Path('bot/profile_features.py')
+          s=p.read_text(encoding='utf-8')
+
+          old='''    @r.message(CommandStart(deep_link=True))
+    async def deep_start(m:Message,command):
+        code=(command.args or "").strip();t=get_test_by_code(code)
+        if not t:raise SkipHandler()
+        u=ensure_user(m.from_user.id);update_user(m.from_user.id,test_id=t["test_id"],code_ok=1,state="ready",started_at=None,finished_at=None,score=0,grade="",answers_json="{}",submitted=0)
+        await m.answer(f"{t['name']}\\n\\nTest kodi: {t['code']}\\n\\nTestga kirishingiz mumkin.",reply_markup=user_menu())
+'''
+          new='''    @r.message(CommandStart(deep_link=True))
+    async def deep_start(m:Message,command):
+        code=(command.args or "").strip();t=get_test_by_code(code)
+        if not t:raise SkipHandler()
+        u=ensure_user(m.from_user.id)
+        update_user(m.from_user.id,test_id=t["test_id"],code_ok=0,started_at=None,finished_at=None,score=0,grade="",answers_json="{}",submitted=0)
+        u=get_user(m.from_user.id)
+        if not u["full_name"] or not u["phone"]:
+            update_user(m.from_user.id,state="name")
+            await m.answer(f"{t['name']}\\n\\nRo‘yxatdan o‘tish uchun ism va familiyangizni kiriting:")
+            return
+        update_user(m.from_user.id,state="code")
+        await m.answer(f"{t['name']}\\n\\nTest kodi: {t['code']}\\n\\nKirish kodini kiriting:")
+'''
+          if old not in s: raise SystemExit('deep start block not found')
+          s=s.replace(old,new,1)
+
+          old_admin='''    @r.callback_query(F.data.startswith("mt_q:"))
+    async def mt_q(q:CallbackQuery):
+'''
+          new_admin='''    @r.callback_query(F.data.startswith("mt_key:"))
+    async def mt_key(q:CallbackQuery):
+        if q.from_user.id!=ADMIN:return
+        tid=q.data.split(":",1)[1];set_setting("admin_test_id",tid);update_user(ADMIN,state=f"mt_key:{tid}")
+        await q.message.edit_text("TO‘G‘RI JAVOBLAR KALITI\\n\\nFormat: 1-A, 2-C, 3-B, 4-D\\n\\nFaqat to‘g‘ri variant harfini kiriting. Bir nechta savolni vergul bilan yozing.",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Orqaga",callback_data=f"mt_sel:{tid}")]]));await q.answer()
+
+    @r.callback_query(F.data.startswith("mt_q:"))
+    async def mt_q(q:CallbackQuery):
+'''
+          if old_admin not in s: raise SystemExit('mt_q anchor not found')
+          s=s.replace(old_admin,new_admin,1)
+
+          old_button='''        [InlineKeyboardButton(text="Savollarni boshqarish",callback_data=f"mt_q:{tid}")],
+        [InlineKeyboardButton(text="Yangi savol qo‘shish",callback_data=f"mt_addq:{tid}")],
+'''
+          new_button='''        [InlineKeyboardButton(text="Savollarni boshqarish",callback_data=f"mt_q:{tid}")],
+        [InlineKeyboardButton(text="To‘g‘ri javoblar kaliti",callback_data=f"mt_key:{tid}")],
+        [InlineKeyboardButton(text="Yangi savol qo‘shish",callback_data=f"mt_addq:{tid}")],
+'''
+          if old_button in s:s=s.replace(old_button,new_button,1)
+
+          old_state='''        if st.startswith("mt_addq:"):
+            tid=st.split(":",1)[1]
+            try:
+                n,question,opts,answer,kind,group_id,image_url=_parse_q(m.text);upsert_test_question(tid,n,question,opts,answer,kind,group_id,image_url);update_user(ADMIN,state="admin");await m.answer(f"{n}-savol saqlandi.\\nTo‘g‘ri javob: {answer}",reply_markup=_test_kb(tid))
+            except Exception as e:await m.answer(f"Xato: {e}")
+            return
+'''
+          new_state='''        if st.startswith("mt_key:"):
+            tid=st.split(":",1)[1]
+            try:
+                pairs=[x.strip() for x in re.split(r"[,;\\n]+",m.text) if x.strip()]
+                changed=0
+                for pair in pairs:
+                    mm=re.fullmatch(r"(\\d+)\\s*[-:]\\s*([ABCDabcd])",pair)
+                    if not mm: raise ValueError(f"Noto‘g‘ri format: {pair}")
+                    num=int(mm.group(1));letter=mm.group(2).upper();q=get_question_for_test(tid,num)
+                    if not q: raise ValueError(f"{num}-savol topilmadi")
+                    opts=json.loads(q["options_json"] or "[]")
+                    if len(opts)!=4: raise ValueError(f"{num}-savol 4 variantli emas")
+                    answer=opts[ord(letter)-65]
+                    with conn() as c:c.execute("UPDATE questions SET answer=? WHERE test_id=? AND number=?",(answer,tid,num))
+                    changed+=1
+                update_user(ADMIN,state="admin");await m.answer(f"{changed} ta to‘g‘ri javob saqlandi.",reply_markup=_test_kb(tid))
+            except Exception as e:await m.answer(f"Xato: {e}")
+            return
+        if st.startswith("mt_addq:"):
+            tid=st.split(":",1)[1]
+            try:
+                n,question,opts,answer,kind,group_id,image_url=_parse_q(m.text);upsert_test_question(tid,n,question,opts,answer,kind,group_id,image_url);update_user(ADMIN,state="admin");await m.answer(f"{n}-savol saqlandi.\\nTo‘g‘ri javob: {answer}",reply_markup=_test_kb(tid))
+            except Exception as e:await m.answer(f"Xato: {e}")
+            return
+'''
+          if old_state not in s: raise SystemExit('admin state block not found')
+          s=s.replace(old_state,new_state,1)
+
+          p.write_text(s,encoding='utf-8')
+      - name: Commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bot/main.py bot/profile_features.py
+          git commit -m '[auto-fix] webhook latency and per-test answer key'
+          git push
