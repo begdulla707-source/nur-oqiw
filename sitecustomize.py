@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import threading
-import time as _time
+import sys
 
 log=logging.getLogger("nur-oqiw")
 
@@ -46,16 +46,14 @@ try:
             raise
     CallbackQuery.answer = _safe_answer
 
-    # main.py historically used web_kb() after registration, which hid the
-    # Profile/Tariflar persistent menu. Patch that helper once main is loaded.
     def _restore_user_menu():
         try:
-            import bot.main as main
-            if hasattr(main,"user_menu"):
+            main=sys.modules.get("__main__")
+            if main and getattr(main,"__name__","")=="__main__" and hasattr(main,"user_menu"):
                 main.web_kb = main.user_menu
                 log.info("User profile/tariff menu restored")
         except Exception:
             pass
-    threading.Timer(1.5, _restore_user_menu).start()
+    threading.Timer(2.0, _restore_user_menu).start()
 except Exception:
     log.exception("Runtime safety patch initialization failed")
