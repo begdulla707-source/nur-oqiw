@@ -1,6 +1,8 @@
 """Runtime safety patches for the Telegram webhook process."""
 import asyncio
 import logging
+import threading
+import time as _time
 
 log=logging.getLogger("nur-oqiw")
 
@@ -22,8 +24,6 @@ try:
         return True
     Bot.set_webhook = _safe_set_webhook
 
-    # Telegram must receive HTTP 200 immediately. Slow handlers were causing
-    # Telegram to retry the same update for minutes, making /start appear dead.
     _original_feed_update = Dispatcher.feed_update
     async def _fast_feed_update(self, bot, update, *args, **kwargs):
         async def run():
@@ -35,7 +35,6 @@ try:
         return update
     Dispatcher.feed_update = _fast_feed_update
 
-    # Expired callback queries must never turn the webhook into HTTP 500.
     _original_answer = CallbackQuery.answer
     async def _safe_answer(self, *args, **kwargs):
         try:
@@ -46,5 +45,17 @@ try:
                 return None
             raise
     CallbackQuery.answer = _safe_answer
+
+    # main.py historically used web_kb() after registration, which hid the
+    # Profile/Tariflar persistent menu. Patch that helper once main is loaded.
+    def _restore_user_menu():
+        try:
+            import bot.main as main
+            if hasattr(main,"user_menu"):
+                main.web_kb = main.user_menu
+                log.info("User profile/tariff menu restored")
+        except Exception:
+            pass
+    threading.Timer(1.5, _restore_user_menu).start()
 except Exception:
     log.exception("Runtime safety patch initialization failed")
