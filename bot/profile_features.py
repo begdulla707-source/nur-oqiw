@@ -115,6 +115,9 @@ def _register_api():
         t=get_test_by_code(code) if code else (get_test(u["test_id"]) if u and u["test_id"] else None)
         if not tid or not u:return {"ok":False,"error":"not_authorized"}
         if not t:return {"ok":False,"error":"test_not_found"}
+        if code and (u["test_id"]!=t["test_id"]):
+            update_user(tid,test_id=t["test_id"],code_ok=1,state="ready")
+            u=get_user(tid)
         if not u["full_name"] or not u["phone"]:
             return {"ok":False,"error":"registration_required","test_name":t["name"],"test_code":t["code"]}
         a=ensure_attempt(t["test_id"],tid)
