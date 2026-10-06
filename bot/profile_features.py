@@ -92,13 +92,14 @@ def _test_expired(u,t):
     return datetime.now(tz)>=close
 
 def _test_pdf(tid,path):
-    t=get_test(tid);users=[u for u in all_registered_users() if u["test_id"]==tid and (u["started_at"] or u["submitted"])]
-    styles=getSampleStyleSheet();rows=[["№","Ism Familiya","Kirilgan vaqt","Tugagan vaqt","Ball","Baho","Holat"]]
-    for i,u in enumerate(users,1):
-        rows.append([str(i),u["full_name"] or "—",str(u["started_at"] or "—")[:16],str(u["finished_at"] or "—")[:16],f'{float(u["score"] or 0):.2f}',u["grade"] or "—","Yakunlangan" if u["submitted"] else "Faol"])
+    t=get_test(tid);rows=[["№","Ism Familiya","Telegram ID","Kirilgan vaqt","Tugagan vaqt","Ball","Baho","Holat"]]
+    attempts=all_attempts_for_test(tid)
+    for i,a in enumerate(attempts,1):
+        rows.append([str(i),a["full_name"] or "—",str(a["telegram_id"]),str(a["started_at"] or "—")[:16],str(a["finished_at"] or "—")[:16],f'{float(a["score"] or 0):.2f}',a["grade"] or "—","Yakunlangan" if a["submitted"] else "Faol"])
     doc=SimpleDocTemplate(path,pagesize=landscape(A4),rightMargin=18,leftMargin=18,topMargin=24,bottomMargin=24)
-    story=[Paragraph(f"NUR O‘QIW ORAYI — {t['name'] if t else 'TEST'}",styles["Title"]),Paragraph(f"Kod: {t['code'] if t else '—'} · Qatnashchilar: {len(users)}",styles["Heading2"]),Spacer(1,10)]
-    table=Table(rows,repeatRows=1,colWidths=[28,190,105,105,60,55,95]);table.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.5,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.HexColor("#eeeeee")),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),8.5)]));story.append(table);doc.build(story)
+    styles=getSampleStyleSheet()
+    story=[Paragraph(f"NUR O‘QIW ORAYI — {t['name'] if t else 'TEST'}",styles["Title"]),Paragraph(f"Kod: {t['code'] if t else '—'} · Qatnashchilar: {len(attempts)}",styles["Heading2"]),Spacer(1,10)]
+    table=Table(rows,repeatRows=1,colWidths=[24,155,85,100,100,55,50,75]);table.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.5,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.HexColor("#eeeeee")),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),8.2)]));story.append(table);doc.build(story)
 
 def _register_api():
     if not core:return
@@ -109,42 +110,62 @@ def _register_api():
         return tid,u
     @app.get("/api/test/state")
     async def mt_state(request):
-        tid,u=await auth(request);code=request.query_params.get("code","").strip();t=get_test_by_code(code) if code else (get_test(u["test_id"]) if u and u["test_id"] else None)
+        tid,u=await auth(request);code=request.query_params.get("code","").strip()
+        t=get_test_by_code(code) if code else (get_test(u["test_id"]) if u and u["test_id"] else None)
         if not tid or not u:return {"ok":False,"error":"not_authorized"}
-        if t and u["test_id"]!=t["test_id"] and code:
-            update_user(tid,test_id=t["test_id"],code_ok=1,started_at=None,finished_at=None,score=0,grade="",answers_json="{}",submitted=0);u=get_user(tid)
         if not t:return {"ok":False,"error":"test_not_found"}
-        if u["submitted"]:return {"ok":False,"error":"already_submitted","score":u["score"],"grade":u["grade"],"full_name":u["full_name"] or "","test_name":t["name"]}
-        if not _test_open(t) and not u["started_at"]:return {"ok":False,"error":"test_closed","start":t["start_time"],"end":t["end_time"],"test_name":t["name"]}
-        if u["started_at"] and _test_expired(u,t):
-            update_user(tid,started_at=None,answers_json="{}",submitted=0,score=0,grade="",finished_at=None)
+        if not u["full_name"] or not u["phone"]:
+            return {"ok":False,"error":"registration_required","test_name":t["name"],"test_code":t["code"]}
+        a=ensure_attempt(t["test_id"],tid)
+        if a["submitted"]:
+            return {"ok":False,"error":"already_submitted","score":a["score"],"grade":a["grade"],"full_name":u["full_name"] or "","test_name":t["name"]}
+        if not _test_open(t) and not a["started_at"]:
+            return {"ok":False,"error":"test_closed","start":t["start_time"],"end":t["end_time"],"test_name":t["name"]}
+        if a["started_at"] and _test_expired(a,t):
+            update_attempt(a["attempt_id"],status="expired")
             return {"ok":False,"error":"test_closed","test_name":t["name"]}
-        if not u["started_at"]:update_user(tid,started_at=datetime.now(core.TZ).isoformat());u=get_user(tid)
-        qs=questions_for_test(t["test_id"]);answers=json.loads(u["answers_json"] or "{}")
-        close=datetime.combine(datetime.fromisoformat(u["started_at"]).date(),time.fromisoformat(t["end_time"]),tzinfo=core.TZ);ends=close
-        return {"ok":True,"full_name":u["full_name"] or "","answers":answers,"ends_at":ends.isoformat(),"test_name":t["name"],"test_code":t["code"],"total_questions":len(qs)}
+        if not a["started_at"]:
+            update_attempt(a["attempt_id"],started_at=datetime.now(core.TZ).isoformat(),status="active");a=ensure_attempt(t["test_id"],tid)
+        answers=json.loads(a["answers_json"] or "{}")
+        close=datetime.combine(datetime.fromisoformat(a["started_at"]).date(),time.fromisoformat(t["end_time"]),tzinfo=core.TZ)
+        return {"ok":True,"full_name":u["full_name"] or "","answers":answers,"ends_at":close.isoformat(),"test_name":t["name"],"test_code":t["code"],"total_questions":len(questions_for_test(t["test_id"]))}
+
     @app.get("/api/test/questions")
     async def mt_questions(request):
         tid,u=await auth(request);code=request.query_params.get("code","").strip();t=get_test_by_code(code) if code else (get_test(u["test_id"]) if u and u["test_id"] else None)
         if not tid or not u or not t:return JSONResponse({"ok":False,"error":"not_authorized"},status_code=401)
         return {"ok":True,"questions":[{"id":q["number"],"question":q["question"],"options":json.loads(q["options_json"] or "[]"),"kind":q["kind"],"image_url":q["image_url"]} for q in questions_for_test(t["test_id"])]}
+
     @app.post("/api/test/answer")
     async def mt_answer(p:dict):
-        tid=core.telegram_user(p.get("initData",""));u=get_user(tid) if tid else None;t=get_test(u["test_id"]) if u and u["test_id"] else None
-        if not tid or not u or not t or u["submitted"]:return {"ok":False,"error":"not_authorized"}
-        if not _test_open(t) or _test_expired(u,t):return {"ok":False,"error":"test_closed"}
-        q=get_question_for_test(t["test_id"],p.get("question_id"));
+        tid=core.telegram_user(p.get("initData",""));u=get_user(tid) if tid else None
+        t=get_test_by_code(p.get("code","")) if p.get("code") else (get_test(u["test_id"]) if u and u["test_id"] else None)
+        if not tid or not u or not t:return {"ok":False,"error":"not_authorized"}
+        a=ensure_attempt(t["test_id"],tid)
+        if a["submitted"]:return {"ok":False,"error":"already_submitted"}
+        if not _test_open(t) or _test_expired(a,t):return {"ok":False,"error":"test_closed"}
+        q=get_question_for_test(t["test_id"],p.get("question_id"))
         if not q:return {"ok":False,"error":"question_not_found"}
-        answers=json.loads(u["answers_json"] or "{}");key=str(q["number"])
+        answers=json.loads(a["answers_json"] or "{}");key=str(q["number"])
         if key in answers:return {"ok":False,"error":"answer_locked","correct":normalize(answers[key])==normalize(q["answer"])}
-        ans=str(p.get("answer","")).strip();answers[key]=ans;save_answers(tid,answers);return {"ok":True,"correct":normalize(ans)==normalize(q["answer"]),"number":q["number"]}
+        ans=str(p.get("answer","")).strip();answers[key]=ans;save_attempt_answers(a["attempt_id"],answers)
+        return {"ok":True,"correct":normalize(ans)==normalize(q["answer"]),"number":q["number"]}
+
     @app.post("/api/test/finish")
     async def mt_finish(p:dict):
-        tid=core.telegram_user(p.get("initData",""));u=get_user(tid) if tid else None;t=get_test(u["test_id"]) if u and u["test_id"] else None
+        tid=core.telegram_user(p.get("initData",""));u=get_user(tid) if tid else None
+        t=get_test_by_code(p.get("code","")) if p.get("code") else (get_test(u["test_id"]) if u and u["test_id"] else None)
         if not tid or not u or not t:return {"ok":False,"error":"not_authorized"}
-        if u["submitted"]:return {"ok":False,"error":"already_submitted","score":u["score"]}
-        if not _test_open(t) or _test_expired(u,t):return {"ok":False,"error":"test_closed"}
-        answers=json.loads(u["answers_json"] or "{}");qs=questions_for_test(t["test_id"]);correct=sum(1 for q in qs if normalize(answers.get(str(q["number"]),""))==normalize(q["answer"]));score=round(correct/len(qs)*100,2) if qs else 0;grade="A+" if score>=90 else "A" if score>=80 else "B" if score>=70 else "C" if score>=60 else "D" if score>=50 else "F";update_user(tid,score=score,grade=grade,submitted=1,finished_at=datetime.now(core.TZ).isoformat());return {"ok":True,"score":score,"grade":grade,"full_name":u["full_name"] or "","test_name":t["name"]}
+        a=ensure_attempt(t["test_id"],tid)
+        if a["submitted"]:return {"ok":False,"error":"already_submitted","score":a["score"]}
+        if not _test_open(t) or _test_expired(a,t):return {"ok":False,"error":"test_closed"}
+        answers=json.loads(a["answers_json"] or "{}");qs=questions_for_test(t["test_id"])
+        correct=sum(1 for q in qs if normalize(answers.get(str(q["number"]),""))==normalize(q["answer"]))
+        score=round(correct/len(qs)*100,2) if qs else 0
+        grade="A+" if score>=90 else "A" if score>=80 else "B" if score>=70 else "C" if score>=60 else "D" if score>=50 else "F"
+        update_attempt(a["attempt_id"],score=score,grade=grade,submitted=1,status="submitted",finished_at=datetime.now(core.TZ).isoformat())
+        return {"ok":True,"score":score,"grade":grade,"full_name":u["full_name"] or "","test_name":t["name"]}
+
 _register_api()
 
 def register(dp,bot,webapp_url):
@@ -180,7 +201,11 @@ def register(dp,bot,webapp_url):
     async def deep_start(m:Message,command):
         code=(command.args or "").strip();t=get_test_by_code(code)
         if not t:raise SkipHandler()
-        u=ensure_user(m.from_user.id);update_user(m.from_user.id,test_id=t["test_id"],code_ok=1,state="ready",started_at=None,finished_at=None,score=0,grade="",answers_json="{}",submitted=0)
+        u=ensure_user(m.from_user.id);update_user(m.from_user.id,test_id=t["test_id"],state="ready")
+        if not u["full_name"] or not u["phone"]:
+            update_user(m.from_user.id,state="name",code_ok=0)
+            await m.answer(f"{t['name']}\n\nIsm va Familiyangizni kiriting:")
+            return
         await m.answer(f"{t['name']}\n\nTest kodi: {t['code']}\n\nTestga kirishingiz mumkin.",reply_markup=user_menu())
     @r.message(F.text)
     async def dynamic_text(m:Message):
@@ -191,7 +216,12 @@ def register(dp,bot,webapp_url):
             await m.answer("Qaysi test savollarini boshqaramiz?",reply_markup=_test_list_kb());return
         t=get_test_by_code(text)
         if t:
-            update_user(m.from_user.id,test_id=t["test_id"],code_ok=1,state="ready",started_at=None,finished_at=None,score=0,grade="",answers_json="{}",submitted=0)
+            if not u["full_name"] or not u["phone"]:
+                update_user(m.from_user.id,test_id=t["test_id"],state="name",code_ok=0)
+                await m.answer(f"{t['name']}\n\nAvval ism va familiyangizni kiriting:")
+                return
+            update_user(m.from_user.id,test_id=t["test_id"],code_ok=1,state="ready")
+            ensure_attempt(t["test_id"],m.from_user.id)
             await m.answer(f"TEST TANLANDI\n\n{t['name']}\nKod: {t['code']}\n\nMini App orqali testni boshlang.",reply_markup=user_menu());return
         raise SkipHandler()
     @r.callback_query(F.data=="mt_new")
