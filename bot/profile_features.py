@@ -315,7 +315,7 @@ def register(dp,bot,webapp_url):
                     upsert_test_question(tid,num,q["question"],opts,answer,q["kind"],q["group_id"],q["image_url"])
                     changed+=1
                 update_user(ADMIN,state="admin")
-                await cq.message.answer(f"{changed} ta to‘g‘ri javob saqlandi.",reply_markup=_test_kb(tid))
+                await m.answer(f"{changed} ta to‘g‘ri javob saqlandi.",reply_markup=_test_kb(tid))
             except Exception as e:await m.answer(f"Xato: {e}")
             return
         if st.startswith("mt_addq:"):
