@@ -446,11 +446,16 @@ async def telegram_webhook(request: Request):
     try:
         data=await request.json()
         update=Update.model_validate(data)
-        await dp.feed_update(bot,update)
+        async def process_update():
+            try:
+                await dp.feed_update(bot,update)
+            except Exception:
+                logger.exception("Telegram update processing error")
+        asyncio.create_task(process_update())
         return {"ok":True}
     except Exception as e:
-        logger.exception("Telegram webhook error: %s",e)
-        return JSONResponse({"ok":False},status_code=500)
+        logger.exception("Telegram webhook parse error: %s",e)
+        return JSONResponse({"ok":False},status_code=400)
 
 async def send_notification(tid,text):
     for attempt in range(3):
