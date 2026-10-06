@@ -27,6 +27,21 @@ def init():
         c.execute("CREATE TABLE IF NOT EXISTS item_stats(question_id INTEGER PRIMARY KEY,attempts INTEGER DEFAULT 0,correct INTEGER DEFAULT 0)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_users_test ON users(test_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_questions_test ON questions(test_id,number)")
+        c.execute("""CREATE TABLE IF NOT EXISTS test_attempts(
+            attempt_id TEXT PRIMARY KEY,
+            test_id TEXT NOT NULL,
+            telegram_id BIGINT NOT NULL,
+            started_at TEXT,
+            finished_at TEXT,
+            score DOUBLE PRECISION DEFAULT 0,
+            grade TEXT DEFAULT '',
+            answers_json TEXT DEFAULT '{}',
+            submitted INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'active',
+            UNIQUE(test_id,telegram_id)
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_attempts_test ON test_attempts(test_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_attempts_user ON test_attempts(telegram_id)")
 
 def ensure_schema():
     with conn() as c:
@@ -83,6 +98,32 @@ def get_test_by_code(code):
     with conn() as c:return c.execute("SELECT * FROM tests WHERE lower(code)=lower(?) AND active=1",(str(code).strip(),)).fetchone()
 def all_tests():
     with conn() as c:return c.execute("SELECT * FROM tests ORDER BY created_at DESC").fetchall()
+def get_attempt(test_id,telegram_id):
+    with conn() as c:return c.execute("SELECT * FROM test_attempts WHERE test_id=? AND telegram_id=?",(str(test_id),int(telegram_id))).fetchone()
+
+def ensure_attempt(test_id,telegram_id):
+    a=get_attempt(test_id,telegram_id)
+    if a:return a
+    aid=secrets.token_hex(12)
+    with conn() as c:
+        c.execute("INSERT INTO test_attempts(attempt_id,test_id,telegram_id,answers_json,status) VALUES(?,?,?,?,?)",(aid,str(test_id),int(telegram_id),"{}","active"))
+    return get_attempt(test_id,telegram_id)
+
+def update_attempt(attempt_id,**fields):
+    allowed={"started_at","finished_at","score","grade","answers_json","submitted","status"}
+    fields={k:v for k,v in fields.items() if k in allowed}
+    if fields:
+        with conn() as c:c.execute("UPDATE test_attempts SET "+",".join(f"{k}=?" for k in fields)+" WHERE attempt_id=?",list(fields.values())+[str(attempt_id)])
+
+def save_attempt_answers(attempt_id,answers):
+    update_attempt(attempt_id,answers_json=json.dumps(answers,ensure_ascii=False))
+
+def all_attempts_for_test(test_id):
+    with conn() as c:return c.execute("SELECT a.*,u.full_name,u.phone FROM test_attempts a LEFT JOIN users u ON u.telegram_id=a.telegram_id WHERE a.test_id=? ORDER BY COALESCE(a.finished_at,a.started_at) ASC",(str(test_id),)).fetchall()
+
+def delete_attempt(test_id,telegram_id):
+    with conn() as c:return c.execute("DELETE FROM test_attempts WHERE test_id=? AND telegram_id=?",(str(test_id),int(telegram_id))).rowcount>0
+
 def set_test_active(tid,active=1):
     with conn() as c:c.execute("UPDATE tests SET active=? WHERE test_id=?",(int(active),str(tid)))
 def _default_test_id():
