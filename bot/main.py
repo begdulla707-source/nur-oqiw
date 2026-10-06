@@ -18,7 +18,7 @@ TOKEN=os.getenv('BOT_TOKEN','');ADMIN=int(os.getenv('ADMIN_CHAT_ID','8379731556'
 WEBAPP=os.getenv('WEBAPP_URL','https://nur-oqiw.uz');WEBHOOK_URL=os.getenv('WEBHOOK_URL','https://nur-oqiw.onrender.com/telegram/webhook');WEBHOOK_SECRET=os.getenv('WEBHOOK_SECRET','nur_oqiw_webhook')
 ORIGINS=[x.strip().rstrip('/') for x in os.getenv('WEBAPP_ORIGINS','https://nur-oqiw.uz,https://www.nur-oqiw.uz,https://nur-oqiw-santizz.vercel.app,https://nur-oqiw-three.vercel.app').split(',') if x.strip()]
 logging.basicConfig(level=logging.INFO);logger=logging.getLogger('nur-oqiw');RATE=defaultdict(deque)
-dp=Dispatcher();bot=Bot(TOKEN);app=FastAPI();app.add_middleware(CORSMiddleware,allow_origins=ORIGINS,allow_credentials=False,allow_methods=['GET','POST','OPTIONS'],allow_headers=['Content-Type','X-Admin-Key'])
+dp=Dispatcher();bot=Bot(TOKEN);app=FastAPI();app.add_middleware(CORSMiddleware,allow_origins=ORIGINS,allow_credentials=False,allow_methods=['GET','POST','OPTIONS'],allow_headers=['Content-Type','X-Admin-Key','Authorization'])
 
 def telegram_user(raw):
     try:
@@ -50,9 +50,6 @@ def admin_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test s
 async def ping():return {'ok':True}
 @app.get('/health')
 async def health():return {'ok':True,'service':'nur-oqiw','tests':len(all_tests()),'questions':sum(len(questions_for_test(t['test_id'])) for t in all_tests())}
-
-from .profile_features import register as register_profile_features
-register_profile_features(dp,bot,WEBAPP)
 
 @dp.message(CommandStart(deep_link=False))
 async def start(m:Message):
@@ -119,6 +116,11 @@ async def telegram_webhook(request:Request):
     try:
         update=Update.model_validate(await request.json());asyncio.create_task(dp.feed_update(bot,update));return {'ok':True}
     except Exception as e:logger.exception('webhook: %s',e);return JSONResponse({'ok':False},status_code=400)
+
+# Import the feature router only after main module initialization. This avoids the circular
+# main -> profile_features -> main import that previously crashed Render deployments.
+from .profile_features import register as register_profile_features
+register_profile_features(dp,bot,WEBAPP)
 
 async def main():
     cleanup=asyncio.create_task(cleanup_loop());server=uvicorn.Server(uvicorn.Config(app,host='0.0.0.0',port=PORT,log_level='info'));task=asyncio.create_task(server.serve())
