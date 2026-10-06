@@ -1,0 +1,1 @@
+export const NUR_LOGO_DATA = "DATA_URI_PLACEHOLDER";
