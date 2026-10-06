@@ -49,7 +49,7 @@ def admin_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test s
 @app.get('/api/ping')
 async def ping():return {'ok':True}
 @app.get('/health')
-async def health():return {'ok':True,'service':'nur-oqiw','tests':len(all_tests()),'questions':sum(len(questions_for_test(t['test_id'])) for t in all_tests())}
+async def health():return {'ok':True,'service':'nur-oqiw','storage':'postgres' if USE_POSTGRES else 'sqlite','tests':len(all_tests()),'questions':sum(len(questions_for_test(t['test_id'])) for t in all_tests())}
 
 @dp.message(CommandStart(deep_link=False))
 async def start(m:Message):
