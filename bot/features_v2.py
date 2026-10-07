@@ -43,7 +43,7 @@ def register(core,dp,bot,webapp_url):
  async def auth(req):
   raw=req.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or req.query_params.get('initData','');tid=CORE.telegram_user(raw);return tid,db.get_user(tid) if tid else None
  @core.app.get('/api/test/state')
- async def state(req):
+ async def state(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u:return {'ok':False,'error':'not_authorized'}
   if not t:return {'ok':False,'error':'test_not_found'}
@@ -59,7 +59,7 @@ def register(core,dp,bot,webapp_url):
   s=datetime.fromisoformat(a['started_at']);e=datetime.combine(s.date(),time.fromisoformat(t['end_time']),tzinfo=TZ)
   return {'ok':True,'full_name':u['full_name'],'answers':json.loads(a['answers_json'] or '{}'),'ends_at':e.isoformat(),'test_name':t['name'],'test_code':t['code'],'total_questions':len(db.questions_for_test(t['test_id']))}
  @core.app.get('/api/test/questions')
- async def questions(req):
+ async def questions(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t:return {'ok':False,'error':'not_authorized'}
   return {'ok':True,'questions':[{'id':q['number'],'question':'','options':['A','B','C','D'],'kind':q['kind'],'image_url':''} for q in db.questions_for_test(t['test_id'])]}
