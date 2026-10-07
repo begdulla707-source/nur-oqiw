@@ -34,6 +34,8 @@ def expired(a,t):
  s=datetime.fromisoformat(a['started_at']);e=datetime.combine(s.date(),time.fromisoformat(t['end_time']),tzinfo=TZ);return datetime.now(TZ)>=min(s+timedelta(hours=1),e)
 def score(t,a):
  q=db.questions_for_test(t['test_id']);return round(sum(norm(a.get(str(x['number']),' '))==norm(x['answer']) for x in q)/len(q)*100,2) if q else 0
+def finalize_expired(a,t):
+ q=db.questions_for_test(t['test_id']);answers=json.loads(a['answers_json'] or '{}');sc=round(sum(norm(answers.get(str(x['number']),' '))==norm(x['answer']) for x in q)/len(q)*100,2) if q else 0;gr=grade(sc);db.update_attempt(a['attempt_id'],score=sc,grade=gr,submitted=1,status='submitted',finished_at=datetime.now(TZ).isoformat());return sc,gr
 
 def register(core,dp,bot,webapp_url):
  global CORE,ADMIN,BOT,TZ,WEBAPP
@@ -52,7 +54,8 @@ def register(core,dp,bot,webapp_url):
   if not a['started_at']:
    if not opened(t):return {'ok':False,'error':'test_closed','test_name':t['name']}
    db.update_attempt(a['attempt_id'],started_at=datetime.now(TZ).isoformat(),status='active');a=db.get_attempt(t['test_id'],tid)
-  if expired(a,t):return {'ok':False,'error':'test_closed','test_name':t['name']}
+  if expired(a,t):
+   sc,gr=finalize_expired(a,t);return {'ok':False,'error':'already_submitted','score':sc,'grade':gr,'test_name':t['name'],'full_name':u['full_name']}
   s=datetime.fromisoformat(a['started_at']);e=datetime.combine(s.date(),time.fromisoformat(t['end_time']),tzinfo=TZ)
   return {'ok':True,'full_name':u['full_name'],'answers':json.loads(a['answers_json'] or '{}'),'ends_at':e.isoformat(),'test_name':t['name'],'test_code':t['code'],'total_questions':len(db.questions_for_test(t['test_id']))}
  @core.app.get('/api/test/questions')
@@ -66,7 +69,9 @@ def register(core,dp,bot,webapp_url):
   if not tid or not u or not t:return {'ok':False,'error':'not_authorized'}
   a=db.ensure_attempt(t['test_id'],tid)
   if a['submitted']:return {'ok':False,'error':'already_submitted'}
-  if not opened(t) or expired(a,t):return {'ok':False,'error':'test_closed'}
+  if expired(a,t):
+   sc,gr=finalize_expired(a,t);return {'ok':False,'error':'already_submitted','score':sc,'grade':gr}
+  if not opened(t):return {'ok':False,'error':'test_closed'}
   q=db.get_question_for_test(t['test_id'],p.get('question_id'))
   if not q:return {'ok':False,'error':'question_not_found'}
   ans=json.loads(a['answers_json'] or '{}');k=str(q['number'])
@@ -80,7 +85,9 @@ def register(core,dp,bot,webapp_url):
   if not tid or not u or not t:return {'ok':False,'error':'not_authorized'}
   a=db.ensure_attempt(t['test_id'],tid)
   if a['submitted']:return {'ok':False,'error':'already_submitted','score':a['score'],'grade':a['grade']}
-  if not opened(t) and not expired(a,t):return {'ok':False,'error':'test_closed'}
+  if expired(a,t):
+   sc,gr=finalize_expired(a,t);return {'ok':True,'score':sc,'grade':gr,'full_name':u['full_name'],'test_name':t['name']}
+  if not opened(t):return {'ok':False,'error':'test_closed'}
   sc=score(t,json.loads(a['answers_json'] or '{}'));gr=grade(sc);db.update_attempt(a['attempt_id'],score=sc,grade=gr,submitted=1,status='submitted',finished_at=datetime.now(TZ).isoformat());return {'ok':True,'score':sc,'grade':gr,'full_name':u['full_name'],'test_name':t['name']}
  @r.message(CommandStart(deep_link=True))
  async def deep(m:Message,command):
@@ -178,7 +185,10 @@ def register(core,dp,bot,webapp_url):
  async def tx(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
   tid=q.data.split(':',1)[1]
-  with db.conn() as c:c.execute("UPDATE tests SET mode='closed' WHERE test_id=?",(tid,))
+  with db.conn() as c:
+   c.execute("UPDATE tests SET mode='closed' WHERE test_id=?",(tid,))
+  for a in db.all_attempts_for_test(tid):
+   if not a['submitted']:db.delete_attempt(tid,a['telegram_id'])
   await q.answer('Test yopildi')
  @r.callback_query(F.data.startswith('t_q:'))
  async def tq(q:CallbackQuery):
