@@ -92,10 +92,17 @@ async def cleanup_loop():
         try:
             await asyncio.sleep(15);now=datetime.now(TZ)
             for t in all_tests():
+                qs=questions_for_test(t['test_id'])
                 for a in all_attempts_for_test(t['test_id']):
                     if not a['started_at'] or a['submitted']:continue
-                    st=datetime.fromisoformat(a['started_at']);close=datetime.combine(st.date(),time.fromisoformat(t['end_time']),tzinfo=TZ)
-                    if now>=min(st+timedelta(hours=1),close):update_attempt(a['attempt_id'],status='expired')
+                    st=datetime.fromisoformat(a['started_at'])
+                    close=datetime.combine(st.date(),time.fromisoformat(t['end_time']),tzinfo=TZ)
+                    if now>=min(st+timedelta(hours=1),close):
+                        answers=json.loads(a['answers_json'] or '{}')
+                        correct=sum(1 for q in qs if str(answers.get(str(q['number']),'')).strip().casefold()==str(q['answer'] or '').strip().casefold())
+                        sc=round(correct/len(qs)*100,2) if qs else 0.0
+                        gr='A+' if sc>=90 else 'A' if sc>=80 else 'B' if sc>=70 else 'C' if sc>=60 else 'D' if sc>=50 else 'F'
+                        update_attempt(a['attempt_id'],score=sc,grade=gr,submitted=1,status='submitted',finished_at=now.isoformat())
         except asyncio.CancelledError:raise
         except Exception:logger.exception('cleanup_loop')
 
