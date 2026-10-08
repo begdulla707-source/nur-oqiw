@@ -8,9 +8,32 @@ export default function Test(){
  const[initData,setInitData]=useState(''),[qs,setQs]=useState([]),[answers,setAnswers]=useState({}),[results,setResults]=useState({}),[status,setStatus]=useState('loading'),[msg,setMsg]=useState(''),[score,setScore]=useState(null),[name,setName]=useState(''),[testName,setTestName]=useState(''),[endsAt,setEndsAt]=useState(null),[index,setIndex]=useState(0),[now,setNow]=useState(Date.now());
  const code=useMemo(()=>{try{return new URLSearchParams(window.location.search).get('code')||''}catch{return ''}},[]);
  const load=useCallback(async raw=>{if(!raw){setStatus('blocked');setMsg('Telegram sessiyasi topilmadi. Bot ichidan oching.');return}try{const s=await fetch(`${API}/api/test/state?initData=${encodeURIComponent(raw)}&code=${encodeURIComponent(code)}`,{cache:'no-store'});const sj=await s.json();if(!sj.ok){setStatus(sj.error==='already_submitted'?'done':'blocked');setMsg(sj.error==='test_closed'?'Test yopiq.':sj.error==='test_not_found'?'Test kodi topilmadi.':sj.error==='already_submitted'?'Bu test avval yakunlangan.':sj.error==='registration_required'?'Avval botda ro‘yxatdan o‘ting, keyin Mini Appni qayta oching.':'Test sessiyasi topilmadi.');setScore(sj.score??null);setName(sj.full_name||'');setTestName(sj.test_name||'');return}const r=await fetch(`${API}/api/test/questions?initData=${encodeURIComponent(raw)}&code=${encodeURIComponent(code)}`,{cache:'no-store'});const qj=await r.json();if(!qj.ok)throw new Error();setQs(qj.questions||[]);setAnswers(sj.answers||{});setName(sj.full_name||'');setTestName(sj.test_name||'');setEndsAt(sj.ends_at);setStatus('test')}catch{setStatus('blocked');setMsg('Testni yuklashda xatolik.')}},[code]);
- useEffect(()=>{const tg=window.Telegram?.WebApp;tg?.ready();tg?.expand();const raw=tg?.initData||'';setInitData(raw);load(raw);const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer)},[load]);
+ useEffect(()=>{
+  let stopped=false;
+  let attempts=0;
+  const boot=()=>{
+    if(stopped)return;
+    const tg=window.Telegram?.WebApp;
+    const raw=tg?.initData||'';
+    if(tg && raw){
+      try{tg.ready();tg.expand();}catch{}
+      setInitData(raw);
+      load(raw);
+      return;
+    }
+    attempts++;
+    if(attempts<30){setTimeout(boot,250);return}
+    setStatus('blocked');
+    setMsg('Telegram sessiyasi topilmadi. Mini Appni Telegram botidagi TESTNI BOSHLASH tugmasi orqali oching.');
+  };
+  boot();
+  const timer=setInterval(()=>setNow(Date.now()),1000);
+  return()=>{stopped=true;clearInterval(timer)};
+},[load]);
  async function choose(id,value){if(answers[id]!==undefined)return;try{const r=await fetch(API+'/api/test/answer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({initData,code,question_id:id,answer:value})});const j=await r.json();if(j.ok){setAnswers(a=>({...a,[id]:value}));setResults(a=>({...a,[id]:j.correct?'correct':'wrong'}));}}catch{setMsg('Javobni saqlashda xatolik.')}}
- const finish=useCallback(async()=>{if(status!=='test')return;try{const r=await fetch(API+'/api/test/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({initData,code})});const j=await r.json();if(j.ok){setScore(j.score);setStatus('done');setMsg('Test muvaffaqiyatli yakunlandi.')}else setMsg(j.error==='test_closed'?'Test yopildi.':'Testni yakunlab bo‘lmadi.')}catch{setMsg('Natijani saqlashda xatolik.')}},[status,initData,code]);
+ const finish=useCallback(async()=>{if(status!=='test')return;try{const r=await fetch(API+'/api/test/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({initData,code})});const j=await r.json();if(j.ok){setScore(j.score);setStatus('done');setMsg('Test muvaffaqiyatli yakunlandi.')}
+else if(j.error==='already_submitted'){setScore(j.score??null);setStatus('done');setMsg('Test allaqachon yakunlangan.')}
+else setMsg(j.error==='test_closed'?'Test yopildi.':'Testni yakunlab bo‘lmadi.')}catch{setMsg('Natijani saqlashda xatolik.')}},[status,initData,code]);
  const seconds=endsAt?Math.max(0,Math.floor((new Date(endsAt).getTime()-now)/1000)):0;useEffect(()=>{if(status==='test'&&endsAt&&seconds<=0)finish()},[status,endsAt,seconds,finish]);
  if(status==='loading')return <main className="screen"><section className="glass-card"><Logo/><h1>Yuklanmoqda</h1><p>Test ma'lumotlari olinmoqda...</p></section></main>;
  if(status!=='test')return <main className="screen"><section className="glass-card"><Logo/><h1>{status==='done'?'Test yakunlandi':'Test holati'}</h1>{testName&&<p className="test-title">{testName}</p>}{name&&<p className="user-name">{name}</p>}<p>{msg}</p>{score!==null&&<strong className="final-score">{Number(score).toFixed(2)} ball</strong>}</section></main>;
