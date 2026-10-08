@@ -63,10 +63,10 @@ def register(core,dp,bot,webapp_url):
  async def questions(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t:return {'ok':False,'error':'not_authorized'}
-  return {'ok':True,'questions':[{'id':q['number'],'question':'','options':['A','B','C','D'],'kind':q['kind'],'image_url':''} for q in db.questions_for_test(t['test_id'])]}
+  return {'ok':True,'questions':[{'id':q['number'],'question':q['question'] or '', 'options':(json.loads(q['options_json'] or '[]') if q['options_json'] else []) or ['A','B','C','D'], 'kind':q['kind'],'image_url':q['image_url'] or ''} for q in db.questions_for_test(t['test_id'])]}
  @core.app.post('/api/test/answer')
- async def answer(p:dict):
-  tid=CORE.telegram_user(p.get('initData',''));u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
+ async def answer(p:dict, request: Request):
+  raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t:return {'ok':False,'error':'not_authorized'}
   a=db.ensure_attempt(t['test_id'],tid)
   if a['submitted']:return {'ok':False,'error':'already_submitted'}
@@ -77,12 +77,16 @@ def register(core,dp,bot,webapp_url):
   if not q:return {'ok':False,'error':'question_not_found'}
   ans=json.loads(a['answers_json'] or '{}');k=str(q['number'])
   if k in ans:return {'ok':False,'error':'answer_locked','correct':norm(ans[k])==norm(q['answer'])}
-  v=str(p.get('answer','')).strip().upper()
-  if v not in 'ABCD':return {'ok':False,'error':'invalid_answer'}
+  v=str(p.get('answer','')).strip()
+  if q['kind']=='written':
+   if not v:return {'ok':False,'error':'invalid_answer'}
+  else:
+   v=v.upper()
+   if v not in 'ABCD':return {'ok':False,'error':'invalid_answer'}
   ans[k]=v;db.save_attempt_answers(a['attempt_id'],ans);return {'ok':True,'correct':norm(v)==norm(q['answer']),'number':q['number']}
  @core.app.post('/api/test/finish')
- async def finish(p:dict):
-  tid=CORE.telegram_user(p.get('initData',''));u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
+ async def finish(p:dict, request: Request):
+  raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t:return {'ok':False,'error':'not_authorized'}
   a=db.ensure_attempt(t['test_id'],tid)
   if a['submitted']:return {'ok':False,'error':'already_submitted','score':a['score'],'grade':a['grade']}
