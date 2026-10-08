@@ -193,7 +193,8 @@ def register(core,dp,bot,webapp_url):
   with db.conn() as c:
    c.execute("UPDATE tests SET mode='closed' WHERE test_id=?",(tid,))
   for a in db.all_attempts_for_test(tid):
-   if not a['submitted']:db.delete_attempt(tid,a['telegram_id'])
+   if not a['submitted']:
+    answers=json.loads(a['answers_json'] or '{}');qs=db.questions_for_test(tid);sc=round(sum(norm(answers.get(str(x['number']),' '))==norm(x['answer']) for x in qs)/len(qs)*100,2) if qs else 0;db.update_attempt(a['attempt_id'],score=sc,grade=grade(sc),submitted=1,status='submitted',finished_at=datetime.now(TZ).isoformat())
   await q.answer('Test yopildi')
  @r.callback_query(F.data.startswith('t_q:'))
  async def tq(q:CallbackQuery):
@@ -214,6 +215,7 @@ def register(core,dp,bot,webapp_url):
  @r.callback_query(F.data.startswith('t_pdf:'))
  async def pdf(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
+  await q.answer('PDF tayyorlanmoqda...')
   tid=q.data.split(':',1)[1];t=db.get_test(tid);rows=[['№','Ism Familiya','Telegram ID','Kirish','Tugash','Ball','Baho','Holat']]
   for i,a in enumerate(db.all_attempts_for_test(tid),1):rows.append([str(i),a['full_name'] or '—',str(a['telegram_id']),str(a['started_at'] or '—')[:16],str(a['finished_at'] or '—')[:16],f"{float(a['score'] or 0):.2f}",a['grade'] or '—','Yakunlangan' if a['submitted'] else 'Faol'])
   path=f'/tmp/{secrets.token_hex(8)}.pdf';st=getSampleStyleSheet();doc=SimpleDocTemplate(path,pagesize=landscape(A4));tab=Table(rows,repeatRows=1);tab.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.5,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#eeeeee')),('FONTSIZE',(0,0),(-1,-1),8)]));doc.build([Paragraph(f"NUR O‘QIW ORAYI — {t['name']}",st['Title']),Spacer(1,8),tab]);await BOT.send_document(ADMIN,FSInputFile(path),caption=f"PDF NATIJA — {t['name']} — {t['code']}");await q.answer('PDF yuborildi')
