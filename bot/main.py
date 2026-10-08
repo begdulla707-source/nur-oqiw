@@ -80,7 +80,16 @@ async def contact(m:Message):
     if m.contact.user_id and m.contact.user_id!=m.from_user.id:await m.answer('O‘zingizning Telegram raqamingizni yuboring.');return
     upsert_user(m.from_user.id,u['full_name'],m.contact.phone_number);u=get_user(m.from_user.id);update_user(m.from_user.id,state='test_code' if u['test_id'] else 'code',code_ok=0);await m.answer('Telefon raqamingiz saqlandi.\n\nTest kodini kiriting:',reply_markup=ReplyKeyboardRemove())
 
-MENU_TEXTS={'Profilim','Tariflar','Testni boshlash','Mening natijam','Userlar ro‘yxati','Yordam'}
+MENU_TEXTS={'Profilim','Tariflar','Testni boshlash','Test kodini kiritish','Mening natijam','Userlar ro‘yxati','Yordam'}
+
+@dp.message(F.text=='Test kodini kiritish')
+async def change_test_code(m:Message):
+    u=ensure_user(m.from_user.id)
+    if not await subscribed(m.from_user.id):
+        return await m.answer('Avval majburiy kanallarga obuna bo‘ling.',reply_markup=sub_kb())
+    update_user(m.from_user.id,state='test_code',code_ok=0)
+    await m.answer('Yangi testning kirish kodini kiriting:')
+
 @dp.message(F.text & (F.from_user.id!=ADMIN) & ~F.text.in_(MENU_TEXTS))
 async def registration_text(m:Message):
     u=ensure_user(m.from_user.id);st=u['state'] or 'code';text=m.text.strip()
