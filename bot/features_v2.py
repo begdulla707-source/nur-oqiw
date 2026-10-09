@@ -22,7 +22,7 @@ def grade(s):
 def user_menu():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Userlar ro‘yxati')],[KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
 def tests_kb():
  r=[[InlineKeyboardButton(text=f"{t['name'][:24]} · {t['code']}",callback_data=f't_pick:{t["test_id"]}')] for t in db.all_tests()];r.append([InlineKeyboardButton(text='YANGI TEST',callback_data='t_new')]);return InlineKeyboardMarkup(inline_keyboard=r)
-def test_kb(t):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Savol qo‘shish',callback_data=f't_add:{t}')],[InlineKeyboardButton(text='Oddiy variant',callback_data=f't_choice:{t}'),InlineKeyboardButton(text='Yozma variant',callback_data=f't_written:{t}')],[InlineKeyboardButton(text='Savollar',callback_data=f't_q:{t}'),InlineKeyboardButton(text='Natijalar',callback_data=f't_results:{t}')],[InlineKeyboardButton(text='PDF',callback_data=f't_pdf:{t}'),InlineKeyboardButton(text='Mini App link',callback_data=f't_link:{t}')],[InlineKeyboardButton(text='Guruhga yuborish',callback_data=f't_group:{t}')],[InlineKeyboardButton(text='OCHISH',callback_data=f't_open:{t}'),InlineKeyboardButton(text='YOPISH',callback_data=f't_close:{t}')],[InlineKeyboardButton(text='Orqaga',callback_data='t_list')]])
+def test_kb(t):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Savol qo‘shish',callback_data=f't_add:{t}')],[InlineKeyboardButton(text='Oddiy variant',callback_data=f't_choice:{t}'),InlineKeyboardButton(text='Yozma variant',callback_data=f't_written:{t}')],[InlineKeyboardButton(text='Savollar',callback_data=f't_q:{t}'),InlineKeyboardButton(text='Natijalar',callback_data=f't_results:{t}')],[InlineKeyboardButton(text='PDF',callback_data=f't_pdf:{t}'),InlineKeyboardButton(text='Mini App link',callback_data=f't_link:{t}')],[InlineKeyboardButton(text='Guruhga yuborish',callback_data=f't_group:{t}')],[InlineKeyboardButton(text='DOIMO OCHIQ',callback_data=f't_open:{t}')],[InlineKeyboardButton(text='Orqaga',callback_data='t_list')]])
 def type_kb(t):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ODDIY VARIANT',callback_data=f't_choice:{t}')],[InlineKeyboardButton(text='YOZMA VARIANT',callback_data=f't_written:{t}')]])
 def abcd(t,n):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_ans:{t}:{n}:{x}') for x in 'ABCD']])
 def new_answer_kb():return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_new_ans:{x}') for x in 'ABCD']])
@@ -33,8 +33,8 @@ def save_draft(x):db.set_setting('admin_question_draft',json.dumps(x,ensure_asci
 def clear_draft():db.set_setting('admin_question_draft','{}')
 def ast(s):db.update_user(ADMIN,state=s)
 def opened(t):
- # Tests stay available at all times unless explicitly closed by the admin.
- return bool(t and int(t['active']) and str(t['mode'])!='closed')
+ # Published tests remain available at all times; mode is intentionally ignored.
+ return bool(t and int(t['active']))
 def expired(a,t):
  # No automatic timeout; submit manually or use the admin close action.
  return False
@@ -222,9 +222,8 @@ def register(core,dp,bot,webapp_url):
    return await q.answer(f'{done}/{total} saqlandi')
   try:
    if db.get_test_by_code(d['code']):return await q.answer('Bu kod band. Test yaratilmaydi.',show_alert=True)
-   t=db.create_test(d['name'],d['code'],'00:00','23:59','open')
-   for n,ans in enumerate(d['answers'],1):
-    db.upsert_test_question(t['test_id'],n,f'{n}-savol',['A','B','C','D'],ans,'choice')
+   if len(d['answers'])!=total:return await q.answer('Barcha to‘g‘ri javoblar kiritilmagan. Test saqlanmadi.',show_alert=True)
+   t=db.create_test_with_answers(d['name'],d['code'],d['answers'])
    clear_draft();ast('admin')
    await q.message.answer(f"TEST SAQLANDI\n\n{t['name']}\nKod: {t['code']}\nSavollar: {total}\nHolat: DOIMO OCHIQ",reply_markup=test_kb(t['test_id']))
    await q.answer('Test saqlandi')
@@ -269,12 +268,8 @@ def register(core,dp,bot,webapp_url):
  async def tx(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
   tid=q.data.split(':',1)[1]
-  with db.conn() as c:
-   c.execute("UPDATE tests SET mode='closed' WHERE test_id=?",(tid,))
-  for a in db.all_attempts_for_test(tid):
-   if not a['submitted']:
-    answers=json.loads(a['answers_json'] or '{}');qs=db.questions_for_test(tid);sc=round(sum(norm(answers.get(str(x['number']),' '))==norm(x['answer']) for x in qs)/len(qs)*100,2) if qs else 0;db.update_attempt(a['attempt_id'],score=sc,grade=grade(sc),submitted=1,status='submitted',finished_at=datetime.now(TZ).isoformat())
-  await q.answer('Test yopildi')
+  with db.conn() as c:c.execute("UPDATE tests SET mode='open',active=1 WHERE test_id=?",(tid,))
+  await q.answer('Testlar doimo ochiq qoladi')
  @r.callback_query(F.data.startswith('t_q:'))
  async def tq(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
