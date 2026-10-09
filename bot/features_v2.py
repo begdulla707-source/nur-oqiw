@@ -69,6 +69,46 @@ def build_test_pdf(tid,path):
  subtitle=Paragraph(escape(f"Kod: {t['code']} · Savollar: {len(db.questions_for_test(tid))} · Qatnashchilar: {len(rows)-1}"),styles['Normal'])
  doc.build([title,subtitle,Spacer(1,10),tab])
 
+def _locked_attempt(c, test_id, telegram_id):
+ suffix = " FOR UPDATE" if db.USE_POSTGRES else ""
+ return c.execute("SELECT * FROM test_attempts WHERE test_id=? AND telegram_id=?" + suffix, (str(test_id), int(telegram_id))).fetchone()
+
+def save_answer_atomically(test_id, telegram_id, number, value):
+ """Serialize answer writes so simultaneous requests cannot overwrite each other."""
+ with db.conn() as c:
+  if not db.USE_POSTGRES:
+   c.execute("BEGIN IMMEDIATE")
+  a = _locked_attempt(c, test_id, telegram_id)
+  if not a or not a["started_at"]:
+   return "not_started"
+  if a["submitted"]:
+   return "submitted"
+  answers = json.loads(a["answers_json"] or "{}")
+  key = str(number)
+  if key in answers:
+   return "locked"
+  answers[key] = value
+  c.execute("UPDATE test_attempts SET answers_json=? WHERE attempt_id=?", (json.dumps(answers, ensure_ascii=False), a["attempt_id"]))
+ return "ok"
+
+def finish_attempt_atomically(test_id, telegram_id, questions, finished_at):
+ """Lock the attempt while scoring and submitting it; never overwrite an existing result."""
+ with db.conn() as c:
+  if not db.USE_POSTGRES:
+   c.execute("BEGIN IMMEDIATE")
+  a = _locked_attempt(c, test_id, telegram_id)
+  if not a or not a["started_at"]:
+   return ("not_started", None, None)
+  if a["submitted"]:
+   return ("already_submitted", float(a["score"] or 0), a["grade"] or "")
+  answers = json.loads(a["answers_json"] or "{}")
+  correct = sum(1 for q in questions if norm(answers.get(str(q["number"]), "")) == norm(q["answer"]))
+  score_value = round(correct / len(questions) * 100, 2) if questions else 0
+  grade_value = grade(score_value)
+  c.execute("UPDATE test_attempts SET score=?,grade=?,submitted=1,status='submitted',finished_at=? WHERE attempt_id=? AND submitted=0",
+            (score_value, grade_value, finished_at, a["attempt_id"]))
+ return ("ok", score_value, grade_value)
+
 def register(core,dp,bot,webapp_url):
  global CORE,ADMIN,BOT,TZ,WEBAPP
  CORE,ADMIN,BOT,TZ,WEBAPP=core,core.ADMIN,bot,core.TZ,webapp_url;r=Router(name='test_v3')
@@ -136,15 +176,17 @@ def register(core,dp,bot,webapp_url):
   if not opened(t):return {'ok':False,'error':'test_closed'}
   q=db.get_question_for_test(t['test_id'],p.get('question_id'))
   if not q:return {'ok':False,'error':'question_not_found'}
-  ans=json.loads(a['answers_json'] or '{}');k=str(q['number'])
-  if k in ans:return {'ok':False,'error':'answer_locked'}
   v=str(p.get('answer','')).strip()
   if q['kind']=='written':
    if not v:return {'ok':False,'error':'invalid_answer'}
   else:
    v=v.upper()
    if v not in ('A','B','C','D'):return {'ok':False,'error':'invalid_answer'}
-  ans[k]=v;db.save_attempt_answers(a['attempt_id'],ans);return {'ok':True,'number':q['number']}
+  saved=save_answer_atomically(t['test_id'],tid,q['number'],v)
+  if saved=='locked':return {'ok':False,'error':'answer_locked'}
+  if saved=='submitted':return {'ok':False,'error':'already_submitted'}
+  if saved!='ok':return {'ok':False,'error':'test_not_started'}
+  return {'ok':True,'number':q['number']}
  @core.app.post('/api/test/finish')
  async def finish(p:dict, request: Request):
   raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
@@ -156,7 +198,10 @@ def register(core,dp,bot,webapp_url):
   if expired(a,t):
    sc,gr=finalize_expired(a,t);return {'ok':True,'score':sc,'grade':gr,'full_name':u['full_name'],'test_name':t['name']}
   if not opened(t):return {'ok':False,'error':'test_closed'}
-  sc=score(t,json.loads(a['answers_json'] or '{}'));gr=grade(sc);db.update_attempt(a['attempt_id'],score=sc,grade=gr,submitted=1,status='submitted',finished_at=datetime.now(TZ).isoformat());return {'ok':True,'score':sc,'grade':gr,'full_name':u['full_name'],'test_name':t['name']}
+  status,sc,gr=finish_attempt_atomically(t['test_id'],tid,db.questions_for_test(t['test_id']),datetime.now(TZ).isoformat())
+  if status=='not_started':return {'ok':False,'error':'test_not_started'}
+  if status=='already_submitted':return {'ok':False,'error':'already_submitted','score':sc,'grade':gr}
+  return {'ok':True,'score':sc,'grade':gr,'full_name':u['full_name'],'test_name':t['name']}
  @r.message(CommandStart(deep_link=True))
  async def deep(m:Message,command):
   t=db.get_test_by_code((command.args or '').strip())
