@@ -69,3 +69,14 @@ body{overflow-x:hidden}
 @keyframes glass-arrive{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media(max-width:420px){.landing{padding:18px 13px 108px}.landing-card{padding:27px 20px 22px;border-radius:29px}.brand-mark{margin-bottom:20px}.bottom-glass-nav{bottom:max(10px,env(safe-area-inset-bottom));border-radius:23px}}
 @media(prefers-reduced-motion:reduce){.landing-card{animation:none}*{scroll-behavior:auto!important;transition:none!important}}
+
+/* Direct question navigation and persistent answer feedback */
+.question-picker{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:7px;margin:0 0 13px;padding:12px;border:1px solid rgba(255,255,255,.9);border-radius:20px;background:rgba(255,255,255,.65);box-shadow:0 8px 24px rgba(35,54,87,.06);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.q-nav-btn{min-width:0;aspect-ratio:1;border:1px solid #d9e0eb;border-radius:12px;background:rgba(255,255,255,.86);color:#27344a;font-size:12px;font-weight:900;cursor:pointer}
+.q-nav-btn.current{background:#2868e8;border-color:#2868e8;color:#fff;box-shadow:0 4px 12px rgba(40,104,232,.22)}
+.q-nav-btn.answered-correct{background:#e6f7ed;border-color:#65c58b;color:#126b3b}
+.q-nav-btn.answered-wrong{background:#fff0ef;border-color:#e78b85;color:#a3231d}
+.q-nav-btn.answered:not(.current){background:#eaf1ff;border-color:#a8c5ff;color:#285eb9}
+.answer-result.correctText{color:#126b3b;background:#e6f7ed;border:1px solid #b5e8c9}
+.answer-result.wrongText{color:#a3231d;background:#fff0ef;border:1px solid #f1c0bc}
+@media(max-width:560px){.question-picker{grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;padding:10px}.q-nav-btn{border-radius:10px}}
