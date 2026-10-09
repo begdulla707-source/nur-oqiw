@@ -431,8 +431,8 @@ def register(core,dp,bot,webapp_url):
   for i,x in enumerate(rows,1):
    status=(f"{float(x['score'] or 0):.2f} ball · {x['grade'] or '—'}" if x['submitted'] else 'Yakunlanmagan')
    when=str(x['finished_at'] or x['started_at'] or x['archived_at'] or '')[:16].replace('T',' ')
-   lines.append(f"{i}. {x['full_name'] or 'Ismsiz'} · {x['test_name'] or 'Test'} [{x['test_code'] or 'kod yo‘q'}] · {status} · {when}")
-  body='\\n'.join(lines) if rows else 'Hozircha saqlangan natijalar yo‘q.'
+   lines.append(f"{i}. {x['full_name'] or 'Ismsiz'} (TG:{x['telegram_id']}) · {x['test_name'] or 'Test'} [{x['test_code'] or 'kod yo‘q'}] · {status} · {when}")
+  body='\n'.join(lines) if rows else 'Hozircha saqlangan natijalar yo‘q.'
   await q.message.edit_text(body[:3900],reply_markup=tests_kb());await q.answer()
 
  @r.callback_query(F.data.startswith('t_results:'))
