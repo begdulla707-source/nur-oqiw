@@ -235,9 +235,34 @@ def register(core,dp,bot,webapp_url):
  @r.message(F.text=='Yordam')
  async def help_user(m:Message):
   await m.answer('Savol yoki muammo bo‘lsa, administratorga yozing: @up17v',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/up17v')]]))
+ async def check_prompt(tid,fake_id,index):
+  t=db.get_test(tid);qs=db.questions_for_test(tid);u=db.get_user(fake_id);a=db.get_attempt(tid,fake_id)
+  if not t or not u or not a:return await BOT.send_message(ADMIN,'Tekshirish sessiyasi topilmadi.')
+  if index>=len(qs):
+   answers=json.loads(a['answers_json'] or '{}')
+   score_value=round(sum(1 for x in qs if norm(answers.get(str(x['number']),' '))==norm(x['answer']))/len(qs)*100,2) if qs else 0
+   grade_value=grade(score_value);finished=datetime.now(TZ).isoformat()
+   db.update_attempt(a['attempt_id'],score=score_value,grade=grade_value,submitted=1,status='submitted',finished_at=finished)
+   db.update_user(fake_id,score=score_value,grade=grade_value,submitted=1,finished_at=finished)
+   return await BOT.send_message(ADMIN,f"TEKSHIRISH TUGADI\\nAkkaunt: {u['full_name']}\\nTest: {t['name']}\\nNatija: {score_value:.2f} ball · {grade_value}",reply_markup=test_kb(tid))
+  x=qs[index];head=f"TEKSHIRISH — {u['full_name']}\\n{t['name']}\\nSavol {index+1}/{len(qs)}\\n{x['question'] or (str(x['number'])+'-savol')}\\n"
+  if x['kind']=='written':
+   ast(f"check_written:{tid}:{fake_id}:{index}")
+   return await BOT.send_message(ADMIN,head+"\\nTo‘g‘ri yozma javobni kiriting (simulyatsiya):")
+  kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=z,callback_data=f"t_check_ans:{tid}:{fake_id}:{index}:{z}") for z in 'ABCD']])
+  return await BOT.send_message(ADMIN,head+"\\nVariantni tanlang:",reply_markup=kb)
  @r.message(F.from_user.id==ADMIN)
  async def admin_text(m:Message):
   u=db.ensure_user(ADMIN);s=u['state'] or 'admin';txt=(m.text or '').strip()
+  if s.startswith('check_written:'):
+   try:
+    _,tid,fake_id,index=s.split(':');fake_id=int(fake_id);index=int(index)
+    a=db.get_attempt(tid,fake_id);qs=db.questions_for_test(tid)
+    if not a or index>=len(qs):raise ValueError()
+    answers=json.loads(a['answers_json'] or '{}');answers[str(qs[index]['number'])]=txt
+    db.update_attempt(a['attempt_id'],answers_json=json.dumps(answers,ensure_ascii=False));ast('admin')
+    return await check_prompt(tid,fake_id,index+1)
+   except Exception:return await m.answer('Tekshirish javobi saqlanmadi. Tekshirishni qaytadan boshlang.')
   if txt in {'Test sozlamalari','Ishtirokchilar','PDF natijalar','Tekshirish'}:return await m.answer('TESTLAR — saqlangan testlar',reply_markup=tests_kb())
   if s=='new_code':
    if not txt or ' ' in txt:return await m.answer('Kodni bitta so‘z qilib kiriting. Masalan: MAT2026')
@@ -286,8 +311,23 @@ def register(core,dp,bot,webapp_url):
   db.upsert_user(fake_id,fake_name);db.update_user(fake_id,code_ok=1,state='ready',test_id=tid)
   db.ensure_attempt(tid,fake_id)
   a=db.get_attempt(tid,fake_id);db.update_attempt(a['attempt_id'],started_at=datetime.now(TZ).isoformat(),status='active')
-  await q.message.answer(f"TEKSHIRISH AKKAUNTI YARATILDI\nLogin: {fake_name}\nTest: {t['name']}\nKod: {t['code']}\n\nBu test hisobidir; haqiqiy Telegram foydalanuvchisi emas. Test oqimini tekshirish uchun Mini Appdagi savollarni shu akkaunt nomidan bot ichida tekshirish rejimi keyingi bosqichda qo‘shiladi.",reply_markup=test_kb(tid))
+  await q.message.answer(f"TEKSHIRISH AKKAUNTI YARATILDI\\nLogin: {fake_name}\\nTest: {t['name']}\\nKod: {t['code']}\\n\\nEndi har bir savolga javob berib test oqimini tekshirishingiz mumkin.")
+  await check_prompt(tid,fake_id,0)
   await q.answer('Tekshiruv akkaunti yaratildi')
+ @r.callback_query(F.data.startswith('t_check_ans:'))
+ async def tcheck_answer(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return
+  try:
+   _,tid,fake_id,index,letter=q.data.split(':');fake_id=int(fake_id);index=int(index)
+   qs=db.questions_for_test(tid);a=db.get_attempt(tid,fake_id)
+   if not a or index>=len(qs) or letter not in 'ABCD':return await q.answer('Tekshirish sessiyasi eskirgan.',show_alert=True)
+   answers=json.loads(a['answers_json'] or '{}');answers[str(qs[index]['number'])]=letter
+   db.update_attempt(a['attempt_id'],answers_json=json.dumps(answers,ensure_ascii=False))
+   await q.answer('Javob qabul qilindi')
+   await check_prompt(tid,fake_id,index+1)
+  except Exception:
+   import logging;logging.getLogger('nur-oqiw').exception('test check answer')
+   await q.answer('Javobni saqlashda xatolik',show_alert=True)
  @r.callback_query(F.data=='t_list')
  async def tl(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
