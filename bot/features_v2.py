@@ -28,6 +28,7 @@ def tests_kb():
   state='🟢' if int(t['active']) else '⏸'
   r.append([InlineKeyboardButton(text=f"{state} {t['name'][:20]} · {t['code']}",callback_data=f't_pick:{t["test_id"]}')])
  r.append([InlineKeyboardButton(text='YANGI TEST',callback_data='t_new')])
+ r.append([InlineKeyboardButton(text='UMUMIY REYTING ARXIVI',callback_data='t_archive_results')])
  r.append([InlineKeyboardButton(text='TEKSHIRISH',callback_data='t_check_list')])
  return InlineKeyboardMarkup(inline_keyboard=r)
 def test_kb(t):
@@ -117,6 +118,7 @@ def finish_attempt_atomically(test_id, telegram_id, questions, finished_at):
   grade_value = grade(score_value)
   c.execute("UPDATE test_attempts SET score=?,grade=?,submitted=1,status='submitted',finished_at=? WHERE attempt_id=? AND submitted=0",
             (score_value, grade_value, finished_at, a["attempt_id"]))
+ db.archive_attempt_result(a["attempt_id"])
  return ("ok", score_value, grade_value)
 
 def register(core,dp,bot,webapp_url):
@@ -421,6 +423,18 @@ def register(core,dp,bot,webapp_url):
  async def tq(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
   tid=q.data.split(':',1)[1];qs=db.questions_for_test(tid);text='SAVOLLAR\n\n'+('\n'.join(f"{x['number']}. To‘g‘ri javob: {x['answer']}" for x in qs) if qs else 'Savol yo‘q');await q.message.edit_text(text[:3900],reply_markup=test_kb(tid));await q.answer()
+ @r.callback_query(F.data=='t_archive_results')
+ async def archive_results(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return
+  rows=db.all_permanent_results(200)
+  lines=['UMUMIY REYTING ARXIVI','Barcha testlar bo‘yicha saqlangan natijalar:','']
+  for i,x in enumerate(rows,1):
+   status=(f"{float(x['score'] or 0):.2f} ball · {x['grade'] or '—'}" if x['submitted'] else 'Yakunlanmagan')
+   when=str(x['finished_at'] or x['started_at'] or x['archived_at'] or '')[:16].replace('T',' ')
+   lines.append(f"{i}. {x['full_name'] or 'Ismsiz'} · {x['test_name'] or 'Test'} [{x['test_code'] or 'kod yo‘q'}] · {status} · {when}")
+  body='\\n'.join(lines) if rows else 'Hozircha saqlangan natijalar yo‘q.'
+  await q.message.edit_text(body[:3900],reply_markup=tests_kb());await q.answer()
+
  @r.callback_query(F.data.startswith('t_results:'))
  async def tr(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
