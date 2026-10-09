@@ -44,8 +44,28 @@ def init():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_attempts_test ON test_attempts(test_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_attempts_user ON test_attempts(telegram_id)")
+        c.execute("""CREATE TABLE IF NOT EXISTS permanent_results(
+            attempt_id TEXT PRIMARY KEY,
+            test_id TEXT NOT NULL DEFAULT '',
+            test_code TEXT NOT NULL DEFAULT '',
+            test_name TEXT NOT NULL DEFAULT '',
+            telegram_id BIGINT NOT NULL,
+            full_name TEXT NOT NULL DEFAULT '',
+            phone TEXT DEFAULT '',
+            started_at TEXT,
+            finished_at TEXT,
+            score DOUBLE PRECISION DEFAULT 0,
+            grade TEXT DEFAULT '',
+            answers_json TEXT DEFAULT '{}',
+            submitted INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'active',
+            archived_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_permanent_results_test ON permanent_results(test_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_permanent_results_user ON permanent_results(telegram_id)")
     if USE_POSTGRES:
         _migrate_local_sqlite()
+    archive_completed_results()
 
 def _migrate_local_sqlite():
     """Best-effort one-time import of any SQLite data still present on the instance."""
@@ -182,6 +202,45 @@ def update_attempt(attempt_id,**fields):
     fields={k:v for k,v in fields.items() if k in allowed}
     if fields:
         with conn() as c:c.execute("UPDATE test_attempts SET "+",".join(f"{k}=?" for k in fields)+" WHERE attempt_id=?",list(fields.values())+[str(attempt_id)])
+        if fields.get("submitted"):
+            archive_attempt_result(attempt_id)
+
+def archive_attempt_result(attempt_id):
+    """Save a durable snapshot of who took which test and their result."""
+    with conn() as c:
+        a=c.execute("SELECT * FROM test_attempts WHERE attempt_id=?",(str(attempt_id),)).fetchone()
+        if not a:return False
+        t=c.execute("SELECT name,code FROM tests WHERE test_id=?",(str(a["test_id"]),)).fetchone()
+        u=c.execute("SELECT full_name,phone FROM users WHERE telegram_id=?",(int(a["telegram_id"]),)).fetchone()
+        now=datetime.now(timezone.utc).isoformat()
+        c.execute("""INSERT INTO permanent_results
+            (attempt_id,test_id,test_code,test_name,telegram_id,full_name,phone,started_at,finished_at,score,grade,answers_json,submitted,status,archived_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(attempt_id) DO UPDATE SET
+              test_code=excluded.test_code,test_name=excluded.test_name,
+              full_name=excluded.full_name,phone=excluded.phone,
+              started_at=excluded.started_at,finished_at=excluded.finished_at,
+              score=excluded.score,grade=excluded.grade,answers_json=excluded.answers_json,
+              submitted=excluded.submitted,status=excluded.status""",
+            (str(a["attempt_id"]),str(a["test_id"]),str(t["code"] if t else ""),str(t["name"] if t else "Test o‘chirilgan"),
+             int(a["telegram_id"]),str(u["full_name"] if u else ""),str(u["phone"] if u else ""),
+             a["started_at"],a["finished_at"],float(a["score"] or 0),str(a["grade"] or ""),
+             str(a["answers_json"] or "{}"),int(a["submitted"] or 0),str(a["status"] or ""),now))
+    return True
+
+def archive_completed_results():
+    """Backfill submitted attempts to the permanent archive on startup."""
+    with conn() as c:
+        ids=[r["attempt_id"] for r in c.execute("SELECT attempt_id FROM test_attempts WHERE submitted=1").fetchall()]
+    for attempt_id in ids:
+        try:archive_attempt_result(attempt_id)
+        except Exception:
+            import logging
+            logging.getLogger("nur-oqiw.db").exception("Could not archive result %s",attempt_id)
+
+def all_permanent_results(limit=200):
+    with conn() as c:
+        return c.execute("SELECT * FROM permanent_results ORDER BY COALESCE(finished_at,started_at,archived_at) DESC LIMIT ?",(max(1,min(int(limit),1000)),)).fetchall()
 
 def save_attempt_answers(attempt_id,answers):
     update_attempt(attempt_id,answers_json=json.dumps(answers,ensure_ascii=False))
@@ -196,10 +255,13 @@ def set_test_active(tid,active=1):
     with conn() as c:c.execute("UPDATE tests SET active=? WHERE test_id=?",(int(active),str(tid)))
 
 def delete_test(tid):
-    """Permanently delete a test and its questions/attempts; clear users' selected test."""
+    """Delete test content while preserving attempts and permanent result snapshots."""
     tid=str(tid)
     with conn() as c:
-        c.execute("DELETE FROM test_attempts WHERE test_id=?",(tid,))
+        ids=[r["attempt_id"] for r in c.execute("SELECT attempt_id FROM test_attempts WHERE test_id=?",(tid,)).fetchall()]
+    for attempt_id in ids:
+        archive_attempt_result(attempt_id)
+    with conn() as c:
         c.execute("DELETE FROM questions WHERE test_id=?",(tid,))
         c.execute("UPDATE users SET test_id='',code_ok=0,state='code' WHERE test_id=?",(tid,))
         return c.execute("DELETE FROM tests WHERE test_id=?",(tid,)).rowcount>0
