@@ -91,6 +91,21 @@ def create_test(name,code,start_time="00:00",end_time="23:59",mode="open"):
     tid=secrets.token_hex(8)
     with conn() as c:c.execute("INSERT INTO tests(test_id,code,name,start_time,end_time,mode,active,created_at) VALUES(?,?,?,?,?,?,1,?)",(tid,str(code).strip(),str(name).strip(),start_time,end_time,mode,datetime.now(timezone.utc).isoformat()))
     return get_test(tid)
+
+def create_test_with_answers(name,code,answers):
+    """Publish a test and its complete answer key atomically; never expose partial questions."""
+    answers=[str(x).strip().upper() for x in answers]
+    if not answers or any(x not in ("A","B","C","D") for x in answers):
+        raise ValueError("Test javoblari to‘liq emas yoki noto‘g‘ri.")
+    tid=secrets.token_hex(8)
+    with conn() as c:
+        c.execute("INSERT INTO tests(test_id,code,name,start_time,end_time,mode,active,created_at) VALUES(?,?,?,?,?,?,1,?)",
+                  (tid,str(code).strip(),str(name).strip(),"00:00","23:59","open",datetime.now(timezone.utc).isoformat()))
+        next_id=int(c.execute("SELECT COALESCE(MAX(id),0)+1 AS n FROM questions").fetchone()["n"])
+        for number,answer in enumerate(answers,1):
+            c.execute("INSERT INTO questions(id,question,options_json,answer,kind,group_id,active,image_url,test_id,number) VALUES(?,?,?,?,?,?,1,?,?,?)",
+                      (next_id+number-1,f"{number}-savol",json.dumps(["A","B","C","D"]),answer,"choice","", "",tid,number))
+    return get_test(tid)
 def get_test(tid):
     if not tid:return None
     with conn() as c:return c.execute("SELECT * FROM tests WHERE test_id=?",(str(tid),)).fetchone()
@@ -103,11 +118,10 @@ def get_attempt(test_id,telegram_id):
     with conn() as c:return c.execute("SELECT * FROM test_attempts WHERE test_id=? AND telegram_id=?",(str(test_id),int(telegram_id))).fetchone()
 
 def ensure_attempt(test_id,telegram_id):
-    a=get_attempt(test_id,telegram_id)
-    if a:return a
     aid=secrets.token_hex(12)
     with conn() as c:
-        c.execute("INSERT INTO test_attempts(attempt_id,test_id,telegram_id,answers_json,status) VALUES(?,?,?,?,?)",(aid,str(test_id),int(telegram_id),"{}","active"))
+        c.execute("INSERT INTO test_attempts(attempt_id,test_id,telegram_id,answers_json,status) VALUES(?,?,?,?,?) ON CONFLICT(test_id,telegram_id) DO NOTHING",
+                  (aid,str(test_id),int(telegram_id),"{}","active"))
     return get_attempt(test_id,telegram_id)
 
 def update_attempt(attempt_id,**fields):
