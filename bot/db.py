@@ -2,6 +2,9 @@ import os, sqlite3, json, secrets
 from pathlib import Path
 from datetime import datetime, timezone
 DATABASE_URL=os.getenv("DATABASE_URL","").strip();USE_POSTGRES=bool(DATABASE_URL)
+if not USE_POSTGRES:
+    import logging
+    logging.getLogger("nur-oqiw.db").warning("DATABASE_URL is not configured: using local SQLite. On Render this storage can be lost on redeploy/restart; configure a durable PostgreSQL DATABASE_URL to preserve registrations, tests, answers, and results.")
 if USE_POSTGRES:
     import psycopg
     from psycopg.rows import dict_row
