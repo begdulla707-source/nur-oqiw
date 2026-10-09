@@ -87,7 +87,7 @@ def public_users():
 def set_tier(t,tier,admin_id=None):update_user(t,tier="premium" if str(tier).lower()=="premium" else "default",premium_since=datetime.now(timezone.utc).isoformat() if str(tier).lower()=="premium" else None,premium_granted_by=(int(admin_id) if admin_id and str(tier).lower()=="premium" else None))
 def is_premium(t):u=get_user(t);return bool(u and str(u["tier"] or "default").lower()=="premium")
 
-def create_test(name,code,start_time="08:30",end_time="09:30",mode="auto"):
+def create_test(name,code,start_time="00:00",end_time="23:59",mode="open"):
     tid=secrets.token_hex(8)
     with conn() as c:c.execute("INSERT INTO tests(test_id,code,name,start_time,end_time,mode,active,created_at) VALUES(?,?,?,?,?,?,1,?)",(tid,str(code).strip(),str(name).strip(),start_time,end_time,mode,datetime.now(timezone.utc).isoformat()))
     return get_test(tid)
@@ -97,7 +97,8 @@ def get_test(tid):
 def get_test_by_code(code):
     with conn() as c:return c.execute("SELECT * FROM tests WHERE lower(code)=lower(?) AND active=1",(str(code).strip(),)).fetchone()
 def all_tests():
-    with conn() as c:return c.execute("SELECT * FROM tests ORDER BY created_at DESC").fetchall()
+    # Archived/legacy tests are hidden from the active admin test list.
+    with conn() as c:return c.execute("SELECT * FROM tests WHERE active=1 ORDER BY created_at DESC").fetchall()
 def get_attempt(test_id,telegram_id):
     with conn() as c:return c.execute("SELECT * FROM test_attempts WHERE test_id=? AND telegram_id=?",(str(test_id),int(telegram_id))).fetchone()
 
@@ -183,9 +184,7 @@ def weighted_score(a):
 def grade_for(score):
     s=float(score);return "A+" if s>=90 else "A" if s>=80 else "B" if s>=70 else "C" if s>=60 else "D" if s>=50 else "F"
 def seed():
-    if all_tests():return
-    t=create_test("Asosiy test",os.getenv("ACCESS_CODE","0924"),os.getenv("TEST_START","08:30"),os.getenv("TEST_END","09:30"),"auto");tid=t["test_id"]
-    for i in range(1,33):upsert_test_question(tid,i,f"Sertifikat uslubidagi matematika savoli {i}. To‘g‘ri javobni toping.",["A","B","C","D"],"A")
-    for n,q,opts,a in [(33,"Shu rasmdagi to‘g‘ri to‘rtburchakning enini toping.",["6","8","10","12"],"8"),(34,"Shu rasmdagi perimetrni toping.",["32","36","40","44"],"40"),(35,"Shu rasmdagi yuzani toping.",["72","84","96","108"],"96")]:upsert_test_question(tid,n,q,opts,a,group_id="fig33")
-    for i in range(36,46):upsert_test_question(tid,i,f"{i}. Yozma javobli sertifikat savoli.",[],"","written")
+    # Tests must be created explicitly by the admin; never seed placeholder questions.
+    with conn() as c:
+        c.execute("UPDATE tests SET active=0 WHERE lower(name)=lower(?)",("Asosiy test",))
 def seed_defaults():init();ensure_schema();seed()

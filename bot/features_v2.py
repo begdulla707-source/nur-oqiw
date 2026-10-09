@@ -19,6 +19,7 @@ def tests_kb():
 def test_kb(t):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Savol qo‘shish',callback_data=f't_add:{t}')],[InlineKeyboardButton(text='Oddiy variant',callback_data=f't_choice:{t}'),InlineKeyboardButton(text='Yozma variant',callback_data=f't_written:{t}')],[InlineKeyboardButton(text='Savollar',callback_data=f't_q:{t}'),InlineKeyboardButton(text='Natijalar',callback_data=f't_results:{t}')],[InlineKeyboardButton(text='PDF',callback_data=f't_pdf:{t}'),InlineKeyboardButton(text='Mini App link',callback_data=f't_link:{t}')],[InlineKeyboardButton(text='Guruhga yuborish',callback_data=f't_group:{t}')],[InlineKeyboardButton(text='OCHISH',callback_data=f't_open:{t}'),InlineKeyboardButton(text='YOPISH',callback_data=f't_close:{t}')],[InlineKeyboardButton(text='Orqaga',callback_data='t_list')]])
 def type_kb(t):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ODDIY VARIANT',callback_data=f't_choice:{t}')],[InlineKeyboardButton(text='YOZMA VARIANT',callback_data=f't_written:{t}')]])
 def abcd(t,n):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_ans:{t}:{n}:{x}') for x in 'ABCD']])
+def new_answer_kb():return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_new_ans:{x}') for x in 'ABCD']])
 def draft():
  try:return json.loads(db.get_setting('admin_question_draft','{}') or '{}')
  except:return {}
@@ -26,13 +27,11 @@ def save_draft(x):db.set_setting('admin_question_draft',json.dumps(x,ensure_asci
 def clear_draft():db.set_setting('admin_question_draft','{}')
 def ast(s):db.update_user(ADMIN,state=s)
 def opened(t):
- if not t or not int(t['active']):return False
- if str(t['mode'])=='open':return True
- if str(t['mode'])=='closed':return False
- n=datetime.now(TZ).time();return time.fromisoformat(t['start_time'])<=n<time.fromisoformat(t['end_time'])
+ # Tests stay available at all times unless explicitly closed by the admin.
+ return bool(t and int(t['active']) and str(t['mode'])!='closed')
 def expired(a,t):
- if not a or not a['started_at']:return False
- s=datetime.fromisoformat(a['started_at']);e=datetime.combine(s.date(),time.fromisoformat(t['end_time']),tzinfo=TZ);return datetime.now(TZ)>=min(s+timedelta(hours=1),e)
+ # No automatic timeout; submit manually or use the admin close action.
+ return False
 def score(t,a):
  q=db.questions_for_test(t['test_id']);return round(sum(norm(a.get(str(x['number']),' '))==norm(x['answer']) for x in q)/len(q)*100,2) if q else 0
 def finalize_expired(a,t):
@@ -49,7 +48,7 @@ def register(core,dp,bot,webapp_url):
   if not tid or not u:return {'ok':False,'error':'not_authorized'}
   if not t:return {'ok':False,'error':'test_not_found'}
   if u['test_id']!=t['test_id']:db.update_user(tid,test_id=t['test_id'],code_ok=1,state='ready');u=db.get_user(tid)
-  if not u['full_name'] or not u['phone']:return {'ok':False,'error':'registration_required','test_name':t['name']}
+  if not u['full_name']:return {'ok':False,'error':'registration_required','test_name':t['name']}
   a=db.ensure_attempt(t['test_id'],tid)
   if a['submitted']:return {'ok':False,'error':'already_submitted','score':a['score'],'grade':a['grade'],'test_name':t['name'],'full_name':u['full_name']}
   if not a['started_at']:
@@ -57,8 +56,7 @@ def register(core,dp,bot,webapp_url):
    db.update_attempt(a['attempt_id'],started_at=datetime.now(TZ).isoformat(),status='active');a=db.get_attempt(t['test_id'],tid)
   if expired(a,t):
    sc,gr=finalize_expired(a,t);return {'ok':False,'error':'already_submitted','score':sc,'grade':gr,'test_name':t['name'],'full_name':u['full_name']}
-  s=datetime.fromisoformat(a['started_at']);e=datetime.combine(s.date(),time.fromisoformat(t['end_time']),tzinfo=TZ)
-  return {'ok':True,'full_name':u['full_name'],'answers':json.loads(a['answers_json'] or '{}'),'ends_at':e.isoformat(),'test_name':t['name'],'test_code':t['code'],'total_questions':len(db.questions_for_test(t['test_id']))}
+  return {'ok':True,'full_name':u['full_name'],'answers':json.loads(a['answers_json'] or '{}'),'ends_at':None,'test_name':t['name'],'test_code':t['code'],'total_questions':len(db.questions_for_test(t['test_id']))}
  @core.app.get('/api/test/questions')
  async def questions(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
@@ -98,9 +96,9 @@ def register(core,dp,bot,webapp_url):
  async def deep(m:Message,command):
   t=db.get_test_by_code((command.args or '').strip())
   if not t:return await m.answer('Bu test kodi topilmadi.')
-  u=db.ensure_user(m.from_user.id);db.update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready' if u['full_name'] and u['phone'] else ('name' if not u['full_name'] else 'phone'));db.ensure_attempt(t['test_id'],m.from_user.id);u=db.get_user(m.from_user.id)
-  if not u['full_name']:return await m.answer(f"{t['name']}\n\nIsm, Familiyangizni kiriting:")
-  if not u['phone']:return await m.answer('Telefon raqamingizni yuboring:')
+  u=db.ensure_user(m.from_user.id);db.update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready' if u['full_name'] else 'name');db.ensure_attempt(t['test_id'],m.from_user.id);u=db.get_user(m.from_user.id)
+  if not u['full_name']:
+   return await m.answer(f"{t['name']}\n\nIsm-familiyangizni yozing yoki Telegram ismingiz bilan davom eting:",reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telegram ismim bilan davom etish')]],resize_keyboard=True,one_time_keyboard=True))
   return await m.answer(f"{t['name']}\n\nTest tanlandi. Testni boshlash tugmasini bosing.",reply_markup=user_menu())
  @r.message(F.text=='Profilim')
  async def profile(m:Message):
@@ -130,14 +128,14 @@ def register(core,dp,bot,webapp_url):
    if not txt or ' ' in txt:return await m.answer('Kodni bitta so‘z qilib kiriting. Masalan: MAT2026')
    if db.get_test_by_code(txt):return await m.answer('Bu kod band. Boshqa kod tanlang.')
    save_draft({'code':txt});ast('new_name');return await m.answer('Test nomini kiriting:')
-  if s=='new_name':d=draft();d['name']=txt;save_draft(d);ast('new_time');return await m.answer('Test vaqti: 08:30-09:30 yoki OPEN')
-  if s=='new_time':
-   d=draft()
-   try:
-    if txt.upper()=='OPEN':st,en,mode='00:00','23:59','open'
-    else:st,en=[x.strip() for x in txt.split('-',1)];time.fromisoformat(st);time.fromisoformat(en);mode='closed'
-    t=db.create_test(d['name'],d['code'],st,en,mode);clear_draft();ast('admin');return await m.answer(f"YANGI TEST YARATILDI\n\n{t['name']}\nKirish kodi: {t['code']}",reply_markup=test_kb(t['test_id']))
-   except:return await m.answer('Vaqt formati xato. Masalan: 08:30-09:30')
+  if s=='new_name':
+   if not txt:return await m.answer('Test nomini kiriting:')
+   d=draft();d['name']=txt;save_draft(d);ast('new_count');return await m.answer('Testda jami nechta savol bo‘ladi? (1–200)')
+  if s=='new_count':
+   try:n=int(txt);assert 1<=n<=200
+   except:return await m.answer('Savollar sonini 1 dan 200 gacha butun son bilan kiriting.')
+   d=draft();d['count']=n;d['answers']=[];save_draft(d);ast('new_answer')
+   return await m.answer(f'1/{n}-savolning to‘g‘ri javobini tanlang:',reply_markup=new_answer_kb())
   if s.startswith('choice_num:'):
    try:n=int(txt);assert n>0
    except:return await m.answer('Faqat savol raqamini kiriting. Masalan: 1')
@@ -152,6 +150,28 @@ def register(core,dp,bot,webapp_url):
  async def tl(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
   await q.message.edit_text('TESTLAR',reply_markup=tests_kb());await q.answer()
+ @r.callback_query(F.data.startswith('t_new_ans:'))
+ async def new_answer(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return
+  d=draft();u=db.get_user(ADMIN);letter=q.data.rsplit(':',1)[-1]
+  if letter not in 'ABCD' or not d.get('code') or not d.get('name') or not d.get('count') or (u and u['state']!='new_answer'):
+   return await q.answer('Test yaratish sessiyasi topilmadi. Qaytadan boshlang.',show_alert=True)
+  d.setdefault('answers',[]).append(letter);save_draft(d)
+  done=len(d['answers']);total=int(d['count'])
+  if done<total:
+   await q.message.answer(f'{done+1}/{total}-savolning to‘g‘ri javobini tanlang:',reply_markup=new_answer_kb())
+   return await q.answer(f'{done}/{total} saqlandi')
+  try:
+   if db.get_test_by_code(d['code']):return await q.answer('Bu kod band. Test yaratilmaydi.',show_alert=True)
+   t=db.create_test(d['name'],d['code'],'00:00','23:59','open')
+   for n,ans in enumerate(d['answers'],1):
+    db.upsert_test_question(t['test_id'],n,'',['A','B','C','D'],ans,'choice')
+   clear_draft();ast('admin')
+   await q.message.answer(f"TEST SAQLANDI\n\n{t['name']}\nKod: {t['code']}\nSavollar: {total}\nHolat: DOIMO OCHIQ",reply_markup=test_kb(t['test_id']))
+   await q.answer('Test saqlandi')
+  except Exception:
+   import logging;logging.getLogger('nur-oqiw').exception('create test from answer key')
+   return await q.answer('Test saqlanmadi. Qaytadan urinib ko‘ring.',show_alert=True)
  @r.callback_query(F.data=='t_new')
  async def tn(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return

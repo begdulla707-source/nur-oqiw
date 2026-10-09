@@ -64,12 +64,26 @@ async def start(m:Message):
     u=ensure_user(m.from_user.id)
     if m.from_user.id==ADMIN:update_user(ADMIN,state='admin');await m.answer('NUR O‘QIW ORAYI\n\nAdmin boshqaruv paneli.',reply_markup=admin_kb());return
     if not await subscribed(m.from_user.id):update_user(m.from_user.id,state='subscribe',code_ok=0);await m.answer('Testga kirishdan oldin majburiy kanallarga obuna bo‘ling.',reply_markup=sub_kb());return
-    if u['full_name'] and u['phone'] and u['code_ok']:update_user(m.from_user.id,state='ready');await m.answer('Xush kelibsiz!',reply_markup=user_menu());return
-    update_user(m.from_user.id,state='name',code_ok=0);await m.answer('Ro‘yxatdan o‘tish\n\nIsm, Familiya kiriting:',reply_markup=ReplyKeyboardRemove())
+    if u['full_name']:
+        update_user(m.from_user.id,state='ready' if u['code_ok'] else 'code')
+        if u['code_ok']:
+            await m.answer('Xush kelibsiz! Ro‘yxatdan o‘tishingiz saqlangan.',reply_markup=user_menu())
+        else:
+            await m.answer('Ism-familiyangiz saqlangan. Test kodini kiriting yoki menyudan testni tanlang.',reply_markup=user_menu())
+        return
+    update_user(m.from_user.id,state='name',code_ok=0)
+    await m.answer('Ro‘yxatdan o‘tish\n\nIsm, Familiyangizni yozing yoki Telegram ismingiz bilan davom eting:',reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telegram ismim bilan davom etish')]],resize_keyboard=True,one_time_keyboard=True))
 
 @dp.callback_query(F.data=='check_sub')
 async def check_sub(q:CallbackQuery):
-    if await subscribed(q.from_user.id):update_user(q.from_user.id,state='name',code_ok=0);await q.message.answer('Ism, Familiya kiriting:',reply_markup=ReplyKeyboardRemove())
+    if await subscribed(q.from_user.id):
+        u=ensure_user(q.from_user.id)
+        if u['full_name']:
+            update_user(q.from_user.id,state='code')
+            await q.message.answer('Ism-familiyangiz saqlangan. Test kodini kiriting:',reply_markup=user_menu())
+        else:
+            update_user(q.from_user.id,state='name',code_ok=0)
+            await q.message.answer('Ism, Familiyangizni yozing yoki Telegram ismingiz bilan davom eting:',reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telegram ismim bilan davom etish')]],resize_keyboard=True,one_time_keyboard=True))
     else:await q.message.answer('Barcha majburiy kanallarga obuna bo‘ling.')
     await q.answer()
 
@@ -80,7 +94,21 @@ async def contact(m:Message):
     if m.contact.user_id and m.contact.user_id!=m.from_user.id:await m.answer('O‘zingizning Telegram raqamingizni yuboring.');return
     upsert_user(m.from_user.id,u['full_name'],m.contact.phone_number);u=get_user(m.from_user.id);update_user(m.from_user.id,state='test_code' if u['test_id'] else 'code',code_ok=0);await m.answer('Telefon raqamingiz saqlandi.\n\nTest kodini kiriting:',reply_markup=ReplyKeyboardRemove())
 
-MENU_TEXTS={'Profilim','Tariflar','Testni boshlash','Test kodini kiritish','Mening natijam','Userlar ro‘yxati','Yordam'}
+MENU_TEXTS={'Profilim','Tariflar','Testni boshlash','Test kodini kiritish','Mening natijam','Userlar ro‘yxati','Yordam','Telegram ismim bilan davom etish'}
+
+@dp.message(F.text=='Telegram ismim bilan davom etish')
+async def use_telegram_name(m:Message):
+    u=ensure_user(m.from_user.id)
+    if u['full_name']:
+        update_user(m.from_user.id,state='ready' if u['test_id'] else 'code')
+        return await m.answer('Ismingiz avval saqlangan. ' + ('Testni boshlashingiz mumkin.' if u['test_id'] else 'Test kodini kiriting.'),reply_markup=user_menu())
+    name=' '.join(x for x in [m.from_user.first_name,m.from_user.last_name] if x).strip()
+    if not name:
+        return await m.answer('Telegram profilingizda ism topilmadi. Ism va familiyangizni yozing.')
+    upsert_user(m.from_user.id,name)
+    u=get_user(m.from_user.id)
+    update_user(m.from_user.id,state='ready' if u and u['test_id'] else 'code',code_ok=1 if u and u['test_id'] else 0)
+    await m.answer(f'Ism-familiya saqlandi: {name}\n' + ('Test tanlangan. Testni boshlashingiz mumkin.' if u and u['test_id'] else 'Endi test kodini kiriting.'),reply_markup=user_menu())
 
 @dp.message(F.text=='Test kodini kiritish')
 async def change_test_code(m:Message):
@@ -95,7 +123,7 @@ async def registration_text(m:Message):
     u=ensure_user(m.from_user.id);st=u['state'] or 'code';text=m.text.strip()
     if st=='name':
         if len(text)<3:return await m.answer('Ism va Familiyangizni to‘liq kiriting.')
-        upsert_user(m.from_user.id,text);update_user(m.from_user.id,state='phone');return await m.answer('Telefon raqamingizni yuboring:',reply_markup=phone_kb())
+        upsert_user(m.from_user.id,text);update_user(m.from_user.id,state='code',code_ok=0);return await m.answer('Ism-familiyangiz saqlandi. Endi test kodini kiriting:',reply_markup=user_menu())
     if st in ('code','test_code'):
         t=get_test_by_code(text)
         if not t:return await m.answer('Test kodi noto‘g‘ri. Qayta kiriting:')
@@ -105,23 +133,9 @@ async def registration_text(m:Message):
     return await m.answer('Test kodini kiriting:')
 
 async def cleanup_loop():
+    # Attempts remain active until a user submits or an admin closes the test.
     while True:
-        try:
-            await asyncio.sleep(15);now=datetime.now(TZ)
-            for t in all_tests():
-                qs=questions_for_test(t['test_id'])
-                for a in all_attempts_for_test(t['test_id']):
-                    if not a['started_at'] or a['submitted']:continue
-                    st=datetime.fromisoformat(a['started_at'])
-                    close=datetime.combine(st.date(),time.fromisoformat(t['end_time']),tzinfo=TZ)
-                    if now>=min(st+timedelta(hours=1),close):
-                        answers=json.loads(a['answers_json'] or '{}')
-                        correct=sum(1 for q in qs if str(answers.get(str(q['number']),'')).strip().casefold()==str(q['answer'] or '').strip().casefold())
-                        sc=round(correct/len(qs)*100,2) if qs else 0.0
-                        gr='A+' if sc>=90 else 'A' if sc>=80 else 'B' if sc>=70 else 'C' if sc>=60 else 'D' if sc>=50 else 'F'
-                        update_attempt(a['attempt_id'],score=sc,grade=gr,submitted=1,status='submitted',finished_at=now.isoformat())
-        except asyncio.CancelledError:raise
-        except Exception:logger.exception('cleanup_loop')
+        await asyncio.sleep(3600)
 
 @app.get('/',include_in_schema=False)
 async def root():return {'ok':True,'service':'nur-oqiw','health':'/health'}
