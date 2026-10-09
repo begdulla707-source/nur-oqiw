@@ -323,6 +323,6 @@ def grade_for(score):
     s=float(score);return "A+" if s>=90 else "A" if s>=80 else "B" if s>=70 else "C" if s>=60 else "D" if s>=50 else "F"
 def seed():
     # Tests must be created explicitly by the admin; never seed placeholder questions.
-    with conn() as c:
-        # Never deactivate a real test during startup. Test status is controlled only by the admin panel.
+    # Test status is controlled only by the admin panel.
+    return
 def seed_defaults():init();ensure_schema();seed()
