@@ -46,7 +46,7 @@ def finalize_expired(a,t):
  q=db.questions_for_test(t['test_id']);answers=json.loads(a['answers_json'] or '{}');sc=round(sum(norm(answers.get(str(x['number']),' '))==norm(x['answer']) for x in q)/len(q)*100,2) if q else 0;gr=grade(sc);db.update_attempt(a['attempt_id'],score=sc,grade=gr,submitted=1,status='submitted',finished_at=datetime.now(TZ).isoformat());return sc,gr
 
 def result_label(a):
- return f\"{float(a['score'] or 0):.2f} ball · {a['grade'] or '—'}\" if a['submitted'] else 'Natija kutilmoqda'
+ return f"{float(a['score'] or 0):.2f} ball · {a['grade'] or '—'}" if a['submitted'] else 'Natija kutilmoqda'
 
 def build_test_pdf(tid,path):
  t=db.get_test(tid)
@@ -60,13 +60,13 @@ def build_test_pdf(tid,path):
   name=escape(str(a['full_name'] or '—'))
   started=escape(str(a['started_at'] or '—')[:19].replace('T',' '))
   finished=escape(str(a['finished_at'] or '—')[:19].replace('T',' '))
-  score_text=f\"{float(a['score'] or 0):.2f}\" if a['submitted'] else '—'
+  score_text=f"{float(a['score'] or 0):.2f}" if a['submitted'] else '—'
   rows.append([str(i),Paragraph(name,body),str(a['telegram_id']),Paragraph(started,body),Paragraph(finished,body),score_text,escape(str(a['grade'] or '—')) if a['submitted'] else '—','Yakunlangan' if a['submitted'] else 'Faol'])
  doc=SimpleDocTemplate(path,pagesize=landscape(A4),rightMargin=18,leftMargin=18,topMargin=24,bottomMargin=24)
  tab=Table(rows,repeatRows=1,colWidths=[28,175,70,100,100,48,48,72],hAlign='LEFT')
  tab.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),PDF_FONT),('GRID',(0,0),(-1,-1),.45,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e9edf3')),('FONTSIZE',(0,0),(-1,-1),7),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
- title=Paragraph(escape(f\"NUR O‘QIW ORAYI — {t['name']}\"),styles['Title'])
- subtitle=Paragraph(escape(f\"Kod: {t['code']} · Savollar: {len(db.questions_for_test(tid))} · Qatnashchilar: {len(rows)-1}\"),styles['Normal'])
+ title=Paragraph(escape(f"NUR O‘QIW ORAYI — {t['name']}"),styles['Title'])
+ subtitle=Paragraph(escape(f"Kod: {t['code']} · Savollar: {len(db.questions_for_test(tid))} · Qatnashchilar: {len(rows)-1}"),styles['Normal'])
  doc.build([title,subtitle,Spacer(1,10),tab])
 
 def register(core,dp,bot,webapp_url):
@@ -299,7 +299,7 @@ def register(core,dp,bot,webapp_url):
  async def tr(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
   tid=q.data.split(':',1)[1];rows=db.all_attempts_for_test(tid);lines=['NATIJALAR',''];
-  for i,x in enumerate(rows,1):lines.append(f\"{i}. {x['full_name'] or 'Ismsiz'} · {result_label(x)} · {'Yakunlangan' if x['submitted'] else 'Faol'}\")
+  for i,x in enumerate(rows,1):lines.append(f"{i}. {x['full_name'] or 'Ismsiz'} · {result_label(x)} · {'Yakunlangan' if x['submitted'] else 'Faol'}")
   text='\n'.join(lines) if rows else 'Hali qatnashchi yo‘q.';await q.message.edit_text(text[:3900],reply_markup=test_kb(tid));await q.answer()
  @r.callback_query(F.data.startswith('t_link:'))
  async def link(q:CallbackQuery):
@@ -313,5 +313,5 @@ def register(core,dp,bot,webapp_url):
  async def pdf(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
   await q.answer('PDF tayyorlanmoqda...')
-  tid=q.data.split(':',1)[1];t=db.get_test(tid);path=f'/tmp/{secrets.token_hex(8)}.pdf';build_test_pdf(tid,path);await BOT.send_document(ADMIN,FSInputFile(path),caption=f\"PDF NATIJA — {t['name']} — {t['code']}\")
+  tid=q.data.split(':',1)[1];t=db.get_test(tid);path=f'/tmp/{secrets.token_hex(8)}.pdf';build_test_pdf(tid,path);await BOT.send_document(ADMIN,FSInputFile(path),caption=f"PDF NATIJA — {t['name']} — {t['code']}")
  dp.include_router(r)
