@@ -48,7 +48,7 @@ async def subscribed(tid):
         except:return False
     return True
 def user_menu():
-    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Mening natijam')],[KeyboardButton(text='Userlar ro‘yxati'),KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Userlar ro‘yxati')],[KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
 def phone_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telefon raqamingizni yuborish',request_contact=True)]],resize_keyboard=True,one_time_keyboard=True)
 def sub_kb():
     rows=[[InlineKeyboardButton(text='KANALGA OBUNA BO‘LISH',url=(c if c.startswith('http') else 'https://t.me/'+c.lstrip('@')))] for c in sub_channels()];rows.append([InlineKeyboardButton(text='OBUNANI TEKSHIRISH',callback_data='check_sub')]);return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -130,7 +130,6 @@ async def registration_text(m:Message):
     if st in ('code','test_code'):
         t=get_test_by_code(text)
         if not t:return await m.answer('Test kodi noto‘g‘ri. Qayta kiriting:')
-        if st=='code' and text.casefold()!=str(get_setting('access_code',os.getenv('ACCESS_CODE','0924'))).casefold():return await m.answer('Test kodi noto‘g‘ri. Qayta kiriting:')
         update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready');ensure_attempt(t['test_id'],m.from_user.id);return await m.answer(f"{t['name']} tanlandi. Testni boshlashingiz mumkin.",reply_markup=user_menu())
     if st=='ready':return await m.answer('Testni boshlash tugmasini bosing.',reply_markup=user_menu())
     return await m.answer('Test kodini kiriting:')
