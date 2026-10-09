@@ -159,13 +159,14 @@ def get_test(tid):
     if not tid:return None
     with conn() as c:return c.execute("SELECT * FROM tests WHERE test_id=?",(str(tid),)).fetchone()
 def get_test_by_code(code):
-    with conn() as c:return c.execute("SELECT * FROM tests WHERE lower(code)=lower(?) AND active=1",(str(code).strip(),)).fetchone()
+    # Return stopped tests too, so clients can distinguish them from unknown codes.
+    with conn() as c:return c.execute("SELECT * FROM tests WHERE lower(code)=lower(?)",(str(code).strip(),)).fetchone()
 
 def test_code_exists(code):
     with conn() as c:return bool(c.execute("SELECT 1 FROM tests WHERE lower(code)=lower(?) LIMIT 1",(str(code).strip(),)).fetchone())
 def all_tests():
-    # Archived/legacy tests are hidden from the active admin test list.
-    with conn() as c:return c.execute("SELECT * FROM tests WHERE active=1 ORDER BY created_at DESC").fetchall()
+    # Keep stopped tests visible in the admin list; stopping is not deletion.
+    with conn() as c:return c.execute("SELECT * FROM tests ORDER BY created_at DESC").fetchall()
 def get_attempt(test_id,telegram_id):
     with conn() as c:return c.execute("SELECT * FROM test_attempts WHERE test_id=? AND telegram_id=?",(str(test_id),int(telegram_id))).fetchone()
 
@@ -193,6 +194,15 @@ def delete_attempt(test_id,telegram_id):
 
 def set_test_active(tid,active=1):
     with conn() as c:c.execute("UPDATE tests SET active=? WHERE test_id=?",(int(active),str(tid)))
+
+def delete_test(tid):
+    """Permanently delete a test and its questions/attempts; clear users' selected test."""
+    tid=str(tid)
+    with conn() as c:
+        c.execute("DELETE FROM test_attempts WHERE test_id=?",(tid,))
+        c.execute("DELETE FROM questions WHERE test_id=?",(tid,))
+        c.execute("UPDATE users SET test_id='',code_ok=0,state='code' WHERE test_id=?",(tid,))
+        return c.execute("DELETE FROM tests WHERE test_id=?",(tid,)).rowcount>0)
 def _default_test_id():
     r=None
     with conn() as c:r=c.execute("SELECT test_id FROM tests ORDER BY created_at LIMIT 1").fetchone()

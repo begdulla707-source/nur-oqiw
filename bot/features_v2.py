@@ -23,8 +23,17 @@ def grade(s):
  s=float(s);return 'A+' if s>=90 else 'A' if s>=80 else 'B' if s>=70 else 'C' if s>=60 else 'D' if s>=50 else 'F'
 def user_menu():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
 def tests_kb():
- r=[[InlineKeyboardButton(text=f"{t['name'][:24]} · {t['code']}",callback_data=f't_pick:{t["test_id"]}')] for t in db.all_tests()];r.append([InlineKeyboardButton(text='YANGI TEST',callback_data='t_new')]);return InlineKeyboardMarkup(inline_keyboard=r)
-def test_kb(t):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Savol qo‘shish',callback_data=f't_add:{t}')],[InlineKeyboardButton(text='Oddiy variant',callback_data=f't_choice:{t}'),InlineKeyboardButton(text='Yozma variant',callback_data=f't_written:{t}')],[InlineKeyboardButton(text='Savollar',callback_data=f't_q:{t}'),InlineKeyboardButton(text='Natijalar',callback_data=f't_results:{t}')],[InlineKeyboardButton(text='PDF',callback_data=f't_pdf:{t}'),InlineKeyboardButton(text='Mini App link',callback_data=f't_link:{t}')],[InlineKeyboardButton(text='Guruhga yuborish',callback_data=f't_group:{t}')],[InlineKeyboardButton(text='DOIMO OCHIQ',callback_data=f't_open:{t}')],[InlineKeyboardButton(text='Orqaga',callback_data='t_list')]])
+ r=[]
+ for t in db.all_tests():
+  state='🟢' if int(t['active']) else '⏸'
+  r.append([InlineKeyboardButton(text=f"{state} {t['name'][:20]} · {t['code']}",callback_data=f't_pick:{t["test_id"]}')])
+ r.append([InlineKeyboardButton(text='YANGI TEST',callback_data='t_new')])
+ r.append([InlineKeyboardButton(text='TEKSHIRISH',callback_data='t_check_list')])
+ return InlineKeyboardMarkup(inline_keyboard=r)
+def test_kb(t):
+ test=db.get_test(t);active=bool(test and int(test['active']))
+ toggle=InlineKeyboardButton(text='TESTNI TO‘XTATISH' if active else 'QAYTA OCHISH',callback_data=f't_close:{t}' if active else f't_open:{t}')
+ return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Savol qo‘shish',callback_data=f't_add:{t}')],[InlineKeyboardButton(text='Oddiy variant',callback_data=f't_choice:{t}'),InlineKeyboardButton(text='Yozma variant',callback_data=f't_written:{t}')],[InlineKeyboardButton(text='Savollar',callback_data=f't_q:{t}'),InlineKeyboardButton(text='Natijalar',callback_data=f't_results:{t}')],[InlineKeyboardButton(text='PDF',callback_data=f't_pdf:{t}'),InlineKeyboardButton(text='Mini App link',callback_data=f't_link:{t}')],[InlineKeyboardButton(text='Guruhga yuborish',callback_data=f't_group:{t}')],[toggle],[InlineKeyboardButton(text='TEKSHIRISH',callback_data=f't_check:{t}')],[InlineKeyboardButton(text='O‘CHIRISH',callback_data=f't_delete:{t}')],[InlineKeyboardButton(text='Orqaga',callback_data='t_list')]])
 def type_kb(t):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ODDIY VARIANT',callback_data=f't_choice:{t}')],[InlineKeyboardButton(text='YOZMA VARIANT',callback_data=f't_written:{t}')]])
 def abcd(t,n):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_ans:{t}:{n}:{x}') for x in 'ABCD']])
 def new_answer_kb():return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_new_ans:{x}') for x in 'ABCD']])
@@ -145,6 +154,7 @@ def register(core,dp,bot,webapp_url):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u:return {'ok':False,'error':'not_authorized'}
   if not t:return {'ok':False,'error':'test_not_found'}
+  if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if not db.questions_for_test(t['test_id']):return {'ok':False,'error':'test_not_ready','test_name':t['name']}
   if u['test_id']!=t['test_id']:db.update_user(tid,test_id=t['test_id'],code_ok=1,state='ready');u=db.get_user(tid)
   if not u['full_name']:return {'ok':False,'error':'registration_required','test_name':t['name']}
@@ -160,6 +170,7 @@ def register(core,dp,bot,webapp_url):
  async def questions(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t:return {'ok':False,'error':'not_authorized'}
+  if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if not u['full_name'] or u['test_id']!=t['test_id'] or not opened(t):return {'ok':False,'error':'test_not_started'}
   a=db.get_attempt(t['test_id'],tid)
   if not a or not a['started_at'] or a['submitted']:return {'ok':False,'error':'test_not_started'}
@@ -168,6 +179,7 @@ def register(core,dp,bot,webapp_url):
  async def answer(p:dict, request: Request):
   raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t or not u['full_name']:return {'ok':False,'error':'not_authorized'}
+  if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if u['test_id']!=t['test_id']:return {'ok':False,'error':'test_not_started'}
   a=db.get_attempt(t['test_id'],tid)
   if not a or not a['started_at']:return {'ok':False,'error':'test_not_started'}
@@ -192,6 +204,7 @@ def register(core,dp,bot,webapp_url):
  async def finish(p:dict, request: Request):
   raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t or not u['full_name']:return {'ok':False,'error':'not_authorized'}
+  if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if u['test_id']!=t['test_id']:return {'ok':False,'error':'test_not_started'}
   a=db.get_attempt(t['test_id'],tid)
   if not a or not a['started_at']:return {'ok':False,'error':'test_not_started'}
@@ -225,7 +238,7 @@ def register(core,dp,bot,webapp_url):
  @r.message(F.from_user.id==ADMIN)
  async def admin_text(m:Message):
   u=db.ensure_user(ADMIN);s=u['state'] or 'admin';txt=(m.text or '').strip()
-  if txt in {'Test sozlamalari','Ishtirokchilar','PDF natijalar'}:return await m.answer('TESTLAR',reply_markup=tests_kb())
+  if txt in {'Test sozlamalari','Ishtirokchilar','PDF natijalar','Tekshirish'}:return await m.answer('TESTLAR — saqlangan testlar',reply_markup=tests_kb())
   if s=='new_code':
    if not txt or ' ' in txt:return await m.answer('Kodni bitta so‘z qilib kiriting. Masalan: MAT2026')
    if db.test_code_exists(txt):return await m.answer('Bu kod avval ishlatilgan. Boshqa kod tanlang.')
@@ -258,6 +271,23 @@ def register(core,dp,bot,webapp_url):
    tid=s.split(':',1)[1];save_draft({'test_id':tid,'number':n,'kind':'written'});ast('written_answer');return await m.answer(f'{n}-savol uchun to‘g‘ri yozma javobni kiriting:')
   if s=='written_answer':
    d=draft();db.upsert_test_question(d['test_id'],int(d['number']),'',[],txt,'written');clear_draft();ast('admin');return await m.answer(f"{d['number']}-savol saqlandi.",reply_markup=test_kb(d['test_id']))
+ @r.callback_query(F.data=='t_check_list')
+ async def tcl(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return
+  await q.message.edit_text('Tekshirish uchun testni tanlang:',reply_markup=tests_kb());await q.answer()
+ @r.callback_query(F.data.startswith('t_check:'))
+ async def tcheck(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return
+  tid=q.data.split(':',1)[1];t=db.get_test(tid)
+  if not t:return await q.answer('Test topilmadi',show_alert=True)
+  if not int(t['active']):return await q.answer('Avval testni qayta oching.',show_alert=True)
+  fake_name='user'+str(secrets.randbelow(900)+100);fake_id=-(int(secrets.randbelow(900000000)+100000000))
+  while db.get_user(fake_id):fake_id-=1
+  db.upsert_user(fake_id,fake_name);db.update_user(fake_id,code_ok=1,state='ready',test_id=tid)
+  db.ensure_attempt(tid,fake_id)
+  a=db.get_attempt(tid,fake_id);db.update_attempt(a['attempt_id'],started_at=datetime.now(TZ).isoformat(),status='active')
+  await q.message.answer(f"TEKSHIRISH AKKAUNTI YARATILDI\nLogin: {fake_name}\nTest: {t['name']}\nKod: {t['code']}\n\nBu test hisobidir; haqiqiy Telegram foydalanuvchisi emas. Test oqimini tekshirish uchun Mini Appdagi savollarni shu akkaunt nomidan bot ichida tekshirish rejimi keyingi bosqichda qo‘shiladi.",reply_markup=test_kb(tid))
+  await q.answer('Tekshiruv akkaunti yaratildi')
  @r.callback_query(F.data=='t_list')
  async def tl(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
@@ -329,15 +359,24 @@ def register(core,dp,bot,webapp_url):
  @r.callback_query(F.data.startswith('t_open:'))
  async def to(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
-  tid=q.data.split(':',1)[1]
-  with db.conn() as c:c.execute("UPDATE tests SET mode='open',active=1 WHERE test_id=?",(tid,))
-  await q.answer('Test ochildi')
+  tid=q.data.split(':',1)[1];db.set_test_active(tid,1);t=db.get_test(tid)
+  await q.message.edit_text(f"TEST QAYTA OCHILDI\n\n{t['name']}\nKod: {t['code']}",reply_markup=test_kb(tid));await q.answer('Test qayta ochildi')
  @r.callback_query(F.data.startswith('t_close:'))
  async def tx(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
-  tid=q.data.split(':',1)[1]
-  with db.conn() as c:c.execute("UPDATE tests SET mode='open',active=1 WHERE test_id=?",(tid,))
-  await q.answer('Testlar doimo ochiq qoladi')
+  tid=q.data.split(':',1)[1];db.set_test_active(tid,0);t=db.get_test(tid)
+  await q.message.edit_text(f"TEST TO‘XTATILDI\n\n{t['name']}\nKod: {t['code']}\nFoydalanuvchilar Mini Appda test administrator tomonidan to‘xtatilganini ko‘radi.",reply_markup=test_kb(tid));await q.answer('Test to‘xtatildi')
+ @r.callback_query(F.data.startswith('t_delete:'))
+ async def td(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return
+  tid=q.data.split(':',1)[1];t=db.get_test(tid)
+  if not t:return await q.answer('Test topilmadi',show_alert=True)
+  kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='HA, BUTUNLAY O‘CHIRISH',callback_data=f't_delete_yes:{tid}')],[InlineKeyboardButton(text='BEKOR QILISH',callback_data=f't_pick:{tid}')]])
+  await q.message.edit_text(f"Diqqat! «{t['name']}» testi, savollari va natijalari butunlay o‘chiriladi. Davom etasizmi?",reply_markup=kb);await q.answer()
+ @r.callback_query(F.data.startswith('t_delete_yes:'))
+ async def td_yes(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return
+  tid=q.data.split(':',1)[1];db.delete_test(tid);await q.message.edit_text('Test va unga tegishli savollar/natijalar butunlay o‘chirildi.',reply_markup=tests_kb());await q.answer('O‘chirildi')
  @r.callback_query(F.data.startswith('t_q:'))
  async def tq(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
