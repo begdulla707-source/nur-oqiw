@@ -208,5 +208,5 @@ def grade_for(score):
 def seed():
     # Tests must be created explicitly by the admin; never seed placeholder questions.
     with conn() as c:
-        c.execute("UPDATE tests SET active=0 WHERE lower(name)=lower(?)",("Asosiy test",))
+        c.execute("UPDATE tests SET active=0 WHERE lower(trim(name))=lower(?)",("Asosiy test",))
 def seed_defaults():init();ensure_schema();seed()
