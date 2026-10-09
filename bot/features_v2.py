@@ -165,7 +165,7 @@ def register(core,dp,bot,webapp_url):
    db.update_attempt(a['attempt_id'],started_at=datetime.now(TZ).isoformat(),status='active');a=db.get_attempt(t['test_id'],tid)
   if expired(a,t):
    sc,gr=finalize_expired(a,t);return {'ok':False,'error':'already_submitted','score':sc,'grade':gr,'test_name':t['name'],'full_name':u['full_name']}
-  return {'ok':True,'full_name':u['full_name'],'answers':json.loads(a['answers_json'] or '{}'),'ends_at':None,'test_name':t['name'],'test_code':t['code'],'total_questions':len(db.questions_for_test(t['test_id']))}
+  answers=json.loads(a['answers_json'] or '{}');results={str(q['number']):('correct' if db.normalize(answers.get(str(q['number']),''))==db.normalize(q['answer']) else 'wrong') for q in db.questions_for_test(t['test_id']) if str(q['number']) in answers and q['kind']!='written'};return {'ok':True,'full_name':u['full_name'],'answers':answers,'results':results,'ends_at':None,'test_name':t['name'],'test_code':t['code'],'total_questions':len(db.questions_for_test(t['test_id']))}
  @core.app.get('/api/test/questions')
  async def questions(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
