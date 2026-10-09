@@ -137,6 +137,7 @@ async def registration_text(m:Message):
 @dp.message(F.text=='Testni boshlash')
 async def start_test(m:Message):
     u=get_user(m.from_user.id) or ensure_user(m.from_user.id)
+    u=dict(u)
     if not u.get('full_name'):
         return await m.answer('Avval ism-familiyangizni kiriting.')
     if not u.get('test_id') or not int(u.get('code_ok') or 0):
@@ -146,6 +147,7 @@ async def start_test(m:Message):
     if not t:
         update_user(m.from_user.id,test_id=None,code_ok=0,state='test_code')
         return await m.answer('Test topilmadi. Test kodini qaytadan kiriting.')
+    t=dict(t)
     if not int(t.get('active') or 0):
         return await m.answer('Bu test hozir administrator tomonidan yopilgan.')
     ensure_attempt(t['test_id'],m.from_user.id)
