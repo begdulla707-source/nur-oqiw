@@ -202,7 +202,7 @@ def delete_test(tid):
         c.execute("DELETE FROM test_attempts WHERE test_id=?",(tid,))
         c.execute("DELETE FROM questions WHERE test_id=?",(tid,))
         c.execute("UPDATE users SET test_id='',code_ok=0,state='code' WHERE test_id=?",(tid,))
-        return c.execute("DELETE FROM tests WHERE test_id=?",(tid,)).rowcount>0)
+        return c.execute("DELETE FROM tests WHERE test_id=?",(tid,)).rowcount>0
 def _default_test_id():
     r=None
     with conn() as c:r=c.execute("SELECT test_id FROM tests ORDER BY created_at LIMIT 1").fetchone()
