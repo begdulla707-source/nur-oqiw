@@ -21,13 +21,14 @@ CORE=ADMIN=BOT=TZ=None;WEBAPP=''
 def norm(v):return ' '.join(str(v or '').strip().casefold().split())
 def grade(s):
  s=float(s);return 'A+' if s>=90 else 'A' if s>=80 else 'B' if s>=70 else 'C' if s>=60 else 'D' if s>=50 else 'F'
-def user_menu():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Userlar ro‘yxati')],[KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
+def user_menu():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
 def tests_kb():
  r=[[InlineKeyboardButton(text=f"{t['name'][:24]} · {t['code']}",callback_data=f't_pick:{t["test_id"]}')] for t in db.all_tests()];r.append([InlineKeyboardButton(text='YANGI TEST',callback_data='t_new')]);return InlineKeyboardMarkup(inline_keyboard=r)
 def test_kb(t):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Savol qo‘shish',callback_data=f't_add:{t}')],[InlineKeyboardButton(text='Oddiy variant',callback_data=f't_choice:{t}'),InlineKeyboardButton(text='Yozma variant',callback_data=f't_written:{t}')],[InlineKeyboardButton(text='Savollar',callback_data=f't_q:{t}'),InlineKeyboardButton(text='Natijalar',callback_data=f't_results:{t}')],[InlineKeyboardButton(text='PDF',callback_data=f't_pdf:{t}'),InlineKeyboardButton(text='Mini App link',callback_data=f't_link:{t}')],[InlineKeyboardButton(text='Guruhga yuborish',callback_data=f't_group:{t}')],[InlineKeyboardButton(text='DOIMO OCHIQ',callback_data=f't_open:{t}')],[InlineKeyboardButton(text='Orqaga',callback_data='t_list')]])
 def type_kb(t):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ODDIY VARIANT',callback_data=f't_choice:{t}')],[InlineKeyboardButton(text='YOZMA VARIANT',callback_data=f't_written:{t}')]])
 def abcd(t,n):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_ans:{t}:{n}:{x}') for x in 'ABCD']])
 def new_answer_kb():return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_new_ans:{x}') for x in 'ABCD']])
+def new_question_type_kb():return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ODDIY VARIANT (A/B/C/D)',callback_data='t_new_kind:choice')],[InlineKeyboardButton(text='YOZMA JAVOB',callback_data='t_new_kind:written')]])
 def draft():
  try:return json.loads(db.get_setting('admin_question_draft','{}') or '{}')
  except:return {}
@@ -133,7 +134,7 @@ def register(core,dp,bot,webapp_url):
  async def ranking_api(req:Request):
   tid,u=await auth(req);code=req.query_params.get('code','').strip()
   if not tid or not u:return {'ok':False,'error':'not_authorized'}
-  t=db.get_test_by_code(code)
+  t=db.get_test_by_code(code) if code else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not t:return {'ok':False,'error':'test_not_found'}
   rows=[x for x in db.all_attempts_for_test(t['test_id']) if x['submitted']]
   rows.sort(key=lambda x:(-float(x['score'] or 0),str(x['finished_at'] or '9999')))
@@ -215,38 +216,12 @@ def register(core,dp,bot,webapp_url):
   u=db.ensure_user(m.from_user.id);t=db.get_test(u['test_id']) if u['test_id'] else None;a=db.get_attempt(t['test_id'],m.from_user.id) if t else None;res=f"{float(a['score'] or 0):.2f} ball · {a['grade'] or '—'}" if a and a['submitted'] else 'Yakunlanmagan'
   url=f"{WEBAPP.rstrip('/')}/profile";mk=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MINI APP PROFILIM',web_app=WebAppInfo(url=url))]])
   await m.answer(f"PROFILIM\n\nIsm-familiya: {u['full_name'] or '—'}\nTest: {t['name'] if t else 'Tanlanmagan'}\nKod: {t['code'] if t else '—'}\nNatija: {res}",reply_markup=mk)
- @r.message(F.text=='Userlar ro‘yxati')
- async def user_ranking(m:Message):
-  u=db.get_user(m.from_user.id);t=db.get_test(u['test_id']) if u and u['test_id'] else None
-  if not t:return await m.answer('Avval test kodini kiriting, keyin reytingni oching.')
-  url=f"{WEBAPP.rstrip('/')}/ranking?code={t['code']}";mk=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='TOP 15 REYTING',web_app=WebAppInfo(url=url))]])
-  await m.answer(f"{t['name']} · TOP 15 reyting",reply_markup=mk)
- @r.message(F.text=='Testni boshlash')
- async def start(m:Message):
-  u=db.get_user(m.from_user.id);t=db.get_test(u['test_id']) if u and u['test_id'] else None
-  if not t or not int(t['active']) or not u['code_ok']:
-   if t and not int(t['active']):db.update_user(m.from_user.id,test_id='',code_ok=0,state='code')
-   return await m.answer('Avval ochiq test kodini kiriting va testni tanlang.',reply_markup=user_menu())
-  url=f"{WEBAPP.rstrip('/')}/test?code={t['code']}";mk=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='TESTNI BOSHLASH',web_app=WebAppInfo(url=url))],[InlineKeyboardButton(text='Linkni ochish',url=url)]])
-  await m.answer(f"{t['name']}\n\nTest kodi: {t['code']}\n\nTESTNI BOSHLASH tugmasini bosing.",reply_markup=mk)
- @r.message(F.text=='Test kodini kiritish')
- async def enter(m:Message):db.update_user(m.from_user.id,state='test_code',code_ok=0);await m.answer('Testning kirish kodini kiriting:')
- @r.message(F.text=='Mening natijam')
- async def result(m:Message):
-  u=db.get_user(m.from_user.id);t=db.get_test(u['test_id']) if u and u['test_id'] else None;a=db.get_attempt(t['test_id'],m.from_user.id) if t else None
-  if not t or not a:return await m.answer('Hali test tanlanmagan.')
-  await m.answer(f"NATIJAM\n\nTest: {t['name']}\n" + (f"Ball: {float(a['score'] or 0):.2f}\nBaho: {a['grade'] or '—'}" if a['submitted'] else 'Holat: Hali yakunlanmagan. Testni tugatgandan keyin ball chiqadi.'))
- @r.message(F.text=='Yordam')
- async def help_(m:Message):await m.answer('Test kodini kiriting, keyin Testni boshlash tugmasini bosing.')
  @r.message(F.text=='Tariflar')
- async def tariffs(m:Message):await m.answer('TARIFLAR\n\nDEFAULT\nOddiy test qatnashchisi.\n\nPREMIUM\nKengaytirilgan statistika.')
- @r.message(F.from_user.id==ADMIN, F.text.startswith('PDF '))
- async def pdf_by_code(m:Message):
-  parts=m.text.split(maxsplit=1);code=parts[1].strip() if len(parts)>1 else ''
-  t=db.get_test_by_code(code)
-  if not t:return await m.answer('Bu kod bilan faol test topilmadi.')
-  path=f'/tmp/{secrets.token_hex(8)}.pdf';build_test_pdf(t['test_id'],path)
-  await BOT.send_document(m.chat.id,FSInputFile(path),caption=f"PDF NATIJA · {t['name']} · kod {t['code']}")
+ async def tariffs(m:Message):
+  await m.answer('Tariflar bo‘yicha ma’lumot olish uchun administratorga murojaat qiling: @up17v',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/up17v')]]))
+ @r.message(F.text=='Yordam')
+ async def help_user(m:Message):
+  await m.answer('Savol yoki muammo bo‘lsa, administratorga yozing: @up17v',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/up17v')]]))
  @r.message(F.from_user.id==ADMIN)
  async def admin_text(m:Message):
   u=db.ensure_user(ADMIN);s=u['state'] or 'admin';txt=(m.text or '').strip()
@@ -261,8 +236,18 @@ def register(core,dp,bot,webapp_url):
   if s=='new_count':
    try:n=int(txt);assert 1<=n<=200
    except:return await m.answer('Savollar sonini 1 dan 200 gacha butun son bilan kiriting.')
-   d=draft();d['count']=n;d['answers']=[];save_draft(d);ast('new_answer')
-   return await m.answer(f'1/{n}-savolning to‘g‘ri javobini tanlang:',reply_markup=new_answer_kb())
+   d=draft();d['count']=n;d['items']=[];save_draft(d);ast('new_kind')
+   return await m.answer(f'1/{n}-savol turini tanlang:',reply_markup=new_question_type_kb())
+  if s=='new_written_answer':
+   if not txt:return await m.answer('Yozma javob bo‘sh bo‘lmasin. To‘g‘ri javobni kiriting:')
+   d=draft();d.setdefault('items',[]).append({'kind':'written','answer':txt});save_draft(d);done=len(d['items']);total=int(d['count'])
+   if done<total:
+    ast('new_kind');return await m.answer(f'{done+1}/{total}-savol turini tanlang:',reply_markup=new_question_type_kb())
+   try:
+    if len(d['items'])!=total:return await m.answer('Savollar to‘liq emas. Test hali saqlanmadi.')
+    t=db.create_test_with_questions(d['name'],d['code'],d['items']);clear_draft();ast('admin')
+    return await m.answer(f"TEST SAQLANDI\n\n{t['name']}\nKod: {t['code']}\nSavollar: {total}\nHolat: DOIMO OCHIQ",reply_markup=test_kb(t['test_id']))
+   except Exception as e:return await m.answer(f'Test saqlanmadi: {e}')
   if s.startswith('choice_num:'):
    try:n=int(txt);assert n>0
    except:return await m.answer('Faqat savol raqamini kiriting. Masalan: 1')
@@ -283,21 +268,36 @@ def register(core,dp,bot,webapp_url):
   d=draft();u=db.get_user(ADMIN);letter=q.data.rsplit(':',1)[-1]
   if letter not in 'ABCD' or not d.get('code') or not d.get('name') or not d.get('count') or (u and u['state']!='new_answer'):
    return await q.answer('Test yaratish sessiyasi topilmadi. Qaytadan boshlang.',show_alert=True)
-  d.setdefault('answers',[]).append(letter);save_draft(d)
-  done=len(d['answers']);total=int(d['count'])
+  d.setdefault('items',[]).append({'kind':'choice','answer':letter});save_draft(d)
+  done=len(d['items']);total=int(d['count'])
   if done<total:
-   await q.message.answer(f'{done+1}/{total}-savolning to‘g‘ri javobini tanlang:',reply_markup=new_answer_kb())
+   ast('new_kind');await q.message.answer(f'{done+1}/{total}-savol turini tanlang:',reply_markup=new_question_type_kb())
    return await q.answer(f'{done}/{total} saqlandi')
   try:
    if db.test_code_exists(d['code']):return await q.answer('Bu kod avval ishlatilgan. Boshqa kod tanlang.',show_alert=True)
-   if len(d['answers'])!=total:return await q.answer('Barcha to‘g‘ri javoblar kiritilmagan. Test saqlanmadi.',show_alert=True)
-   t=db.create_test_with_answers(d['name'],d['code'],d['answers'])
+   if len(d['items'])!=total:return await q.answer('Barcha savollar tugallanmagan. Test saqlanmadi.',show_alert=True)
+   t=db.create_test_with_questions(d['name'],d['code'],d['items'])
    clear_draft();ast('admin')
    await q.message.answer(f"TEST SAQLANDI\n\n{t['name']}\nKod: {t['code']}\nSavollar: {total}\nHolat: DOIMO OCHIQ",reply_markup=test_kb(t['test_id']))
    await q.answer('Test saqlandi')
   except Exception:
    import logging;logging.getLogger('nur-oqiw').exception('create test from answer key')
    return await q.answer('Test saqlanmadi. Qaytadan urinib ko‘ring.',show_alert=True)
+ @r.callback_query(F.data.startswith('t_new_kind:'))
+ async def new_kind(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return
+  d=draft();u=db.get_user(ADMIN);kind=q.data.rsplit(':',1)[-1]
+  if not d.get('code') or not d.get('name') or not d.get('count') or not u or u['state']!='new_kind':
+   return await q.answer('Test yaratish bosqichi eskirgan. Yangi testni qaytadan boshlang.',show_alert=True)
+  if len(d.get('items',[]))>=int(d['count']):return await q.answer('Barcha savollar kiritilgan.',show_alert=True)
+  d['current_kind']=kind;save_draft(d);number=len(d.get('items',[]))+1;total=int(d['count'])
+  if kind=='choice':
+   ast('new_answer');await q.message.answer(f'{number}/{total}-savol uchun to‘g‘ri variantni tanlang:',reply_markup=new_answer_kb())
+  elif kind=='written':
+   ast('new_written_answer');await q.message.answer(f'{number}/{total}-savol uchun to‘g‘ri yozma javobni kiriting:')
+  else:return await q.answer('Savol turi noto‘g‘ri.',show_alert=True)
+  await q.answer()
+
  @r.callback_query(F.data=='t_new')
  async def tn(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return

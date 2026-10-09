@@ -48,7 +48,7 @@ async def subscribed(tid):
         except:return False
     return True
 def user_menu():
-    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Userlar ro‘yxati')],[KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
 def phone_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telefon raqamingizni yuborish',request_contact=True)]],resize_keyboard=True,one_time_keyboard=True)
 def sub_kb():
     rows=[[InlineKeyboardButton(text='KANALGA OBUNA BO‘LISH',url=(c if c.startswith('http') else 'https://t.me/'+c.lstrip('@')))] for c in sub_channels()];rows.append([InlineKeyboardButton(text='OBUNANI TEKSHIRISH',callback_data='check_sub')]);return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -94,7 +94,7 @@ async def contact(m:Message):
     if m.contact.user_id and m.contact.user_id!=m.from_user.id:await m.answer('O‘zingizning Telegram raqamingizni yuboring.');return
     upsert_user(m.from_user.id,u['full_name'],m.contact.phone_number);u=get_user(m.from_user.id);update_user(m.from_user.id,state='test_code' if u['test_id'] else 'code',code_ok=0);await m.answer('Telefon raqamingiz saqlandi.\n\nTest kodini kiriting:',reply_markup=ReplyKeyboardRemove())
 
-MENU_TEXTS={'Profilim','Tariflar','Testni boshlash','Test kodini kiritish','Mening natijam','Userlar ro‘yxati','Yordam','Telegram ismim bilan davom etish'}
+MENU_TEXTS={'Profilim','Tariflar','Testni boshlash','Test kodini kiritish','Mening natijam','Yordam','Telegram ismim bilan davom etish'}
 
 @dp.message(F.text=='Telegram ismim bilan davom etish')
 async def use_telegram_name(m:Message):
