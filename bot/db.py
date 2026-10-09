@@ -2,14 +2,13 @@ import os, sqlite3, json, secrets
 from pathlib import Path
 from datetime import datetime, timezone
 DATABASE_URL=os.getenv("DATABASE_URL","").strip();USE_POSTGRES=bool(DATABASE_URL)
+DB=Path(__file__).resolve().parent.parent/"data"/"app.db";DB.parent.mkdir(exist_ok=True)
 if not USE_POSTGRES:
     import logging
     logging.getLogger("nur-oqiw.db").warning("DATABASE_URL is not configured: using local SQLite. On Render this storage can be lost on redeploy/restart; configure a durable PostgreSQL DATABASE_URL to preserve registrations, tests, answers, and results.")
 if USE_POSTGRES:
     import psycopg
     from psycopg.rows import dict_row
-else:
-    DB=Path(__file__).resolve().parent.parent/"data"/"app.db";DB.parent.mkdir(exist_ok=True)
 class DBConn:
     def __init__(self,raw,pg=False):self.raw,self.pg=raw,pg
     def __enter__(self):self.raw.__enter__();return self
@@ -45,6 +44,38 @@ def init():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_attempts_test ON test_attempts(test_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_attempts_user ON test_attempts(telegram_id)")
+    if USE_POSTGRES:
+        _migrate_local_sqlite()
+
+def _migrate_local_sqlite():
+    """Best-effort one-time import of any SQLite data still present on the instance."""
+    if not USE_POSTGRES or not DB.exists():
+        return
+    try:
+        with conn() as pg:
+            marker=pg.execute("SELECT value FROM settings WHERE key=?",("sqlite_import_complete",)).fetchone()
+            if marker and str(marker["value"])=="1":
+                return
+        with sqlite3.connect(DB,timeout=10) as old:
+            old.row_factory=sqlite3.Row
+            existing={r[0] for r in old.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            with conn() as pg:
+                for table in ("users","tests","questions","settings","item_stats","test_attempts"):
+                    if table not in existing:
+                        continue
+                    columns=[r[1] for r in old.execute(f"PRAGMA table_info({table})").fetchall()]
+                    if not columns:
+                        continue
+                    rows=old.execute(f"SELECT * FROM {table}").fetchall()
+                    if not rows:
+                        continue
+                    cols=",".join(columns);placeholders=",".join("?" for _ in columns)
+                    query=f"INSERT INTO {table} ({cols}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
+                    pg.executemany(query,[tuple(row[col] for col in columns) for row in rows])
+                pg.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",("sqlite_import_complete","1"))
+    except Exception:
+        import logging
+        logging.getLogger("nur-oqiw.db").exception("Could not import local SQLite data into PostgreSQL; startup will continue with PostgreSQL storage.")
 
 def ensure_schema():
     with conn() as c:
