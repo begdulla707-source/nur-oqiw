@@ -99,6 +99,8 @@ def create_test_with_answers(name,code,answers):
         raise ValueError("Test javoblari to‘liq emas yoki noto‘g‘ri.")
     tid=secrets.token_hex(8)
     with conn() as c:
+        if c.execute("SELECT 1 FROM tests WHERE lower(code)=lower(?) LIMIT 1",(str(code).strip(),)).fetchone():
+            raise ValueError("Bu test kodi avval ishlatilgan. Boshqa kod tanlang.")
         c.execute("INSERT INTO tests(test_id,code,name,start_time,end_time,mode,active,created_at) VALUES(?,?,?,?,?,?,1,?)",
                   (tid,str(code).strip(),str(name).strip(),"00:00","23:59","open",datetime.now(timezone.utc).isoformat()))
         next_id=int(c.execute("SELECT COALESCE(MAX(id),0)+1 AS n FROM questions").fetchone()["n"])
@@ -111,6 +113,9 @@ def get_test(tid):
     with conn() as c:return c.execute("SELECT * FROM tests WHERE test_id=?",(str(tid),)).fetchone()
 def get_test_by_code(code):
     with conn() as c:return c.execute("SELECT * FROM tests WHERE lower(code)=lower(?) AND active=1",(str(code).strip(),)).fetchone()
+
+def test_code_exists(code):
+    with conn() as c:return bool(c.execute("SELECT 1 FROM tests WHERE lower(code)=lower(?) LIMIT 1",(str(code).strip(),)).fetchone())
 def all_tests():
     # Archived/legacy tests are hidden from the active admin test list.
     with conn() as c:return c.execute("SELECT * FROM tests WHERE active=1 ORDER BY created_at DESC").fetchall()
