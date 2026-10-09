@@ -10,6 +10,8 @@ from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spac
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.styles import ParagraphStyle
+from xml.sax.saxutils import escape
 from . import db
 try:
  pdfmetrics.registerFont(TTFont('NurVera',os.path.join(os.path.dirname(reportlab.__file__),'fonts','Vera.ttf')))
@@ -42,6 +44,30 @@ def score(t,a):
  q=db.questions_for_test(t['test_id']);return round(sum(norm(a.get(str(x['number']),' '))==norm(x['answer']) for x in q)/len(q)*100,2) if q else 0
 def finalize_expired(a,t):
  q=db.questions_for_test(t['test_id']);answers=json.loads(a['answers_json'] or '{}');sc=round(sum(norm(answers.get(str(x['number']),' '))==norm(x['answer']) for x in q)/len(q)*100,2) if q else 0;gr=grade(sc);db.update_attempt(a['attempt_id'],score=sc,grade=gr,submitted=1,status='submitted',finished_at=datetime.now(TZ).isoformat());return sc,gr
+
+def result_label(a):
+ return f\"{float(a['score'] or 0):.2f} ball · {a['grade'] or '—'}\" if a['submitted'] else 'Natija kutilmoqda'
+
+def build_test_pdf(tid,path):
+ t=db.get_test(tid)
+ if not t:raise ValueError('Test topilmadi')
+ styles=getSampleStyleSheet();styles['Title'].fontName=PDF_FONT
+ body=ParagraphStyle('NurTableBody',parent=styles['BodyText'],fontName=PDF_FONT,fontSize=7,leading=9,wordWrap='CJK')
+ head=ParagraphStyle('NurTableHead',parent=body,fontSize=7,leading=8)
+ headings=['№','Ism-familiya','Telegram ID','Boshlangan','Yakunlangan','Ball','Baho','Holat']
+ rows=[[Paragraph('<b>'+escape(x)+'</b>',head) for x in headings]]
+ for i,a in enumerate(db.all_attempts_for_test(tid),1):
+  name=escape(str(a['full_name'] or '—'))
+  started=escape(str(a['started_at'] or '—')[:19].replace('T',' '))
+  finished=escape(str(a['finished_at'] or '—')[:19].replace('T',' '))
+  score_text=f\"{float(a['score'] or 0):.2f}\" if a['submitted'] else '—'
+  rows.append([str(i),Paragraph(name,body),str(a['telegram_id']),Paragraph(started,body),Paragraph(finished,body),score_text,escape(str(a['grade'] or '—')) if a['submitted'] else '—','Yakunlangan' if a['submitted'] else 'Faol'])
+ doc=SimpleDocTemplate(path,pagesize=landscape(A4),rightMargin=18,leftMargin=18,topMargin=24,bottomMargin=24)
+ tab=Table(rows,repeatRows=1,colWidths=[28,175,70,100,100,48,48,72],hAlign='LEFT')
+ tab.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),PDF_FONT),('GRID',(0,0),(-1,-1),.45,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e9edf3')),('FONTSIZE',(0,0),(-1,-1),7),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
+ title=Paragraph(escape(f\"NUR O‘QIW ORAYI — {t['name']}\"),styles['Title'])
+ subtitle=Paragraph(escape(f\"Kod: {t['code']} · Savollar: {len(db.questions_for_test(tid))} · Qatnashchilar: {len(rows)-1}\"),styles['Normal'])
+ doc.build([title,subtitle,Spacer(1,10),tab])
 
 def register(core,dp,bot,webapp_url):
  global CORE,ADMIN,BOT,TZ,WEBAPP
@@ -111,14 +137,14 @@ def register(core,dp,bot,webapp_url):
   q=db.get_question_for_test(t['test_id'],p.get('question_id'))
   if not q:return {'ok':False,'error':'question_not_found'}
   ans=json.loads(a['answers_json'] or '{}');k=str(q['number'])
-  if k in ans:return {'ok':False,'error':'answer_locked','correct':norm(ans[k])==norm(q['answer'])}
+  if k in ans:return {'ok':False,'error':'answer_locked'}
   v=str(p.get('answer','')).strip()
   if q['kind']=='written':
    if not v:return {'ok':False,'error':'invalid_answer'}
   else:
    v=v.upper()
    if v not in ('A','B','C','D'):return {'ok':False,'error':'invalid_answer'}
-  ans[k]=v;db.save_attempt_answers(a['attempt_id'],ans);return {'ok':True,'correct':norm(v)==norm(q['answer']),'number':q['number']}
+  ans[k]=v;db.save_attempt_answers(a['attempt_id'],ans);return {'ok':True,'number':q['number']}
  @core.app.post('/api/test/finish')
  async def finish(p:dict, request: Request):
   raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
@@ -162,7 +188,7 @@ def register(core,dp,bot,webapp_url):
  async def result(m:Message):
   u=db.get_user(m.from_user.id);t=db.get_test(u['test_id']) if u and u['test_id'] else None;a=db.get_attempt(t['test_id'],m.from_user.id) if t else None
   if not t or not a:return await m.answer('Hali test tanlanmagan.')
-  await m.answer(f"NATIJAM\n\nTest: {t['name']}\nBall: {float(a['score'] or 0):.2f}\nBaho: {a['grade'] or 'Hali yakunlanmagan'}")
+  await m.answer(f"NATIJAM\n\nTest: {t['name']}\n" + (f"Ball: {float(a['score'] or 0):.2f}\nBaho: {a['grade'] or '—'}" if a['submitted'] else 'Holat: Hali yakunlanmagan. Testni tugatgandan keyin ball chiqadi.'))
  @r.message(F.text=='Yordam')
  async def help_(m:Message):await m.answer('Test kodini kiriting, keyin Testni boshlash tugmasini bosing.')
  @r.message(F.text=='Tariflar')
@@ -172,12 +198,7 @@ def register(core,dp,bot,webapp_url):
   parts=m.text.split(maxsplit=1);code=parts[1].strip() if len(parts)>1 else ''
   t=db.get_test_by_code(code)
   if not t:return await m.answer('Bu kod bilan faol test topilmadi.')
-  rows=[['№','Ism Familiya','Telegram ID','Boshlangan','Yakunlangan','Ball','Baho','Holat']]
-  for i,a in enumerate(db.all_attempts_for_test(t['test_id']),1):
-   rows.append([str(i),a['full_name'] or '—',str(a['telegram_id']),str(a['started_at'] or '—')[:16],str(a['finished_at'] or '—')[:16],f"{float(a['score'] or 0):.2f}",a['grade'] or '—','Yakunlangan' if a['submitted'] else 'Faol'])
-  path=f'/tmp/{secrets.token_hex(8)}.pdf';st=getSampleStyleSheet();st['Title'].fontName=PDF_FONT;doc=SimpleDocTemplate(path,pagesize=landscape(A4))
-  tab=Table(rows,repeatRows=1);tab.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),PDF_FONT),('GRID',(0,0),(-1,-1),.5,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e9edf3')),('FONTSIZE',(0,0),(-1,-1),8),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
-  doc.build([Paragraph(f"NUR O‘QIW ORAYI — {t['name']} ({t['code']})",st['Title']),Spacer(1,8),tab])
+  path=f'/tmp/{secrets.token_hex(8)}.pdf';build_test_pdf(t['test_id'],path)
   await BOT.send_document(m.chat.id,FSInputFile(path),caption=f"PDF NATIJA · {t['name']} · kod {t['code']}")
  @r.message(F.from_user.id==ADMIN)
  async def admin_text(m:Message):
@@ -277,7 +298,9 @@ def register(core,dp,bot,webapp_url):
  @r.callback_query(F.data.startswith('t_results:'))
  async def tr(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
-  tid=q.data.split(':',1)[1];rows=db.all_attempts_for_test(tid);text='NATIJALAR\n\n'+('\n'.join(f"{i}. {x['full_name'] or 'Ismsiz'} · {float(x['score'] or 0):.2f} · {x['grade'] or '—'} · {"Yakunlangan" if x['submitted'] else "Faol"}" for i,x in enumerate(rows,1)) if rows else 'Hali qatnashchi yo‘q.');await q.message.edit_text(text[:3900],reply_markup=test_kb(tid));await q.answer()
+  tid=q.data.split(':',1)[1];rows=db.all_attempts_for_test(tid);lines=['NATIJALAR',''];
+  for i,x in enumerate(rows,1):lines.append(f\"{i}. {x['full_name'] or 'Ismsiz'} · {result_label(x)} · {'Yakunlangan' if x['submitted'] else 'Faol'}\")
+  text='\n'.join(lines) if rows else 'Hali qatnashchi yo‘q.';await q.message.edit_text(text[:3900],reply_markup=test_kb(tid));await q.answer()
  @r.callback_query(F.data.startswith('t_link:'))
  async def link(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
@@ -290,7 +313,5 @@ def register(core,dp,bot,webapp_url):
  async def pdf(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
   await q.answer('PDF tayyorlanmoqda...')
-  tid=q.data.split(':',1)[1];t=db.get_test(tid);rows=[['№','Ism Familiya','Telegram ID','Kirish','Tugash','Ball','Baho','Holat']]
-  for i,a in enumerate(db.all_attempts_for_test(tid),1):rows.append([str(i),a['full_name'] or '—',str(a['telegram_id']),str(a['started_at'] or '—')[:16],str(a['finished_at'] or '—')[:16],f"{float(a['score'] or 0):.2f}",a['grade'] or '—','Yakunlangan' if a['submitted'] else 'Faol'])
-  path=f'/tmp/{secrets.token_hex(8)}.pdf';st=getSampleStyleSheet();st['Title'].fontName=PDF_FONT;doc=SimpleDocTemplate(path,pagesize=landscape(A4));tab=Table(rows,repeatRows=1);tab.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),PDF_FONT),('GRID',(0,0),(-1,-1),.5,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#eeeeee')),('FONTSIZE',(0,0),(-1,-1),8)]));doc.build([Paragraph(f"NUR O‘QIW ORAYI — {t['name']}",st['Title']),Spacer(1,8),tab]);await BOT.send_document(ADMIN,FSInputFile(path),caption=f"PDF NATIJA — {t['name']} — {t['code']}")
+  tid=q.data.split(':',1)[1];t=db.get_test(tid);path=f'/tmp/{secrets.token_hex(8)}.pdf';build_test_pdf(tid,path);await BOT.send_document(ADMIN,FSInputFile(path),caption=f\"PDF NATIJA — {t['name']} — {t['code']}\")
  dp.include_router(r)
