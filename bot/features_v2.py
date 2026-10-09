@@ -41,7 +41,32 @@ def register(core,dp,bot,webapp_url):
  global CORE,ADMIN,BOT,TZ,WEBAPP
  CORE,ADMIN,BOT,TZ,WEBAPP=core,core.ADMIN,bot,core.TZ,webapp_url;r=Router(name='test_v3')
  async def auth(req):
-  raw=req.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or req.query_params.get('initData','');tid=CORE.telegram_user(raw);return tid,db.get_user(tid) if tid else None
+  raw=req.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or req.query_params.get('initData','');tid=CORE.telegram_user(raw)
+  if tid and raw:
+   try:
+    from urllib.parse import parse_qsl
+    profile=json.loads(dict(parse_qsl(raw,keep_blank_values=True)).get('user','{}'))
+    if profile.get('photo_url'):db.update_user(tid,telegram_photo=str(profile['photo_url']))
+   except Exception:pass
+  return tid,db.get_user(tid) if tid else None
+ @core.app.get('/api/test/profile')
+ async def profile_api(req:Request):
+  tid,u=await auth(req)
+  if not tid or not u:return {'ok':False,'error':'not_authorized'}
+  with db.conn() as c:
+   rows=c.execute("SELECT a.test_id,t.name,t.code,a.started_at,a.finished_at,a.score,a.grade,a.submitted FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id WHERE a.telegram_id=? ORDER BY COALESCE(a.finished_at,a.started_at) DESC",(tid,)).fetchall()
+  history=[{'test_id':x['test_id'],'test_name':x['name'] or 'Test','code':x['code'] or '', 'started_at':x['started_at'],'finished_at':x['finished_at'],'score':float(x['score'] or 0),'grade':x['grade'] or '', 'submitted':bool(x['submitted'])} for x in rows]
+  return {'ok':True,'full_name':u['full_name'] or '','photo_url':u['telegram_photo'] or '','tests':history}
+ @core.app.get('/api/test/ranking')
+ async def ranking_api(req:Request):
+  tid,u=await auth(req);code=req.query_params.get('code','').strip()
+  if not tid or not u:return {'ok':False,'error':'not_authorized'}
+  t=db.get_test_by_code(code)
+  if not t:return {'ok':False,'error':'test_not_found'}
+  rows=[x for x in db.all_attempts_for_test(t['test_id']) if x['submitted']]
+  rows.sort(key=lambda x:(-float(x['score'] or 0),str(x['finished_at'] or '9999')))
+  top=[{'rank':i+1,'full_name':x['full_name'] or 'Ismsiz','photo_url':x['telegram_photo'] or '', 'score':float(x['score'] or 0),'grade':x['grade'] or '', 'finished_at':x['finished_at']} for i,x in enumerate(rows[:15])]
+  return {'ok':True,'test_name':t['name'],'code':t['code'],'total':len(rows),'ranking':top}
  @core.app.get('/api/test/state')
  async def state(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
@@ -120,6 +145,18 @@ def register(core,dp,bot,webapp_url):
  async def help_(m:Message):await m.answer('Test kodini kiriting, keyin Testni boshlash tugmasini bosing.')
  @r.message(F.text=='Tariflar')
  async def tariffs(m:Message):await m.answer('TARIFLAR\n\nDEFAULT\nOddiy test qatnashchisi.\n\nPREMIUM\nKengaytirilgan statistika.')
+ @r.message(F.from_user.id==ADMIN, F.text.startswith('PDF '))
+ async def pdf_by_code(m:Message):
+  parts=m.text.split(maxsplit=1);code=parts[1].strip() if len(parts)>1 else ''
+  t=db.get_test_by_code(code)
+  if not t:return await m.answer('Bu kod bilan faol test topilmadi.')
+  rows=[['№','Ism Familiya','Telegram ID','Boshlangan','Yakunlangan','Ball','Baho','Holat']]
+  for i,a in enumerate(db.all_attempts_for_test(t['test_id']),1):
+   rows.append([str(i),a['full_name'] or '—',str(a['telegram_id']),str(a['started_at'] or '—')[:16],str(a['finished_at'] or '—')[:16],f"{float(a['score'] or 0):.2f}",a['grade'] or '—','Yakunlangan' if a['submitted'] else 'Faol'])
+  path=f'/tmp/{secrets.token_hex(8)}.pdf';st=getSampleStyleSheet();doc=SimpleDocTemplate(path,pagesize=landscape(A4))
+  tab=Table(rows,repeatRows=1);tab.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.5,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e9edf3')),('FONTSIZE',(0,0),(-1,-1),8),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+  doc.build([Paragraph(f"NUR O‘QIW ORAYI — {t['name']} ({t['code']})",st['Title']),Spacer(1,8),tab])
+  await BOT.send_document(m.chat.id,FSInputFile(path),caption=f"PDF NATIJA · {t['name']} · kod {t['code']}")
  @r.message(F.from_user.id==ADMIN)
  async def admin_text(m:Message):
   u=db.ensure_user(ADMIN);s=u['state'] or 'admin';txt=(m.text or '').strip()
@@ -165,7 +202,7 @@ def register(core,dp,bot,webapp_url):
    if db.get_test_by_code(d['code']):return await q.answer('Bu kod band. Test yaratilmaydi.',show_alert=True)
    t=db.create_test(d['name'],d['code'],'00:00','23:59','open')
    for n,ans in enumerate(d['answers'],1):
-    db.upsert_test_question(t['test_id'],n,'',['A','B','C','D'],ans,'choice')
+    db.upsert_test_question(t['test_id'],n,f'{n}-savol',['A','B','C','D'],ans,'choice')
    clear_draft();ast('admin')
    await q.message.answer(f"TEST SAQLANDI\n\n{t['name']}\nKod: {t['code']}\nSavollar: {total}\nHolat: DOIMO OCHIQ",reply_markup=test_kb(t['test_id']))
    await q.answer('Test saqlandi')

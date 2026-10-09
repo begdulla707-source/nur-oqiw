@@ -30,7 +30,7 @@ app.add_middleware(
 
 def telegram_user(raw):
     try:
-        d=dict(parse_qsl(raw or '',keep_blank_values=True));received=d.pop('hash',None);auth=int(d.get('auth_date','0'));u=json.loads(d.get('user','{}'));tid=int(u['id']);check='\n'.join(k+'='+d[k] for k in sorted(d));secret=hmac.new(b'WebAppData',TOKEN.encode(),hashlib.sha256).digest();calc=hmac.new(secret,check.encode(),hashlib.sha256).hexdigest();return tid if received and hmac.compare_digest(calc,received) and datetime.now(timezone.utc).timestamp()-auth<=86400 else None
+        d=dict(parse_qsl(raw or '',keep_blank_values=True));received=d.pop('hash',None);auth=int(d.get('auth_date','0'));u=json.loads(d.get('user','{}'));tid=int(u['id']);check='\n'.join(k+'='+d[k] for k in sorted(d));secret=hmac.new(b'WebAppData',TOKEN.encode(),hashlib.sha256).digest();calc=hmac.new(secret,check.encode(),hashlib.sha256).hexdigest();return tid if received and hmac.compare_digest(calc,received) and 0 <= datetime.now(timezone.utc).timestamp()-auth <= 86400 else None
     except Exception:return None
 
 def sub_required():return str(get_setting('subscription_required',get_setting('subscription_enabled','0'))).lower() in ('1','true','yes','on')

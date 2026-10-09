@@ -20,7 +20,7 @@ def conn():
 
 def init():
     with conn() as c:
-        c.execute("CREATE TABLE IF NOT EXISTS users(telegram_id BIGINT PRIMARY KEY,full_name TEXT,phone TEXT,registered_at TEXT,code_ok INTEGER DEFAULT 0,started_at TEXT,finished_at TEXT,score DOUBLE PRECISION DEFAULT 0,grade TEXT DEFAULT '',answers_json TEXT DEFAULT '{}',submitted INTEGER DEFAULT 0,state TEXT DEFAULT 'code',tier TEXT DEFAULT 'default',premium_since TEXT,premium_granted_by BIGINT,test_id TEXT DEFAULT '')")
+        c.execute("CREATE TABLE IF NOT EXISTS users(telegram_id BIGINT PRIMARY KEY,full_name TEXT,phone TEXT,registered_at TEXT,code_ok INTEGER DEFAULT 0,started_at TEXT,finished_at TEXT,score DOUBLE PRECISION DEFAULT 0,grade TEXT DEFAULT '',answers_json TEXT DEFAULT '{}',submitted INTEGER DEFAULT 0,state TEXT DEFAULT 'code',tier TEXT DEFAULT 'default',premium_since TEXT,premium_granted_by BIGINT,test_id TEXT DEFAULT '',telegram_photo TEXT DEFAULT '')")
         c.execute("CREATE TABLE IF NOT EXISTS tests(test_id TEXT PRIMARY KEY,code TEXT UNIQUE NOT NULL,name TEXT NOT NULL,start_time TEXT DEFAULT '08:30',end_time TEXT DEFAULT '09:30',mode TEXT DEFAULT 'auto',active INTEGER DEFAULT 1,created_at TEXT NOT NULL)")
         c.execute("CREATE TABLE IF NOT EXISTS questions(id INTEGER PRIMARY KEY,question TEXT,options_json TEXT DEFAULT '[]',answer TEXT DEFAULT '',kind TEXT DEFAULT 'choice',group_id TEXT DEFAULT '',active INTEGER DEFAULT 1,image_url TEXT DEFAULT '',test_id TEXT DEFAULT '',number INTEGER DEFAULT 0)")
         c.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)")
@@ -49,7 +49,7 @@ def ensure_schema():
             cols={x["column_name"] for x in c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='users'").fetchall()};qcols={x["column_name"] for x in c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='questions'").fetchall()}
         else:
             cols={x["name"] for x in c.execute("PRAGMA table_info(users)").fetchall()};qcols={x["name"] for x in c.execute("PRAGMA table_info(questions)").fetchall()}
-        for name,typ in [("state","TEXT DEFAULT 'code'"),("tier","TEXT DEFAULT 'default'"),("premium_since","TEXT"),("premium_granted_by","BIGINT"),("test_id","TEXT DEFAULT ''")]:
+        for name,typ in [("state","TEXT DEFAULT 'code'"),("tier","TEXT DEFAULT 'default'"),("premium_since","TEXT"),("premium_granted_by","BIGINT"),("test_id","TEXT DEFAULT ''"),("telegram_photo","TEXT DEFAULT ''")]:
             if name not in cols:c.execute(f"ALTER TABLE users ADD COLUMN {name} {typ}")
         for name,typ in [("image_url","TEXT DEFAULT ''"),("group_id","TEXT DEFAULT ''"),("active","INTEGER DEFAULT 1"),("test_id","TEXT DEFAULT ''"),("number","INTEGER DEFAULT 0")]:
             if name not in qcols:c.execute(f"ALTER TABLE questions ADD COLUMN {name} {typ}")
@@ -69,7 +69,7 @@ def ensure_user(t):
 def upsert_user(t,name,phone=None):
     with conn() as c:c.execute("INSERT INTO users(telegram_id,full_name,phone,registered_at,tier,test_id) VALUES(?,?,?,?, 'default','') ON CONFLICT(telegram_id) DO UPDATE SET full_name=excluded.full_name,phone=COALESCE(excluded.phone,users.phone)",(int(t),name,phone,datetime.now(timezone.utc).isoformat()))
 def update_user(t,**fields):
-    allowed={"full_name","phone","registered_at","code_ok","started_at","finished_at","score","grade","answers_json","submitted","state","tier","premium_since","premium_granted_by","test_id"};fields={k:v for k,v in fields.items() if k in allowed}
+    allowed={"full_name","phone","registered_at","code_ok","started_at","finished_at","score","grade","answers_json","submitted","state","tier","premium_since","premium_granted_by","test_id","telegram_photo"};fields={k:v for k,v in fields.items() if k in allowed}
     if fields:
         with conn() as c:c.execute("UPDATE users SET "+",".join(f"{k}=?" for k in fields)+" WHERE telegram_id=?",list(fields.values())+[int(t)])
 def set_code(t,v=1):update_user(t,code_ok=v)
@@ -120,7 +120,7 @@ def save_attempt_answers(attempt_id,answers):
     update_attempt(attempt_id,answers_json=json.dumps(answers,ensure_ascii=False))
 
 def all_attempts_for_test(test_id):
-    with conn() as c:return c.execute("SELECT a.*,u.full_name,u.phone FROM test_attempts a LEFT JOIN users u ON u.telegram_id=a.telegram_id WHERE a.test_id=? ORDER BY COALESCE(a.finished_at,a.started_at) ASC",(str(test_id),)).fetchall()
+    with conn() as c:return c.execute("SELECT a.*,u.full_name,u.phone,u.telegram_photo FROM test_attempts a LEFT JOIN users u ON u.telegram_id=a.telegram_id WHERE a.test_id=? ORDER BY COALESCE(a.finished_at,a.started_at) ASC",(str(test_id),)).fetchall()
 
 def delete_attempt(test_id,telegram_id):
     with conn() as c:return c.execute("DELETE FROM test_attempts WHERE test_id=? AND telegram_id=?",(str(test_id),int(telegram_id))).rowcount>0
