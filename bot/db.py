@@ -18,7 +18,7 @@ class DBConn:
     def executemany(self,q,s):return self.raw.executemany(q.replace("?","%s") if self.pg else q,s)
     def __getattr__(self,n):return getattr(self.raw,n)
 def conn():
-    if USE_POSTGRES:return DBConn(psycopg.connect(DATABASE_URL,row_factory=dict_row),True)
+    if USE_POSTGRES:return DBConn(psycopg.connect(DATABASE_URL,row_factory=dict_row,connect_timeout=10),True)
     c=sqlite3.connect(DB,timeout=30);c.execute("PRAGMA journal_mode=WAL");c.execute("PRAGMA busy_timeout=30000");c.row_factory=sqlite3.Row;return DBConn(c)
 
 def init():
