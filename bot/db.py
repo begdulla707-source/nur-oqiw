@@ -262,5 +262,5 @@ def grade_for(score):
 def seed():
     # Tests must be created explicitly by the admin; never seed placeholder questions.
     with conn() as c:
-        c.execute("UPDATE tests SET active=0 WHERE lower(trim(name))=lower(?)",("Asosiy test",))
+        # Never deactivate a real test during startup. Test status is controlled only by the admin panel.
 def seed_defaults():init();ensure_schema();seed()
