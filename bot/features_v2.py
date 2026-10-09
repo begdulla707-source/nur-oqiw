@@ -179,7 +179,9 @@ def register(core,dp,bot,webapp_url):
  @r.message(F.text=='Testni boshlash')
  async def start(m:Message):
   u=db.get_user(m.from_user.id);t=db.get_test(u['test_id']) if u and u['test_id'] else None
-  if not t or not u['code_ok']:return await m.answer('Avval test kodini kiritib, testni tanlang.',reply_markup=user_menu())
+  if not t or not int(t['active']) or not u['code_ok']:
+   if t and not int(t['active']):db.update_user(m.from_user.id,test_id='',code_ok=0,state='code')
+   return await m.answer('Avval ochiq test kodini kiriting va testni tanlang.',reply_markup=user_menu())
   url=f"{WEBAPP.rstrip('/')}/test?code={t['code']}";mk=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='TESTNI BOSHLASH',web_app=WebAppInfo(url=url))],[InlineKeyboardButton(text='Linkni ochish',url=url)]])
   await m.answer(f"{t['name']}\n\nTest kodi: {t['code']}\n\nTESTNI BOSHLASH tugmasini bosing.",reply_markup=mk)
  @r.message(F.text=='Test kodini kiritish')
