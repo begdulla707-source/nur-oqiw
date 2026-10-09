@@ -134,6 +134,25 @@ async def registration_text(m:Message):
     if st=='ready':return await m.answer('Testni boshlash tugmasini bosing.',reply_markup=user_menu())
     return await m.answer('Test kodini kiriting:')
 
+@dp.message(F.text=='Testni boshlash')
+async def start_test(m:Message):
+    u=get_user(m.from_user.id) or ensure_user(m.from_user.id)
+    if not u.get('full_name'):
+        return await m.answer('Avval ism-familiyangizni kiriting.')
+    if not u.get('test_id') or not int(u.get('code_ok') or 0):
+        update_user(m.from_user.id,state='test_code',code_ok=0)
+        return await m.answer('Avval “Test kodini kiritish” tugmasini bosib, test kodini kiriting.')
+    t=get_test(u['test_id'])
+    if not t:
+        update_user(m.from_user.id,test_id=None,code_ok=0,state='test_code')
+        return await m.answer('Test topilmadi. Test kodini qaytadan kiriting.')
+    if not int(t.get('active') or 0):
+        return await m.answer('Bu test hozir administrator tomonidan yopilgan.')
+    ensure_attempt(t['test_id'],m.from_user.id)
+    url=f"{WEBAPP.rstrip('/')}/test?code={t['code']}"
+    kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='TESTNI BOSHLASH',web_app=WebAppInfo(url=url))]])
+    return await m.answer(f"{t['name']}\n\nTest tayyor. Quyidagi tugmani bosing — Mini App ochiladi.",reply_markup=kb)
+
 async def cleanup_loop():
     # Attempts remain active until a user submits or an admin closes the test.
     while True:
