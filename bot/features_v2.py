@@ -199,7 +199,7 @@ def register(core,dp,bot,webapp_url):
   if saved=='locked':return {'ok':False,'error':'answer_locked'}
   if saved=='submitted':return {'ok':False,'error':'already_submitted'}
   if saved!='ok':return {'ok':False,'error':'test_not_started'}
-  return {'ok':True,'number':q['number']}
+  return {'ok':True,'number':q['number'],'correct': (db.normalize(v)==db.normalize(q['answer'])) if q['kind']!='written' else None}
  @core.app.post('/api/test/finish')
  async def finish(p:dict, request: Request):
   raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
