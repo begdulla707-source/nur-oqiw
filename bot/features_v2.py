@@ -13,7 +13,7 @@ CORE=ADMIN=BOT=TZ=None;WEBAPP=''
 def norm(v):return ' '.join(str(v or '').strip().casefold().split())
 def grade(s):
  s=float(s);return 'A+' if s>=90 else 'A' if s>=80 else 'B' if s>=70 else 'C' if s>=60 else 'D' if s>=50 else 'F'
-def user_menu():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
+def user_menu():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Userlar ro‘yxati')],[KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
 def tests_kb():
  r=[[InlineKeyboardButton(text=f"{t['name'][:24]} · {t['code']}",callback_data=f't_pick:{t["test_id"]}')] for t in db.all_tests()];r.append([InlineKeyboardButton(text='YANGI TEST',callback_data='t_new')]);return InlineKeyboardMarkup(inline_keyboard=r)
 def test_kb(t):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Savol qo‘shish',callback_data=f't_add:{t}')],[InlineKeyboardButton(text='Oddiy variant',callback_data=f't_choice:{t}'),InlineKeyboardButton(text='Yozma variant',callback_data=f't_written:{t}')],[InlineKeyboardButton(text='Savollar',callback_data=f't_q:{t}'),InlineKeyboardButton(text='Natijalar',callback_data=f't_results:{t}')],[InlineKeyboardButton(text='PDF',callback_data=f't_pdf:{t}'),InlineKeyboardButton(text='Mini App link',callback_data=f't_link:{t}')],[InlineKeyboardButton(text='Guruhga yuborish',callback_data=f't_group:{t}')],[InlineKeyboardButton(text='OCHISH',callback_data=f't_open:{t}'),InlineKeyboardButton(text='YOPISH',callback_data=f't_close:{t}')],[InlineKeyboardButton(text='Orqaga',callback_data='t_list')]])
@@ -72,6 +72,7 @@ def register(core,dp,bot,webapp_url):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u:return {'ok':False,'error':'not_authorized'}
   if not t:return {'ok':False,'error':'test_not_found'}
+  if not db.questions_for_test(t['test_id']):return {'ok':False,'error':'test_not_ready','test_name':t['name']}
   if u['test_id']!=t['test_id']:db.update_user(tid,test_id=t['test_id'],code_ok=1,state='ready');u=db.get_user(tid)
   if not u['full_name']:return {'ok':False,'error':'registration_required','test_name':t['name']}
   a=db.ensure_attempt(t['test_id'],tid)
@@ -86,12 +87,17 @@ def register(core,dp,bot,webapp_url):
  async def questions(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t:return {'ok':False,'error':'not_authorized'}
+  if not u['full_name'] or u['test_id']!=t['test_id'] or not opened(t):return {'ok':False,'error':'test_not_started'}
+  a=db.get_attempt(t['test_id'],tid)
+  if not a or not a['started_at'] or a['submitted']:return {'ok':False,'error':'test_not_started'}
   return {'ok':True,'questions':[{'id':q['number'],'question':q['question'] or '', 'options':(json.loads(q['options_json'] or '[]') if q['options_json'] else []) or ['A','B','C','D'], 'kind':q['kind'],'image_url':q['image_url'] or ''} for q in db.questions_for_test(t['test_id'])]}
  @core.app.post('/api/test/answer')
  async def answer(p:dict, request: Request):
   raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
-  if not tid or not u or not t:return {'ok':False,'error':'not_authorized'}
-  a=db.ensure_attempt(t['test_id'],tid)
+  if not tid or not u or not t or not u['full_name']:return {'ok':False,'error':'not_authorized'}
+  if u['test_id']!=t['test_id']:return {'ok':False,'error':'test_not_started'}
+  a=db.get_attempt(t['test_id'],tid)
+  if not a or not a['started_at']:return {'ok':False,'error':'test_not_started'}
   if a['submitted']:return {'ok':False,'error':'already_submitted'}
   if expired(a,t):
    sc,gr=finalize_expired(a,t);return {'ok':False,'error':'already_submitted','score':sc,'grade':gr}
@@ -105,13 +111,15 @@ def register(core,dp,bot,webapp_url):
    if not v:return {'ok':False,'error':'invalid_answer'}
   else:
    v=v.upper()
-   if v not in 'ABCD':return {'ok':False,'error':'invalid_answer'}
+   if v not in ('A','B','C','D'):return {'ok':False,'error':'invalid_answer'}
   ans[k]=v;db.save_attempt_answers(a['attempt_id'],ans);return {'ok':True,'correct':norm(v)==norm(q['answer']),'number':q['number']}
  @core.app.post('/api/test/finish')
  async def finish(p:dict, request: Request):
   raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
-  if not tid or not u or not t:return {'ok':False,'error':'not_authorized'}
-  a=db.ensure_attempt(t['test_id'],tid)
+  if not tid or not u or not t or not u['full_name']:return {'ok':False,'error':'not_authorized'}
+  if u['test_id']!=t['test_id']:return {'ok':False,'error':'test_not_started'}
+  a=db.get_attempt(t['test_id'],tid)
+  if not a or not a['started_at']:return {'ok':False,'error':'test_not_started'}
   if a['submitted']:return {'ok':False,'error':'already_submitted','score':a['score'],'grade':a['grade']}
   if expired(a,t):
    sc,gr=finalize_expired(a,t);return {'ok':True,'score':sc,'grade':gr,'full_name':u['full_name'],'test_name':t['name']}
@@ -127,7 +135,15 @@ def register(core,dp,bot,webapp_url):
   return await m.answer(f"{t['name']}\n\nTest tanlandi. Testni boshlash tugmasini bosing.",reply_markup=user_menu())
  @r.message(F.text=='Profilim')
  async def profile(m:Message):
-  u=db.ensure_user(m.from_user.id);t=db.get_test(u['test_id']) if u['test_id'] else None;a=db.get_attempt(t['test_id'],m.from_user.id) if t else None;res=f"{float(a['score'] or 0):.2f} ball · {a['grade'] or '—'}" if a and a['submitted'] else 'Yakunlanmagan';await m.answer(f"PROFILIM\n\nIsm-familiya: {u['full_name'] or '—'}\nTelefon: {u['phone'] or '—'}\nTest: {t['name'] if t else 'Tanlanmagan'}\nKod: {t['code'] if t else '—'}\nNatija: {res}")
+  u=db.ensure_user(m.from_user.id);t=db.get_test(u['test_id']) if u['test_id'] else None;a=db.get_attempt(t['test_id'],m.from_user.id) if t else None;res=f"{float(a['score'] or 0):.2f} ball · {a['grade'] or '—'}" if a and a['submitted'] else 'Yakunlanmagan'
+  url=f"{WEBAPP.rstrip('/')}/profile";mk=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MINI APP PROFILIM',web_app=WebAppInfo(url=url))]])
+  await m.answer(f"PROFILIM\n\nIsm-familiya: {u['full_name'] or '—'}\nTest: {t['name'] if t else 'Tanlanmagan'}\nKod: {t['code'] if t else '—'}\nNatija: {res}",reply_markup=mk)
+ @r.message(F.text=='Userlar ro‘yxati')
+ async def user_ranking(m:Message):
+  u=db.get_user(m.from_user.id);t=db.get_test(u['test_id']) if u and u['test_id'] else None
+  if not t:return await m.answer('Avval test kodini kiriting, keyin reytingni oching.')
+  url=f"{WEBAPP.rstrip('/')}/ranking?code={t['code']}";mk=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='TOP 15 REYTING',web_app=WebAppInfo(url=url))]])
+  await m.answer(f"{t['name']} · TOP 15 reyting",reply_markup=mk)
  @r.message(F.text=='Testni boshlash')
  async def start(m:Message):
   u=db.get_user(m.from_user.id);t=db.get_test(u['test_id']) if u and u['test_id'] else None
@@ -275,5 +291,5 @@ def register(core,dp,bot,webapp_url):
   await q.answer('PDF tayyorlanmoqda...')
   tid=q.data.split(':',1)[1];t=db.get_test(tid);rows=[['№','Ism Familiya','Telegram ID','Kirish','Tugash','Ball','Baho','Holat']]
   for i,a in enumerate(db.all_attempts_for_test(tid),1):rows.append([str(i),a['full_name'] or '—',str(a['telegram_id']),str(a['started_at'] or '—')[:16],str(a['finished_at'] or '—')[:16],f"{float(a['score'] or 0):.2f}",a['grade'] or '—','Yakunlangan' if a['submitted'] else 'Faol'])
-  path=f'/tmp/{secrets.token_hex(8)}.pdf';st=getSampleStyleSheet();doc=SimpleDocTemplate(path,pagesize=landscape(A4));tab=Table(rows,repeatRows=1);tab.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.5,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#eeeeee')),('FONTSIZE',(0,0),(-1,-1),8)]));doc.build([Paragraph(f"NUR O‘QIW ORAYI — {t['name']}",st['Title']),Spacer(1,8),tab]);await BOT.send_document(ADMIN,FSInputFile(path),caption=f"PDF NATIJA — {t['name']} — {t['code']}");await q.answer('PDF yuborildi')
+  path=f'/tmp/{secrets.token_hex(8)}.pdf';st=getSampleStyleSheet();doc=SimpleDocTemplate(path,pagesize=landscape(A4));tab=Table(rows,repeatRows=1);tab.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.5,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#eeeeee')),('FONTSIZE',(0,0),(-1,-1),8)]));doc.build([Paragraph(f"NUR O‘QIW ORAYI — {t['name']}",st['Title']),Spacer(1,8),tab]);await BOT.send_document(ADMIN,FSInputFile(path),caption=f"PDF NATIJA — {t['name']} — {t['code']}")
  dp.include_router(r)
