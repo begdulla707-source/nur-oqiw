@@ -206,7 +206,7 @@ def register(core,dp,bot,webapp_url):
   if txt in {'Test sozlamalari','Ishtirokchilar','PDF natijalar'}:return await m.answer('TESTLAR',reply_markup=tests_kb())
   if s=='new_code':
    if not txt or ' ' in txt:return await m.answer('Kodni bitta so‘z qilib kiriting. Masalan: MAT2026')
-   if db.get_test_by_code(txt):return await m.answer('Bu kod band. Boshqa kod tanlang.')
+   if db.test_code_exists(txt):return await m.answer('Bu kod avval ishlatilgan. Boshqa kod tanlang.')
    save_draft({'code':txt});ast('new_name');return await m.answer('Test nomini kiriting:')
   if s=='new_name':
    if not txt:return await m.answer('Test nomini kiriting:')
@@ -242,7 +242,7 @@ def register(core,dp,bot,webapp_url):
    await q.message.answer(f'{done+1}/{total}-savolning to‘g‘ri javobini tanlang:',reply_markup=new_answer_kb())
    return await q.answer(f'{done}/{total} saqlandi')
   try:
-   if db.get_test_by_code(d['code']):return await q.answer('Bu kod band. Test yaratilmaydi.',show_alert=True)
+   if db.test_code_exists(d['code']):return await q.answer('Bu kod avval ishlatilgan. Boshqa kod tanlang.',show_alert=True)
    if len(d['answers'])!=total:return await q.answer('Barcha to‘g‘ri javoblar kiritilmagan. Test saqlanmadi.',show_alert=True)
    t=db.create_test_with_answers(d['name'],d['code'],d['answers'])
    clear_draft();ast('admin')
