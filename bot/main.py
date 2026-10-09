@@ -123,7 +123,10 @@ async def registration_text(m:Message):
     u=ensure_user(m.from_user.id);st=u['state'] or 'code';text=m.text.strip()
     if st=='name':
         if len(text)<3:return await m.answer('Ism va Familiyangizni to‘liq kiriting.')
-        upsert_user(m.from_user.id,text);update_user(m.from_user.id,state='code',code_ok=0);return await m.answer('Ism-familiyangiz saqlandi. Endi test kodini kiriting:',reply_markup=user_menu())
+        upsert_user(m.from_user.id,text)
+        saved=get_user(m.from_user.id);has_test=bool(saved and saved['test_id'] and get_test(saved['test_id']))
+        update_user(m.from_user.id,state='ready' if has_test else 'code',code_ok=1 if has_test else 0)
+        return await m.answer('Ism-familiyangiz saqlandi. ' + ('Test tanlangan, Testni boshlash tugmasini bosing.' if has_test else 'Endi test kodini kiriting.'),reply_markup=user_menu())
     if st in ('code','test_code'):
         t=get_test_by_code(text)
         if not t:return await m.answer('Test kodi noto‘g‘ri. Qayta kiriting:')
@@ -148,11 +151,19 @@ async def rate_limit(request:Request,call_next):
         q.append(now)
     return await call_next(request)
 
+async def _process_telegram_update(update:Update):
+    try:
+        await dp.feed_update(bot,update)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception('Telegram update processing failed')
+
 @app.post('/telegram/webhook')
 async def telegram_webhook(request:Request):
     if WEBHOOK_SECRET and request.headers.get('X-Telegram-Bot-Api-Secret-Token','')!=WEBHOOK_SECRET:return JSONResponse({'ok':False},status_code=403)
     try:
-        update=Update.model_validate(await request.json());asyncio.create_task(dp.feed_update(bot,update));return {'ok':True}
+        update=Update.model_validate(await request.json());asyncio.create_task(_process_telegram_update(update));return {'ok':True}
     except Exception as e:logger.exception('webhook: %s',e);return JSONResponse({'ok':False},status_code=400)
 
 from .features_v2 import register as register_features
