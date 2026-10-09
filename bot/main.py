@@ -162,7 +162,7 @@ async def _process_telegram_update(update:Update):
 async def telegram_webhook(request:Request):
     if WEBHOOK_SECRET and request.headers.get('X-Telegram-Bot-Api-Secret-Token','')!=WEBHOOK_SECRET:return JSONResponse({'ok':False},status_code=403)
     try:
-        update=Update.model_validate(await request.json());asyncio.create_task(_process_telegram_update(update));return {'ok':True}
+        update=Update.model_validate(await request.json());await _process_telegram_update(update);return {'ok':True}
     except Exception as e:logger.exception('webhook: %s',e);return JSONResponse({'ok':False},status_code=400)
 
 from .features_v2 import register as register_features
