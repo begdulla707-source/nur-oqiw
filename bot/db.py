@@ -120,7 +120,7 @@ def save_attempt_answers(attempt_id,answers):
     update_attempt(attempt_id,answers_json=json.dumps(answers,ensure_ascii=False))
 
 def all_attempts_for_test(test_id):
-    with conn() as c:return c.execute("SELECT a.*,u.full_name,u.phone,u.telegram_photo FROM test_attempts a LEFT JOIN users u ON u.telegram_id=a.telegram_id WHERE a.test_id=? ORDER BY COALESCE(a.finished_at,a.started_at) ASC",(str(test_id),)).fetchall()
+    with conn() as c:return c.execute("SELECT a.*,u.full_name,u.phone,u.telegram_photo FROM test_attempts a LEFT JOIN users u ON u.telegram_id=a.telegram_id WHERE a.test_id=? AND (a.started_at IS NOT NULL OR a.submitted=1) ORDER BY COALESCE(a.finished_at,a.started_at) ASC",(str(test_id),)).fetchall()
 
 def delete_attempt(test_id,telegram_id):
     with conn() as c:return c.execute("DELETE FROM test_attempts WHERE test_id=? AND telegram_id=?",(str(test_id),int(telegram_id))).rowcount>0

@@ -1,5 +1,5 @@
 from fastapi import Request
-import json,secrets
+import json,secrets,os,reportlab
 from datetime import datetime,time,timedelta
 from aiogram import Router,F
 from aiogram.filters import CommandStart
@@ -8,7 +8,13 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4,landscape
 from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from . import db
+try:
+ pdfmetrics.registerFont(TTFont('NurVera',os.path.join(os.path.dirname(reportlab.__file__),'fonts','Vera.ttf')))
+ PDF_FONT='NurVera'
+except Exception:PDF_FONT='Helvetica'
 CORE=ADMIN=BOT=TZ=None;WEBAPP=''
 def norm(v):return ' '.join(str(v or '').strip().casefold().split())
 def grade(s):
@@ -169,8 +175,8 @@ def register(core,dp,bot,webapp_url):
   rows=[['№','Ism Familiya','Telegram ID','Boshlangan','Yakunlangan','Ball','Baho','Holat']]
   for i,a in enumerate(db.all_attempts_for_test(t['test_id']),1):
    rows.append([str(i),a['full_name'] or '—',str(a['telegram_id']),str(a['started_at'] or '—')[:16],str(a['finished_at'] or '—')[:16],f"{float(a['score'] or 0):.2f}",a['grade'] or '—','Yakunlangan' if a['submitted'] else 'Faol'])
-  path=f'/tmp/{secrets.token_hex(8)}.pdf';st=getSampleStyleSheet();doc=SimpleDocTemplate(path,pagesize=landscape(A4))
-  tab=Table(rows,repeatRows=1);tab.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.5,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e9edf3')),('FONTSIZE',(0,0),(-1,-1),8),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+  path=f'/tmp/{secrets.token_hex(8)}.pdf';st=getSampleStyleSheet();st['Title'].fontName=PDF_FONT;doc=SimpleDocTemplate(path,pagesize=landscape(A4))
+  tab=Table(rows,repeatRows=1);tab.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),PDF_FONT),('GRID',(0,0),(-1,-1),.5,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e9edf3')),('FONTSIZE',(0,0),(-1,-1),8),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
   doc.build([Paragraph(f"NUR O‘QIW ORAYI — {t['name']} ({t['code']})",st['Title']),Spacer(1,8),tab])
   await BOT.send_document(m.chat.id,FSInputFile(path),caption=f"PDF NATIJA · {t['name']} · kod {t['code']}")
  @r.message(F.from_user.id==ADMIN)
@@ -291,5 +297,5 @@ def register(core,dp,bot,webapp_url):
   await q.answer('PDF tayyorlanmoqda...')
   tid=q.data.split(':',1)[1];t=db.get_test(tid);rows=[['№','Ism Familiya','Telegram ID','Kirish','Tugash','Ball','Baho','Holat']]
   for i,a in enumerate(db.all_attempts_for_test(tid),1):rows.append([str(i),a['full_name'] or '—',str(a['telegram_id']),str(a['started_at'] or '—')[:16],str(a['finished_at'] or '—')[:16],f"{float(a['score'] or 0):.2f}",a['grade'] or '—','Yakunlangan' if a['submitted'] else 'Faol'])
-  path=f'/tmp/{secrets.token_hex(8)}.pdf';st=getSampleStyleSheet();doc=SimpleDocTemplate(path,pagesize=landscape(A4));tab=Table(rows,repeatRows=1);tab.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.5,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#eeeeee')),('FONTSIZE',(0,0),(-1,-1),8)]));doc.build([Paragraph(f"NUR O‘QIW ORAYI — {t['name']}",st['Title']),Spacer(1,8),tab]);await BOT.send_document(ADMIN,FSInputFile(path),caption=f"PDF NATIJA — {t['name']} — {t['code']}")
+  path=f'/tmp/{secrets.token_hex(8)}.pdf';st=getSampleStyleSheet();st['Title'].fontName=PDF_FONT;doc=SimpleDocTemplate(path,pagesize=landscape(A4));tab=Table(rows,repeatRows=1);tab.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),PDF_FONT),('GRID',(0,0),(-1,-1),.5,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#eeeeee')),('FONTSIZE',(0,0),(-1,-1),8)]));doc.build([Paragraph(f"NUR O‘QIW ORAYI — {t['name']}",st['Title']),Spacer(1,8),tab]);await BOT.send_document(ADMIN,FSInputFile(path),caption=f"PDF NATIJA — {t['name']} — {t['code']}")
  dp.include_router(r)
