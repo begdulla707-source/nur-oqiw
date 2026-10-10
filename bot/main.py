@@ -41,12 +41,20 @@ def sub_channels():
     except:return [x.strip() for x in raw.splitlines() if x.strip()]
 async def subscribed(tid):
     if not sub_required():return True
-    for ch in sub_channels():
-        try:
-            m=await bot.get_chat_member(ch,tid)
-            if m.status not in ('member','administrator','creator'):return False
-        except:return False
-    return True
+    channels=sub_channels()
+    if not channels:return True
+    semaphore=asyncio.Semaphore(5)
+    async def check_channel(ch):
+        async with semaphore:
+            try:
+                member=await asyncio.wait_for(bot.get_chat_member(ch,tid),timeout=4)
+                return member.status in ('member','administrator','creator')
+            except Exception as exc:
+                logger.warning('Subscription check failed for %s: %s',ch,type(exc).__name__)
+                return False
+    checks=await asyncio.gather(*(check_channel(ch) for ch in channels),return_exceptions=True)
+    return all(x is True for x in checks)
+
 def user_menu():
     return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
 def phone_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telefon raqamingizni yuborish',request_contact=True)]],resize_keyboard=True,one_time_keyboard=True)
