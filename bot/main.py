@@ -74,6 +74,26 @@ async def start(m:Message):
     update_user(m.from_user.id,state='name',code_ok=0)
     await m.answer('Ro‘yxatdan o‘tish\n\nIsm, Familiyangizni yozing yoki Telegram ismingiz bilan davom eting:',reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telegram ismim bilan davom etish')]],resize_keyboard=True,one_time_keyboard=True))
 
+@dp.message(CommandStart(deep_link=True))
+async def start_deep_link(m:Message):
+    u=ensure_user(m.from_user.id)
+    if m.from_user.id==ADMIN:
+        update_user(ADMIN,state='admin');return await m.answer('NUR O‘QIW ORAYI\\n\\nAdmin boshqaruv paneli.',reply_markup=admin_kb())
+    parts=(m.text or '').split(maxsplit=1)
+    payload=parts[1].strip() if len(parts)>1 else ''
+    if not await subscribed(m.from_user.id):
+        update_user(m.from_user.id,state='subscribe',code_ok=0);return await m.answer('Testga kirishdan oldin majburiy kanallarga obuna bo‘ling.',reply_markup=sub_kb())
+    t=get_test_by_code(payload) if payload else None
+    if not t:
+        update_user(m.from_user.id,state='code',code_ok=0)
+        return await m.answer('Test kodi topilmadi. Test kodini qayta kiriting:',reply_markup=user_menu())
+    if not u['full_name']:
+        update_user(m.from_user.id,state='name_code:'+str(t['code']),code_ok=0)
+        return await m.answer(f"{t['name']} testi tanlandi. Ism-familiyangizni yozing yoki Telegram ismingiz bilan davom eting:",reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telegram ismim bilan davom etish')]],resize_keyboard=True,one_time_keyboard=True))
+    update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready')
+    ensure_attempt(t['test_id'],m.from_user.id)
+    return await m.answer(f"{t['name']} tanlandi. Testni boshlash tugmasini bosing.",reply_markup=user_menu())
+
 @dp.callback_query(F.data=='check_sub')
 async def check_sub(q:CallbackQuery):
     if await subscribed(q.from_user.id):
@@ -99,16 +119,23 @@ MENU_TEXTS={'Profilim','Tariflar','Testni boshlash','Test kodini kiritish','Meni
 @dp.message(F.text=='Telegram ismim bilan davom etish')
 async def use_telegram_name(m:Message):
     u=ensure_user(m.from_user.id)
-    if u['full_name']:
+    state=str(u['state'] or '')
+    pending_code=state.split(':',1)[1] if state.startswith('name_code:') else ''
+    if u['full_name'] and not pending_code:
         update_user(m.from_user.id,state='ready' if u['test_id'] else 'code')
         return await m.answer('Ismingiz avval saqlangan. ' + ('Testni boshlashingiz mumkin.' if u['test_id'] else 'Test kodini kiriting.'),reply_markup=user_menu())
     name=' '.join(x for x in [m.from_user.first_name,m.from_user.last_name] if x).strip()
     if not name:
         return await m.answer('Telegram profilingizda ism topilmadi. Ism va familiyangizni yozing.')
     upsert_user(m.from_user.id,name)
+    if pending_code:
+        t=get_test_by_code(pending_code)
+        if t:
+            update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready');ensure_attempt(t['test_id'],m.from_user.id)
+            return await m.answer(f"Ism-familiya saqlandi: {name}\\n{t['name']} tanlandi. Testni boshlash tugmasini bosing.",reply_markup=user_menu())
     u=get_user(m.from_user.id)
     update_user(m.from_user.id,state='ready' if u and u['test_id'] else 'code',code_ok=1 if u and u['test_id'] else 0)
-    await m.answer(f'Ism-familiya saqlandi: {name}\n' + ('Test tanlangan. Testni boshlashingiz mumkin.' if u and u['test_id'] else 'Endi test kodini kiriting.'),reply_markup=user_menu())
+    await m.answer(f'Ism-familiya saqlandi: {name}\\n' + ('Test tanlangan. Testni boshlashingiz mumkin.' if u and u['test_id'] else 'Endi test kodini kiriting.'),reply_markup=user_menu())
 
 @dp.message(F.text=='Test kodini kiritish')
 async def change_test_code(m:Message):
@@ -121,9 +148,15 @@ async def change_test_code(m:Message):
 @dp.message(F.text & (F.from_user.id!=ADMIN) & ~F.text.in_(MENU_TEXTS))
 async def registration_text(m:Message):
     u=ensure_user(m.from_user.id);st=u['state'] or 'code';text=m.text.strip()
-    if st=='name':
+    if st=='name' or st.startswith('name_code:'):
         if len(text)<3:return await m.answer('Ism va Familiyangizni to‘liq kiriting.')
+        pending_code=st.split(':',1)[1] if st.startswith('name_code:') else ''
         upsert_user(m.from_user.id,text)
+        if pending_code:
+            t=get_test_by_code(pending_code)
+            if t:
+                update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready');ensure_attempt(t['test_id'],m.from_user.id)
+                return await m.answer(f"Ism-familiyangiz saqlandi. {t['name']} tanlandi, Testni boshlash tugmasini bosing.",reply_markup=user_menu())
         saved=get_user(m.from_user.id);has_test=bool(saved and saved['test_id'] and get_test(saved['test_id']))
         update_user(m.from_user.id,state='ready' if has_test else 'code',code_ok=1 if has_test else 0)
         return await m.answer('Ism-familiyangiz saqlandi. ' + ('Test tanlangan, Testni boshlash tugmasini bosing.' if has_test else 'Endi test kodini kiriting.'),reply_markup=user_menu())
