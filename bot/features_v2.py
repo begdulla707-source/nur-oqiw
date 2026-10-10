@@ -102,24 +102,42 @@ def save_answer_atomically(test_id, telegram_id, number, value):
   c.execute("UPDATE test_attempts SET answers_json=? WHERE attempt_id=?", (json.dumps(answers, ensure_ascii=False), a["attempt_id"]))
  return "ok"
 
+def result_counts(answers, questions):
+ correct=sum(1 for q in questions if norm(answers.get(str(q["number"]), ""))==norm(q["answer"]))
+ total=len(questions)
+ answered=sum(1 for q in questions if str(q["number"]) in answers and str(answers.get(str(q["number"]), "")).strip())
+ return correct,total,max(0,total-answered)
+
+
+def question_order_for_attempt(attempt, questions):
+ """Create one stable randomized question order per user/test attempt."""
+ answers=json.loads(attempt["answers_json"] or "{}")
+ valid=[int(q["number"]) for q in questions]
+ order=answers.get("_question_order")
+ if not isinstance(order,list) or sorted(str(x) for x in order)!=sorted(str(x) for x in valid):
+  order=valid[:]
+  secrets.SystemRandom().shuffle(order)
+  answers["_question_order"]=order
+  db.update_attempt(attempt["attempt_id"],answers_json=json.dumps(answers,ensure_ascii=False))
+ return [int(x) for x in order]
+
+
 def finish_attempt_atomically(test_id, telegram_id, questions, finished_at):
  """Lock the attempt while scoring and submitting it; never overwrite an existing result."""
  with db.conn() as c:
-  if not db.USE_POSTGRES:
-   c.execute("BEGIN IMMEDIATE")
-  a = _locked_attempt(c, test_id, telegram_id)
-  if not a or not a["started_at"]:
-   return ("not_started", None, None)
+  if not db.USE_POSTGRES:c.execute("BEGIN IMMEDIATE")
+  a=_locked_attempt(c,test_id,telegram_id)
+  if not a or not a["started_at"]:return ("not_started",None,None,None,len(questions))
   if a["submitted"]:
-   return ("already_submitted", float(a["score"] or 0), a["grade"] or "")
-  answers = json.loads(a["answers_json"] or "{}")
-  correct = sum(1 for q in questions if norm(answers.get(str(q["number"]), "")) == norm(q["answer"]))
-  score_value = round(correct / len(questions) * 100, 2) if questions else 0
-  grade_value = grade(score_value)
-  c.execute("UPDATE test_attempts SET score=?,grade=?,submitted=1,status='submitted',finished_at=? WHERE attempt_id=? AND submitted=0",
-            (score_value, grade_value, finished_at, a["attempt_id"]))
+   answers=json.loads(a["answers_json"] or "{}");correct,total,_=result_counts(answers,questions)
+   return ("already_submitted",float(a["score"] or 0),a["grade"] or "",correct,total)
+  answers=json.loads(a["answers_json"] or "{}")
+  correct,total,_=result_counts(answers,questions)
+  score_value=round(correct/total*100,2) if total else 0
+  grade_value=grade(score_value)
+  c.execute("UPDATE test_attempts SET score=?,grade=?,submitted=1,status='submitted',finished_at=? WHERE attempt_id=? AND submitted=0",(score_value,grade_value,finished_at,a["attempt_id"]))
  db.archive_attempt_result(a["attempt_id"])
- return ("ok", score_value, grade_value)
+ return ("ok",score_value,grade_value,correct,total)
 
 def register(core,dp,bot,webapp_url):
  global CORE,ADMIN,BOT,TZ,WEBAPP
@@ -156,18 +174,23 @@ def register(core,dp,bot,webapp_url):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u:return {'ok':False,'error':'not_authorized'}
   if not t:return {'ok':False,'error':'test_not_found'}
-  if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if not db.questions_for_test(t['test_id']):return {'ok':False,'error':'test_not_ready','test_name':t['name']}
   if u['test_id']!=t['test_id']:db.update_user(tid,test_id=t['test_id'],code_ok=1,state='ready');u=db.get_user(tid)
   if not u['full_name']:return {'ok':False,'error':'registration_required','test_name':t['name']}
   a=db.ensure_attempt(t['test_id'],tid)
-  if a['submitted']:return {'ok':False,'error':'already_submitted','score':a['score'],'grade':a['grade'],'test_name':t['name'],'full_name':u['full_name']}
+  if a['submitted']:
+   answers=json.loads(a['answers_json'] or '{}');correct,total,unanswered=result_counts(answers,db.questions_for_test(t['test_id']))
+   return {'ok':False,'error':'already_submitted','score':a['score'],'grade':a['grade'],'correct_count':correct,'total_questions':total,'unanswered_count':unanswered,'test_name':t['name'],'full_name':u['full_name']}
+  if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if not a['started_at']:
    if not opened(t):return {'ok':False,'error':'test_closed','test_name':t['name']}
    db.update_attempt(a['attempt_id'],started_at=datetime.now(TZ).isoformat(),status='active');a=db.get_attempt(t['test_id'],tid)
   if expired(a,t):
    sc,gr=finalize_expired(a,t);return {'ok':False,'error':'already_submitted','score':sc,'grade':gr,'test_name':t['name'],'full_name':u['full_name']}
-  answers=json.loads(a['answers_json'] or '{}');results={str(q['number']):('correct' if db.normalize(answers.get(str(q['number']),''))==db.normalize(q['answer']) else 'wrong') for q in db.questions_for_test(t['test_id']) if str(q['number']) in answers and q['kind']!='written'};return {'ok':True,'full_name':u['full_name'],'answers':answers,'results':results,'ends_at':None,'test_name':t['name'],'test_code':t['code'],'total_questions':len(db.questions_for_test(t['test_id']))}
+  qs=db.questions_for_test(t['test_id']);question_order_for_attempt(a,qs)
+  answers=json.loads(a['answers_json'] or '{}');answers.pop('_question_order',None)
+  results={str(q['number']):('correct' if db.normalize(answers.get(str(q['number']),''))==db.normalize(q['answer']) else 'wrong') for q in qs if str(q['number']) in answers and q['kind']!='written'}
+  return {'ok':True,'full_name':u['full_name'],'answers':answers,'results':results,'ends_at':None,'test_name':t['name'],'test_code':t['code'],'total_questions':len(qs)}
  @core.app.get('/api/test/questions')
  async def questions(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
@@ -176,7 +199,8 @@ def register(core,dp,bot,webapp_url):
   if not u['full_name'] or u['test_id']!=t['test_id'] or not opened(t):return {'ok':False,'error':'test_not_started'}
   a=db.get_attempt(t['test_id'],tid)
   if not a or not a['started_at'] or a['submitted']:return {'ok':False,'error':'test_not_started'}
-  return {'ok':True,'questions':[{'id':q['number'],'question':q['question'] or '', 'options':(json.loads(q['options_json'] or '[]') if q['options_json'] else []) or ['A','B','C','D'], 'kind':q['kind'],'image_url':q['image_url'] or ''} for q in db.questions_for_test(t['test_id'])]}
+  qs=db.questions_for_test(t['test_id']);order=question_order_for_attempt(a,qs);by_number={int(q['number']):q for q in qs}
+  return {'ok':True,'questions':[{'id':by_number[n]['number'],'display_number':i+1,'question':by_number[n]['question'] or '', 'options':(json.loads(by_number[n]['options_json'] or '[]') if by_number[n]['options_json'] else []) or ['A','B','C','D'], 'kind':by_number[n]['kind'],'image_url':by_number[n]['image_url'] or ''} for i,n in enumerate(order)]}
  @core.app.post('/api/test/answer')
  async def answer(p:dict, request: Request):
   raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
@@ -214,10 +238,10 @@ def register(core,dp,bot,webapp_url):
   if expired(a,t):
    sc,gr=finalize_expired(a,t);return {'ok':True,'score':sc,'grade':gr,'full_name':u['full_name'],'test_name':t['name']}
   if not opened(t):return {'ok':False,'error':'test_closed'}
-  status,sc,gr=finish_attempt_atomically(t['test_id'],tid,db.questions_for_test(t['test_id']),datetime.now(TZ).isoformat())
+  status,sc,gr,correct,total=finish_attempt_atomically(t['test_id'],tid,db.questions_for_test(t['test_id']),datetime.now(TZ).isoformat())
   if status=='not_started':return {'ok':False,'error':'test_not_started'}
-  if status=='already_submitted':return {'ok':False,'error':'already_submitted','score':sc,'grade':gr}
-  return {'ok':True,'score':sc,'grade':gr,'full_name':u['full_name'],'test_name':t['name']}
+  if status=='already_submitted':return {'ok':False,'error':'already_submitted','score':sc,'grade':gr,'correct_count':correct,'total_questions':total}
+  return {'ok':True,'score':sc,'grade':gr,'correct_count':correct,'total_questions':total,'wrong_count':max(0,total-correct),'full_name':u['full_name'],'test_name':t['name']}
  @r.message(CommandStart(deep_link=True))
  async def deep(m:Message,command):
   t=db.get_test_by_code((command.args or '').strip())
@@ -406,8 +430,13 @@ def register(core,dp,bot,webapp_url):
  @r.callback_query(F.data.startswith('t_close:'))
  async def tx(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
-  tid=q.data.split(':',1)[1];db.set_test_active(tid,0);t=db.get_test(tid)
-  await q.message.edit_text(f"TEST TO‘XTATILDI\n\n{t['name']}\nKod: {t['code']}\nFoydalanuvchilar Mini Appda test administrator tomonidan to‘xtatilganini ko‘radi.",reply_markup=test_kb(tid));await q.answer('Test to‘xtatildi')
+  tid=q.data.split(':',1)[1];t=db.get_test(tid);qs=db.questions_for_test(tid);closed_count=0
+  for a in db.all_attempts_for_test(tid):
+   if a['submitted'] or not a['started_at']:continue
+   status,_,_,_,_=finish_attempt_atomically(tid,int(a['telegram_id']),qs,datetime.now(TZ).isoformat())
+   if status=='ok':closed_count+=1
+  db.set_test_active(tid,0)
+  await q.message.edit_text(f"TEST TO‘XTATILDI\n\n{t['name']}\nKod: {t['code']}\nYakunlanmagan urinishlarga javoblari bo‘yicha ball hisoblandi: {closed_count} ta.",reply_markup=test_kb(tid));await q.answer('Test to‘xtatildi; ballar hisoblandi')
  @r.callback_query(F.data.startswith('t_delete:'))
  async def td(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
