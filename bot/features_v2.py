@@ -230,11 +230,13 @@ def register(core,dp,bot,webapp_url):
  async def finish(p:dict, request: Request):
   raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t or not u['full_name']:return {'ok':False,'error':'not_authorized'}
-  if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if u['test_id']!=t['test_id']:return {'ok':False,'error':'test_not_started'}
   a=db.get_attempt(t['test_id'],tid)
   if not a or not a['started_at']:return {'ok':False,'error':'test_not_started'}
-  if a['submitted']:return {'ok':False,'error':'already_submitted','score':a['score'],'grade':a['grade']}
+  if a['submitted']:
+   answers=json.loads(a['answers_json'] or '{}');correct,total,_=result_counts(answers,db.questions_for_test(t['test_id']))
+   return {'ok':False,'error':'already_submitted','score':a['score'],'grade':a['grade'],'correct_count':correct,'total_questions':total}
+  if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if expired(a,t):
    sc,gr=finalize_expired(a,t);return {'ok':True,'score':sc,'grade':gr,'full_name':u['full_name'],'test_name':t['name']}
   if not opened(t):return {'ok':False,'error':'test_closed'}
