@@ -217,7 +217,7 @@ def register(core,dp,bot,webapp_url):
    db.update_attempt(a['attempt_id'],started_at=datetime.now(TZ).isoformat(),status='active');a=db.get_attempt(t['test_id'],tid)
   if expired(a,t):
    sc,gr=finalize_expired(a,t);return {'ok':False,'error':'already_submitted','score':sc,'grade':gr,'test_name':t['name'],'full_name':u['full_name']}
-  qs=db.questions_for_test(t['test_id']);question_order_for_attempt(a,qs)
+  qs=db.questions_for_test(t['test_id']);order=question_order_for_attempt(a,qs);by_number={int(q['number']):q for q in qs}
   answers=json.loads(a['answers_json'] or '{}');answers.pop('_question_order',None)
   results={str(q['number']):('correct' if db.normalize(answers.get(str(q['number']),''))==db.normalize(q['answer']) else 'wrong') for q in qs if str(q['number']) in answers and q['kind']!='written'}
   return {'ok':True,'full_name':u['full_name'],'answers':answers,'results':results,'ends_at':None,'test_name':t['name'],'test_code':t['code'],'total_questions':len(qs),'questions':[{'id':by_number[n]['number'],'display_number':i+1,'question':by_number[n]['question'] or '', 'options':(json.loads(by_number[n]['options_json'] or '[]') if by_number[n]['options_json'] else []) or ['A','B','C','D'], 'kind':by_number[n]['kind'],'image_url':by_number[n]['image_url'] or ''} for i,n in enumerate(order)]}
