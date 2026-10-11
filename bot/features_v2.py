@@ -169,6 +169,37 @@ def register(core,dp,bot,webapp_url):
   rows.sort(key=lambda x:(-float(x['score'] or 0),str(x['finished_at'] or '9999')))
   top=[{'rank':i+1,'full_name':x['full_name'] or 'Ismsiz','photo_url':x['telegram_photo'] or '', 'score':float(x['score'] or 0),'grade':x['grade'] or '', 'finished_at':x['finished_at']} for i,x in enumerate(rows[:15])]
   return {'ok':True,'test_name':t['name'],'code':t['code'],'total':len(rows),'ranking':top}
+ @core.app.get('/api/admin/overview')
+ async def admin_overview(req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  tests=[];all_rows=[]
+  for t in db.all_tests():
+   attempts=db.all_attempts_for_test(t['test_id'])
+   done=[a for a in attempts if a['submitted']]
+   ranked=sorted(done,key=lambda a:(-float(a['score'] or 0),str(a['finished_at'] or '9999')))
+   participants=[{'full_name':a['full_name'] or 'Ismsiz','telegram_id':int(a['telegram_id']),'score':float(a['score'] or 0),'grade':a['grade'] or '', 'submitted':bool(a['submitted']),'started_at':a['started_at'],'finished_at':a['finished_at']} for a in sorted(attempts,key=lambda a:str(a['started_at'] or ''),reverse=True)]
+   tests.append({'test_id':str(t['test_id']),'name':t['name'],'code':t['code'],'active':bool(int(t['active'])),'questions':len(db.questions_for_test(t['test_id'])),'participants':len(attempts),'completed':len(done),'ranking':participants and [{'rank':i+1,'full_name':a['full_name'] or 'Ismsiz','score':float(a['score'] or 0),'grade':a['grade'] or ''} for i,a in enumerate(ranked[:10])] or [],'recent':participants[:50]})
+   all_rows.extend(participants)
+  with db.conn() as con:
+   user_count=int(con.execute("SELECT COUNT(*) AS n FROM users").fetchone()['n'])
+  return {'ok':True,'stats':{'users':user_count,'tests':len(tests),'participants':len(all_rows),'completed':sum(1 for a in all_rows if a['submitted'])},'tests':tests}
+ @core.app.post('/api/admin/test/toggle')
+ async def admin_toggle_test(p:dict,req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  test_id=str(p.get('test_id','')).strip();t=db.get_test(test_id)
+  if not t:return {'ok':False,'error':'test_not_found'}
+  if int(t['active']):
+   qs=db.questions_for_test(test_id);closed=0
+   for a in db.all_attempts_for_test(test_id):
+    if a['submitted'] or not a['started_at']:continue
+    state,_,_,_,_=finish_attempt_atomically(test_id,int(a['telegram_id']),qs,datetime.now(TZ).isoformat())
+    if state=='ok':closed+=1
+   db.set_test_active(test_id,0)
+   return {'ok':True,'active':False,'finalized':closed,'message':'Test to‘xtatildi; javoblar bo‘yicha ball hisoblandi.'}
+  db.set_test_active(test_id,1)
+  return {'ok':True,'active':True,'finalized':0,'message':'Test qayta ochildi.'}
  @core.app.get('/api/test/state')
  async def state(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
