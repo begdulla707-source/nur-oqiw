@@ -155,3 +155,18 @@ html,body{background:#080c14!important;color:#edf2fb!important;color-scheme:dark
 @media(max-width:420px){.admin-header h1{font-size:19px}.admin-wake{align-items:flex-start;flex-direction:column}.admin-wake button{width:100%}.admin-test-actions>*{flex:1}.admin-stat{padding:13px}.admin-test-top{flex-direction:column}.admin-status{align-self:flex-start}}
 
 .choice-btn,.choice-btn:focus,.choice-btn:focus-visible{outline:none!important;-webkit-tap-highlight-color:transparent}.choice-btn:disabled{opacity:1!important}.choice-btn.picked{opacity:1!important}
+
+
+/* Test page: one continuous vertical questionnaire */
+.test-wrap>.q-card{margin:0 0 12px;scroll-margin-top:72px}
+.test-wrap>.q-card .choice-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.test-wrap>.q-card .choice-btn{min-height:90px;padding:7px 3px;border-radius:13px}
+.test-wrap>.q-card .choice-letter{width:48px;height:48px;flex:none;border:1.5px solid #34445d;background:#111a2a;color:#e6eefb;box-shadow:none}
+.test-wrap>.q-card .choice-btn.picked .choice-letter{background:#176fe0;border-color:#176fe0;color:#fff}
+.test-wrap>.q-card .choice-btn .choice-text{color:#dce7f8}
+.test-wrap>.q-card .choice-btn:active .choice-letter{transform:none}
+.test-message{padding:10px 12px;margin:0 0 12px;border-radius:12px;background:#30252a;color:#ffcfda;font-size:12px}
+.finish-test-area{margin:18px 0 30px;padding:16px;border:1px solid #29374e;border-radius:18px;background:#111a2a;text-align:center}
+.finish-test-area p{margin:0 0 12px;color:#9eafc8;font-size:12px}
+.finish-test-button{width:100%;min-height:48px;border:0;border-radius:13px;background:#176fe0;color:white;font:inherit;font-weight:900}
+@media(max-width:420px){.test-wrap>.q-card .choice-grid{gap:4px}.test-wrap>.q-card .choice-btn{min-height:82px}.test-wrap>.q-card .choice-letter{width:42px;height:42px;font-size:16px}.test-wrap>.q-card .choice-text{font-size:10px}}
