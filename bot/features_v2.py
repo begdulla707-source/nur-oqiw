@@ -96,8 +96,7 @@ def save_answer_atomically(test_id, telegram_id, number, value):
    return "submitted"
   answers = json.loads(a["answers_json"] or "{}")
   key = str(number)
-  if key in answers:
-   return "locked"
+  # Answers stay editable until the test is submitted; the newest choice replaces the previous one.
   answers[key] = value
   c.execute("UPDATE test_attempts SET answers_json=? WHERE attempt_id=?", (json.dumps(answers, ensure_ascii=False), a["attempt_id"]))
  return "ok"
