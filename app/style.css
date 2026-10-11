@@ -153,3 +153,5 @@ html,body{background:#080c14!important;color:#edf2fb!important;color-scheme:dark
 .admin-note{padding:12px 14px;border:1px solid #28527c;border-radius:13px;background:#10233a;color:#a9d1ff;font-size:12px;line-height:1.5}
 .admin-error{padding:18px;border:1px solid #613a3a;border-radius:18px;background:#271a20;color:#ffdede}.admin-error p{color:#c7a8b0;font-size:12px}.admin-error button{cursor:pointer}
 @media(max-width:420px){.admin-header h1{font-size:19px}.admin-wake{align-items:flex-start;flex-direction:column}.admin-wake button{width:100%}.admin-test-actions>*{flex:1}.admin-stat{padding:13px}.admin-test-top{flex-direction:column}.admin-status{align-self:flex-start}}
+
+.choice-btn,.choice-btn:focus,.choice-btn:focus-visible{outline:none!important;-webkit-tap-highlight-color:transparent}.choice-btn:disabled{opacity:1!important}.choice-btn.picked{opacity:1!important}
