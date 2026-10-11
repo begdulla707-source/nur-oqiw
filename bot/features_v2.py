@@ -322,7 +322,13 @@ def register(core,dp,bot,webapp_url):
     db.update_attempt(a['attempt_id'],answers_json=json.dumps(answers,ensure_ascii=False));ast('admin')
     return await check_prompt(tid,fake_id,index+1)
    except Exception:return await m.answer('Tekshirish javobi saqlanmadi. Tekshirishni qaytadan boshlang.')
-  if txt=='Botni uyg‘otish':\n   try:\n    me=await BOT.get_me()\n    return await m.answer(f'Bot faol: @{me.username}\\nServer ishlayapti. Agar birinchi so‘rov sekin bo‘lsa, Mini App admin panelidagi «Botni uyg‘otish» tugmasini ham bosing.')\n   except Exception:\n    return await m.answer('Bot hozir javob bermadi. Biroz kutib qayta urinib ko‘ring.')\n  if txt in {'Test sozlamalari','Ishtirokchilar','PDF natijalar','Tekshirish'}:return await m.answer('TESTLAR — saqlangan testlar',reply_markup=tests_kb())
+  if txt=='Botni uyg‘otish':
+   try:
+    me=await BOT.get_me()
+    return await m.answer(f'Bot faol: @{me.username}\nServer ishlayapti. Agar birinchi so‘rov sekin bo‘lsa, Mini App admin panelidagi «Botni uyg‘otish» tugmasini ham bosing.')
+   except Exception:
+    return await m.answer('Bot hozir javob bermadi. Biroz kutib qayta urinib ko‘ring.')
+  if txt in {'Test sozlamalari','Ishtirokchilar','PDF natijalar','Tekshirish'}:return await m.answer('TESTLAR — saqlangan testlar',reply_markup=tests_kb())
   if s=='new_code':
    if not txt or ' ' in txt:return await m.answer('Kodni bitta so‘z qilib kiriting. Masalan: MAT2026')
    if db.test_code_exists(txt):return await m.answer('Bu kod avval ishlatilgan. Boshqa kod tanlang.')
