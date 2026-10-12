@@ -1,4 +1,5 @@
 from fastapi import Request
+import asyncio
 import json,secrets,os,reportlab
 from datetime import datetime,time,timedelta
 from aiogram import Router,F
@@ -287,6 +288,18 @@ def register(core,dp,bot,webapp_url):
   u=db.ensure_user(m.from_user.id);t=db.get_test(u['test_id']) if u['test_id'] else None;a=db.get_attempt(t['test_id'],m.from_user.id) if t else None;res=f"{float(a['score'] or 0):.2f} ball · {a['grade'] or '—'}" if a and a['submitted'] else 'Yakunlanmagan'
   url=f"{WEBAPP.rstrip('/')}/profile";mk=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MINI APP PROFILIM',web_app=WebAppInfo(url=url))]])
   await m.answer(f"PROFILIM\n\nIsm-familiya: {u['full_name'] or '—'}\nTest: {t['name'] if t else 'Tanlanmagan'}\nKod: {t['code'] if t else '—'}\nNatija: {res}",reply_markup=mk)
+ @r.message(F.text=='Mening natijam')
+ async def user_results(m:Message):
+  u=db.get_user(m.from_user.id)
+  if not u:return await m.answer("Siz hali ro‘yxatdan o‘tmagansiz. /start ni bosing.",reply_markup=user_menu())
+  with db.conn() as c:
+   rows=c.execute("SELECT a.test_id,t.name,t.code,a.started_at,a.finished_at,a.score,a.grade,a.submitted FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id WHERE a.telegram_id=? ORDER BY COALESCE(a.finished_at,a.started_at) DESC",(m.from_user.id,)).fetchall()
+  if not rows:return await m.answer("Hozircha test natijangiz yo‘q.",reply_markup=user_menu())
+  lines=["MENING NATIJALARIM",""]
+  for i,row in enumerate(rows[:15],1):
+   state=(f"{float(row['score'] or 0):.2f} ball | {row['grade'] or '—'}" if row['submitted'] else "Yakunlanmagan")
+   lines.append(f"{i}. {row['name'] or 'Test'} ({row['code'] or 'kod yo‘q'}) — {state}")
+  await m.answer('\\n'.join(lines),reply_markup=user_menu())
  @r.message(F.text=='Tariflar')
  async def tariffs(m:Message):
   await m.answer('Tariflar bo‘yicha ma’lumot olish uchun administratorga murojaat qiling: @up17v',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/up17v')]]))
@@ -341,6 +354,22 @@ def register(core,dp,bot,webapp_url):
      lines.append(f"{g.get('title',g['id'])} ({g['id']}) — {member.status}; xabar yuborish: {'ha' if can_send else 'yo‘q'}")
     except Exception:lines.append(f"{g.get('title',g['id'])} ({g['id']}) — tekshirib bo‘lmadi; bot huquqini tekshiring")
    return await m.answer('\\n'.join(lines)[:3900])
+  if txt=='Bildirishnoma':
+   ast('notification_message')
+   return await m.answer("Barcha bot foydalanuvchilariga yuboriladigan xabarni kiriting. Yuborishdan oldin tasdiqlash chiqadi.")
+  if s=='notification_message':
+   if not txt:return await m.answer("Xabar matni bo‘sh bo‘lmasin.")
+   db.set_setting('pending_notification',json.dumps({'text':txt},ensure_ascii=False));ast('notification_confirm')
+   return await m.answer(f"XABAR NAMUNASI\\n\\n{txt[:2500]}\\n\\nBarcha ro‘yxatdan o‘tgan foydalanuvchilarga yuborilsinmi?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='YUBORISH',callback_data='notification_send'),InlineKeyboardButton(text='BEKOR QILISH',callback_data='notification_cancel')]]))
+  if txt=='Ishtirokchilar':
+   users=db.all_registered_users()
+   if not users:return await m.answer("Hozircha foydalanuvchilar yo‘q.")
+   lines=["FOYDALANUVCHILAR RO‘YXATI",""]
+   for i,user in enumerate(users[:35],1):
+    lines.append(f"{i}. {user['full_name'] or 'Ismsiz'} | ID: {user['telegram_id']} | Tarif: {user['tier'] or 'default'}")
+   return await m.answer('\\n'.join(lines)[:3900])
+  if txt=='Tariflar':
+   return await m.answer("Tariflarni boshqarish hozircha qo‘lda: foydalanuvchi ID raqamini va tarifni yuborish oqimi admin panelda alohida sozlanishi kerak. Hozir mavjud foydalanuvchi tarifini ko‘rish mumkin.")
   if txt=='Guruhga xabar yuborish':
    ast('broadcast_message')
    return await m.answer("Guruhlarga yuboriladigan xabar matnini yuboring. Keyin yuborishdan oldin tasdiqlash so‘raladi.")
@@ -570,5 +599,27 @@ def register(core,dp,bot,webapp_url):
   if q.from_user.id!=ADMIN:return
   db.set_setting('pending_broadcast','{}');db.update_user(ADMIN,state='admin')
   await q.message.answer('Guruh xabari bekor qilindi.')
+  await q.answer('Bekor qilindi')
+ @r.callback_query(F.data=='notification_send')
+ async def notification_send(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return
+  pending=json.loads(db.get_setting('pending_notification','{}') or '{}');message=str(pending.get('text','')).strip()
+  if not message:return await q.answer('Yuboriladigan xabar topilmadi.',show_alert=True)
+  users=db.all_registered_users();sent=0;failed=0
+  for user in users:
+   uid=int(user['telegram_id'])
+   if uid==ADMIN:continue
+   try:
+    await BOT.send_message(uid,message);sent+=1
+   except Exception:failed+=1
+   if sent%25==0:await asyncio.sleep(.1)
+  db.set_setting('pending_notification','{}');db.update_user(ADMIN,state='admin')
+  await q.message.answer(f"BILDIRISHNOMA YAKUNLANDI\\nYuborildi: {sent}\\nYuborilmadi: {failed}")
+  await q.answer('Yakunlandi')
+ @r.callback_query(F.data=='notification_cancel')
+ async def notification_cancel(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return
+  db.set_setting('pending_notification','{}');db.update_user(ADMIN,state='admin')
+  await q.message.answer('Bildirishnoma bekor qilindi.')
   await q.answer('Bekor qilindi')
  dp.include_router(r)
