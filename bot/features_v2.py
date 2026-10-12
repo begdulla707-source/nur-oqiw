@@ -25,8 +25,8 @@ def user_menu():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profi
 def tests_kb():
  r=[]
  for t in db.all_tests():
-  state='🟢' if int(t['active']) else '⏸'
-  r.append([InlineKeyboardButton(text=f"{state} {t['name'][:20]} · {t['code']}",callback_data=f't_pick:{t["test_id"]}')])
+  state='OCHIQ' if int(t['active']) else 'YOPIQ'
+  r.append([InlineKeyboardButton(text=f"{state} | {t['name'][:20]} | {t['code']}",callback_data=f't_pick:{t["test_id"]}')])
  r.append([InlineKeyboardButton(text='YANGI TEST',callback_data='t_new')])
  r.append([InlineKeyboardButton(text='UMUMIY REYTING ARXIVI',callback_data='t_archive_results')])
  r.append([InlineKeyboardButton(text='TEKSHIRISH',callback_data='t_check_list')])
@@ -327,6 +327,35 @@ def register(core,dp,bot,webapp_url):
     return await m.answer(f'Bot faol: @{me.username}\nServer ishlayapti. Agar birinchi so‘rov sekin bo‘lsa, Mini App admin panelidagi «Botni uyg‘otish» tugmasini ham bosing.')
    except Exception:
     return await m.answer('Bot hozir javob bermadi. Biroz kutib qayta urinib ko‘ring.')
+  if txt in {'/statistika','Statistika'}:
+   users=db.all_registered_users();tests=db.all_tests();attempts=[a for t in tests for a in db.all_attempts_for_test(t['test_id'])];groups=json.loads(db.get_setting('known_groups','[]') or '[]')
+   return await m.answer(f"BOT STATISTIKASI\\n\\nFoydalanuvchilar: {len(users)}\\nTestlar: {len(tests)}\\nUrinishlar: {len(attempts)}\\nYakunlangan testlar: {sum(1 for a in attempts if a['submitted'])}\\nGuruhlar: {len(groups)}\\nVaqt zonasi: Asia/Tashkent",reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test sozlamalari'),KeyboardButton(text='Ishtirokchilar')],[KeyboardButton(text='Statistika'),KeyboardButton(text='Guruhlar holati')],[KeyboardButton(text='Guruhga xabar yuborish'),KeyboardButton(text='Bildirishnoma')],[KeyboardButton(text='Ish vaqti jadvali'),KeyboardButton(text='Majburiy obuna')],[KeyboardButton(text='PDF natijalar'),KeyboardButton(text='Tekshirish')],[KeyboardButton(text='Tariflar'),KeyboardButton(text='Botni uyg‘otish')]],resize_keyboard=True))
+  if txt=='Guruhlar holati':
+   groups=json.loads(db.get_setting('known_groups','[]') or '[]')
+   if not groups:return await m.answer("Guruhlar ro‘yxati bo‘sh. Botni guruhga qo‘shing va /group_status buyrug‘ini yuboring.")
+   lines=['GURUHLAR VA RUXSATLAR','']
+   for g in groups[:30]:
+    try:
+     member=await BOT.get_chat_member(int(g['id']),BOT.id)
+     can_send=member.status not in ('left','kicked') and not (member.status=='administrator' and getattr(member,'can_send_messages',True) is False)
+     lines.append(f"{g.get('title',g['id'])} ({g['id']}) — {member.status}; xabar yuborish: {'ha' if can_send else 'yo‘q'}")
+    except Exception:lines.append(f"{g.get('title',g['id'])} ({g['id']}) — tekshirib bo‘lmadi; bot huquqini tekshiring")
+   return await m.answer('\\n'.join(lines)[:3900])
+  if txt=='Guruhga xabar yuborish':
+   ast('broadcast_message')
+   return await m.answer("Guruhlarga yuboriladigan xabar matnini yuboring. Keyin yuborishdan oldin tasdiqlash so‘raladi.")
+  if s=='broadcast_message':
+   if not txt:return await m.answer("Xabar bo‘sh bo‘lmasin. Matnni qayta yuboring.")
+   db.set_setting('pending_broadcast',json.dumps({'text':txt},ensure_ascii=False));ast('broadcast_confirm')
+   return await m.answer(f"XABAR NAMUNASI\\n\\n{txt[:2500]}\\n\\nBarcha ro‘yxatdagi guruhlarga yuborilsinmi?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='YUBORISH',callback_data='broadcast_send'),InlineKeyboardButton(text='BEKOR QILISH',callback_data='broadcast_cancel')]]))
+  if txt=='Ish vaqti jadvali':
+   current=db.get_setting('awake_window','08:00-22:00');ast('awake_window')
+   return await m.answer(f"Toshkent vaqti bilan HH:MM-HH:MM ko‘rinishida kiriting. Hozirgi sozlama: {current}.\\nEslatma: Render bepul xizmat uyquga ketgan bo‘lsa, bot ichidagi jadvalning o‘zi uni uyg‘ota olmaydi; tashqi uptime monitor kerak bo‘ladi.")
+  if s=='awake_window':
+   import re
+   if not re.fullmatch(r'([01]\\d|2[0-3]):[0-5]\\d-([01]\\d|2[0-3]):[0-5]\\d',txt):return await m.answer("Format noto‘g‘ri. Masalan: 07:30-23:00")
+   db.set_setting('awake_window',txt);ast('admin')
+   return await m.answer(f"Jadval saqlandi: {txt} (Asia/Tashkent). Uyqudagi Render instansiyasini tashqaridan uyg‘otmaydi.")
   if txt in {'Test sozlamalari','Ishtirokchilar','PDF natijalar','Tekshirish'}:return await m.answer('TESTLAR — saqlangan testlar',reply_markup=tests_kb())
   if s=='new_code':
    if not txt or ' ' in txt:return await m.answer('Kodni bitta so‘z qilib kiriting. Masalan: MAT2026')
@@ -521,4 +550,25 @@ def register(core,dp,bot,webapp_url):
   if q.from_user.id!=ADMIN:return
   await q.answer('PDF tayyorlanmoqda...')
   tid=q.data.split(':',1)[1];t=db.get_test(tid);path=f'/tmp/{secrets.token_hex(8)}.pdf';build_test_pdf(tid,path);await BOT.send_document(ADMIN,FSInputFile(path),caption=f"PDF NATIJA — {t['name']} — {t['code']}")
+ @r.callback_query(F.data=='broadcast_send')
+ async def broadcast_send(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return
+  pending=json.loads(db.get_setting('pending_broadcast','{}') or '{}');message=str(pending.get('text','')).strip()
+  groups=json.loads(db.get_setting('known_groups','[]') or '[]')
+  if not message:return await q.answer('Yuboriladigan xabar topilmadi.',show_alert=True)
+  sent=0;failed=0
+  for group in groups:
+   try:
+    await BOT.send_message(int(group['id']),message);sent+=1
+   except Exception:
+    failed+=1
+  db.set_setting('pending_broadcast','{}');db.update_user(ADMIN,state='admin')
+  await q.message.answer(f"GURUH XABARI YAKUNLANDI\\nYuborildi: {sent}\\nYuborilmadi: {failed}")
+  await q.answer('Yakunlandi')
+ @r.callback_query(F.data=='broadcast_cancel')
+ async def broadcast_cancel(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return
+  db.set_setting('pending_broadcast','{}');db.update_user(ADMIN,state='admin')
+  await q.message.answer('Guruh xabari bekor qilindi.')
+  await q.answer('Bekor qilindi')
  dp.include_router(r)
