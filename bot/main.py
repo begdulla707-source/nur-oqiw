@@ -17,7 +17,7 @@ load_dotenv();init();ensure_schema();seed()
 TOKEN=os.getenv('BOT_TOKEN','');ADMIN=int(os.getenv('ADMIN_CHAT_ID','8379731556'));TZ=ZoneInfo(os.getenv('TIMEZONE','Asia/Tashkent'));PORT=int(os.getenv('PORT','10000'))
 WEBAPP=os.getenv('WEBAPP_URL','https://nukuspro.uz');WEBHOOK_URL=os.getenv('WEBHOOK_URL','https://nur-oqiw.onrender.com/telegram/webhook');WEBHOOK_SECRET=os.getenv('WEBHOOK_SECRET','nur_oqiw_webhook')
 ORIGINS=[x.strip().rstrip('/') for x in os.getenv('WEBAPP_ORIGINS','https://nukuspro.uz,https://www.nukuspro.uz,https://nur-oqiw.uz,https://www.nur-oqiw.uz,https://nur-oqiw-santizz.vercel.app,https://nur-oqiw-three.vercel.app').split(',') if x.strip()]
-logging.basicConfig(level=logging.INFO);logger=logging.getLogger('nur-oqiw');RATE=defaultdict(deque)
+logging.basicConfig(level=logging.INFO);logger=logging.getLogger('nur-oqiw');RATE=defaultdict(deque);SUB_CACHE={}
 dp=Dispatcher();bot=Bot(TOKEN);app=FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -41,6 +41,8 @@ def sub_channels():
     except:return [x.strip() for x in raw.splitlines() if x.strip()]
 async def subscribed(tid):
     if not sub_required():return True
+    now=asyncio.get_running_loop().time();cached=SUB_CACHE.get(int(tid))
+    if cached and now-cached[0]<60:return cached[1]
     channels=sub_channels()
     if not channels:return True
     semaphore=asyncio.Semaphore(5)
@@ -53,14 +55,14 @@ async def subscribed(tid):
                 logger.warning('Subscription check failed for %s: %s',ch,type(exc).__name__)
                 return False
     checks=await asyncio.gather(*(check_channel(ch) for ch in channels),return_exceptions=True)
-    return all(x is True for x in checks)
+    result=all(x is True for x in checks);SUB_CACHE[int(tid)]=(now,result);return result
 
 def user_menu():
     return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
 def phone_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telefon raqamingizni yuborish',request_contact=True)]],resize_keyboard=True,one_time_keyboard=True)
 def sub_kb():
     rows=[[InlineKeyboardButton(text='KANALGA OBUNA BO‘LISH',url=(c if c.startswith('http') else 'https://t.me/'+c.lstrip('@')))] for c in sub_channels()];rows.append([InlineKeyboardButton(text='OBUNANI TEKSHIRISH',callback_data='check_sub')]);return InlineKeyboardMarkup(inline_keyboard=rows)
-def admin_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test sozlamalari'),KeyboardButton(text='Ishtirokchilar')],[KeyboardButton(text='Savollar'),KeyboardButton(text='Statistika')],[KeyboardButton(text='Real-time monitor'),KeyboardButton(text='Bildirishnoma')],[KeyboardButton(text='Majburiy obuna'),KeyboardButton(text='PDF natijalar')],[KeyboardButton(text='Tekshirish'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Botni uyg‘otish'),KeyboardButton(text='Mini App admini',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'))]],resize_keyboard=True)
+def admin_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test sozlamalari'),KeyboardButton(text='Ishtirokchilar')],[KeyboardButton(text='Statistika'),KeyboardButton(text='Guruhlar holati')],[KeyboardButton(text='Guruhga xabar yuborish'),KeyboardButton(text='Bildirishnoma')],[KeyboardButton(text='Ish vaqti jadvali'),KeyboardButton(text='Majburiy obuna')],[KeyboardButton(text='PDF natijalar'),KeyboardButton(text='Tekshirish')],[KeyboardButton(text='Tariflar'),KeyboardButton(text='Botni uyg‘otish')],[KeyboardButton(text='Mini App admini',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'))]],resize_keyboard=True)
 
 @app.get('/api/ping')
 async def ping():return {'ok':True}
@@ -224,7 +226,9 @@ async def _process_telegram_update(update:Update):
 async def telegram_webhook(request:Request):
     if WEBHOOK_SECRET and request.headers.get('X-Telegram-Bot-Api-Secret-Token','')!=WEBHOOK_SECRET:return JSONResponse({'ok':False},status_code=403)
     try:
-        update=Update.model_validate(await request.json());await _process_telegram_update(update);return {'ok':True}
+        update=Update.model_validate(await request.json())
+        asyncio.create_task(_process_telegram_update(update))
+        return {'ok':True}
     except Exception as e:logger.exception('webhook: %s',e);return JSONResponse({'ok':False},status_code=400)
 
 from .features_v2 import register as register_features
