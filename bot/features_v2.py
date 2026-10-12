@@ -169,6 +169,26 @@ def register(core,dp,bot,webapp_url):
   rows.sort(key=lambda x:(-float(x['score'] or 0),str(x['finished_at'] or '9999')))
   top=[{'rank':i+1,'full_name':x['full_name'] or 'Ismsiz','photo_url':x['telegram_photo'] or '', 'score':float(x['score'] or 0),'grade':x['grade'] or '', 'finished_at':x['finished_at']} for i,x in enumerate(rows[:15])]
   return {'ok':True,'test_name':t['name'],'code':t['code'],'total':len(rows),'ranking':top}
+ @core.app.get('/api/admin/schedule')
+ async def admin_schedule_get(req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  raw=db.get_setting('awake_schedule','{}')
+  try:cfg=json.loads(raw)
+  except Exception:cfg={}
+  return {'ok':True,'schedule':cfg or {'date':'','start':'08:00','end':'22:00','timezone':'Asia/Tashkent'}}
+ @core.app.post('/api/admin/schedule')
+ async def admin_schedule_save(p:dict,req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  import re
+  day=str(p.get('date','')).strip();start=str(p.get('start','')).strip();end=str(p.get('end','')).strip()
+  if not re.fullmatch(r'\\d{4}-\\d{2}-\\d{2}',day) or not re.fullmatch(r'(?:[01]\\d|2[0-3]):[0-5]\\d',start) or not re.fullmatch(r'(?:[01]\\d|2[0-3]):[0-5]\\d',end):
+   return {'ok':False,'error':'invalid_schedule'}
+  cfg={'date':day,'start':start,'end':end,'timezone':'Asia/Tashkent'}
+  db.set_setting('awake_schedule',json.dumps(cfg,ensure_ascii=False))
+  db.set_setting('awake_window',start+'-'+end)
+  return {'ok':True,'schedule':cfg,'message':'Jadval saqlandi. Bu sozlama Render uyquga ketgan instansiyasini o‘zi uyg‘otmaydi.'}
  @core.app.get('/api/admin/overview')
  async def admin_overview(req:Request):
   tid,u=await auth(req)
