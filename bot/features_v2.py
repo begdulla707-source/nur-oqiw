@@ -183,7 +183,7 @@ def register(core,dp,bot,webapp_url):
   if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
   import re
   day=str(p.get('date','')).strip();start=str(p.get('start','')).strip();end=str(p.get('end','')).strip()
-  if not re.fullmatch(r'\d{4}-\d{2}-\d{2}',day) or not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',start) or not re.fullmatch(r'(?:[01]\\d|2[0-3]):[0-5]\\d',end):
+  if not re.fullmatch(r'\d{4}-\d{2}-\d{2}',day) or not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',start) or not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',end):
    return {'ok':False,'error':'invalid_schedule'}
   cfg={'date':day,'start':start,'end':end,'timezone':'Asia/Tashkent'}
   db.set_setting('awake_schedule',json.dumps(cfg,ensure_ascii=False))
@@ -402,7 +402,7 @@ def register(core,dp,bot,webapp_url):
    return await m.answer(f"Toshkent vaqti bilan HH:MM-HH:MM ko‘rinishida kiriting. Hozirgi sozlama: {current}.\\nEslatma: Render bepul xizmat uyquga ketgan bo‘lsa, bot ichidagi jadvalning o‘zi uni uyg‘ota olmaydi; tashqi uptime monitor kerak bo‘ladi.")
   if s=='awake_window':
    import re
-   if not re.fullmatch(r'([01]\\d|2[0-3]):[0-5]\\d-([01]\\d|2[0-3]):[0-5]\\d',txt):return await m.answer("Format noto‘g‘ri. Masalan: 07:30-23:00")
+   if not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d',txt):return await m.answer("Format noto‘g‘ri. Masalan: 07:30-23:00")
    db.set_setting('awake_window',txt);ast('admin')
    return await m.answer(f"Jadval saqlandi: {txt} (Asia/Tashkent). Uyqudagi Render instansiyasini tashqaridan uyg‘otmaydi.")
   if txt in {'Test sozlamalari','Ishtirokchilar','PDF natijalar','Tekshirish'}:return await m.answer('TESTLAR — saqlangan testlar',reply_markup=tests_kb())
