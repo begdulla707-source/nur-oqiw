@@ -117,6 +117,24 @@ async def check_sub(q:CallbackQuery):
     else:await q.message.answer('Barcha majburiy kanallarga obuna bo‘ling.')
     await q.answer()
 
+@dp.message(Command("group_status"))
+async def group_status_command(m:Message):
+    if m.chat.type not in ('group','supergroup'):
+        return await m.answer("Bu buyruqni bot qo‘shilgan guruh ichida yuboring.")
+    try:
+        me=await bot.get_me()
+        member=await bot.get_chat_member(m.chat.id,me.id)
+        chat=await bot.get_chat(m.chat.id)
+        can_send=member.status not in ('left','kicked') and not (member.status=='administrator' and getattr(member,'can_send_messages',True) is False)
+        groups=json.loads(get_setting('known_groups','[]') or '[]')
+        groups=[g for g in groups if int(g.get('id',0))!=m.chat.id]
+        groups.append({'id':m.chat.id,'title':m.chat.title or str(m.chat.id),'type':m.chat.type})
+        set_setting('known_groups',json.dumps(groups,ensure_ascii=False))
+        await m.answer(f"Guruh: {chat.title or m.chat.id}\\nBot holati: {member.status}\\nXabar yuborish: {'ha' if can_send else 'yo‘q'}\\nAdmin huquqi: {'ha' if member.status in ('administrator','creator') else 'yo‘q'}")
+    except Exception as exc:
+        logger.warning("group permission check failed: %s",type(exc).__name__)
+        await m.answer("Guruh ruxsatlarini tekshirib bo‘lmadi. Botni guruhga qo‘shing va xabar yuborish huquqini tekshiring.")
+
 @dp.message(F.contact)
 async def contact(m:Message):
     u=ensure_user(m.from_user.id)
