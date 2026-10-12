@@ -183,7 +183,7 @@ def register(core,dp,bot,webapp_url):
   if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
   import re
   day=str(p.get('date','')).strip();start=str(p.get('start','')).strip();end=str(p.get('end','')).strip()
-  if not re.fullmatch(r'\\d{4}-\\d{2}-\\d{2}',day) or not re.fullmatch(r'(?:[01]\\d|2[0-3]):[0-5]\\d',start) or not re.fullmatch(r'(?:[01]\\d|2[0-3]):[0-5]\\d',end):
+  if not re.fullmatch(r'\d{4}-\d{2}-\d{2}',day) or not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',start) or not re.fullmatch(r'(?:[01]\\d|2[0-3]):[0-5]\\d',end):
    return {'ok':False,'error':'invalid_schedule'}
   cfg={'date':day,'start':start,'end':end,'timezone':'Asia/Tashkent'}
   db.set_setting('awake_schedule',json.dumps(cfg,ensure_ascii=False))
