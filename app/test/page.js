@@ -1,45 +1,111 @@
 'use client';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {NUR_LOGO_DATA} from '../logo-data';
+
 const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw.onrender.com';
 function Logo(){return <img src={NUR_LOGO_DATA} alt="Nur oqıw orayı" className="brand-logo-image"/>}
-function Choice({q,answer,onChoose,saving}){const opts=Array.isArray(q.options)&&q.options.length===4?q.options:['A','B','C','D'];return <section className="q-card"><div className="q-top"><span>Savol {q.display_number||q.id}</span><span>{q.kind==='written'?'Yozma javob':'Variantli savol'}</span></div>{q.question&&<h2>{q.question}</h2>}{q.image_url&&<img src={q.image_url} alt="" className="question-image"/>}{q.kind==='written'?<Written q={q} answer={answer} onChoose={onChoose}/>:<div className="choice-grid">{opts.map((text,i)=>{const x=String.fromCharCode(65+i);const selected=answer===x;return <button type="button" key={x} aria-pressed={selected} className={`choice-btn ${selected?'picked':''}`} onClick={()=>onChoose(q.id,x)}><span className="choice-letter">{x}</span><span className="choice-text">{text}</span></button>})}</div>}{saving[q.id]&&<p className="answer-saved-note">Javob saqlanmoqda…</p>}</section>}
-function Written({q,answer,onChoose}){const [value,setValue]=useState(answer??'');const [mode,setMode]=useState('123');useEffect(()=>setValue(answer??''),[q.id,answer]);const add=s=>setValue(v=>v+s);const keys=mode==='123'?['7','8','9','4','5','6','1','2','3','0','.','−']:mode==='math'?['+','−','×','÷','=','(',')','²','³','√','π','/','%','^','|x|','≤','≥','≠']:mode==='greek'?['α','β','γ','δ','θ','λ','μ','π','σ','φ','ω','Δ','Σ','√','∞','∫']:['A','B','C','D','E','F','x','y','z','n','m','a','b','c','d','+','−','×','÷'];return <div className="written-answer"><input className="answer-input" value={value} onChange={e=>setValue(e.target.value)} placeholder="Javobingizni yozing" autoComplete="off"/><div className="written-keyboard"><div className="keyboard-tabs">{[['123','Raqamlar'],['math','Belgilar'],['greek','Yunon'],['abc','Harflar']].map(([id,label])=><button type="button" key={id} className={mode===id?'active':''} onClick={()=>setMode(id)}>{label}</button>)}</div><div className="keyboard-keys">{keys.map((key,i)=><button type="button" key={key+'-'+i} onClick={()=>add(key)}>{key}</button>)}<button type="button" disabled={!value} onClick={()=>setValue(v=>v.slice(0,-1))}>⌫</button><button type="button" onClick={()=>add(' ')}>Bo‘sh joy</button></div></div><button type="button" className="accept-answer" disabled={!value.trim()||value.trim()===String(answer??'').trim()} onClick={()=>onChoose(q.id,value.trim())}>Javobni saqlash</button></div>}
+
+function Written({questionId,answer,onSave,saving}){
+ const [value,setValue]=useState(answer??'');
+ const [tab,setTab]=useState('number');
+ useEffect(()=>setValue(answer??''),[questionId,answer]);
+ const keyRows={
+  symbols:['x','y','π','√','(',')','^','²','³','+','−','×','÷','=','<','>','/'],
+  number:['1','2','3','4','5','6','7','8','9','0','.','−','+','=','(',')','/']
+ };
+ const insert=(k)=>setValue(v=>v+k);
+ return <div className="written-answer">
+  <div className="written-input-wrap"><input value={value} onChange={e=>setValue(e.target.value)} className="answer-input" placeholder="Javobni kiriting..." aria-label="Yozma javob"/><button type="button" className="clear-answer" onClick={()=>setValue('')} disabled={!value}>×</button></div>
+  <div className="written-keyboard">
+   <div className="keyboard-tabs"><button type="button" className={tab==='number'?'active':''} onClick={()=>setTab('number')}>Raqamlar</button><button type="button" className={tab==='symbols'?'active':''} onClick={()=>setTab('symbols')}>Belgilar</button></div>
+   <div className="keyboard-keys">{keyRows[tab].map((k,i)=><button type="button" key={k+'-'+i} onClick={()=>insert(k)}>{k}</button>)}<button type="button" onClick={()=>setValue(v=>v.slice(0,-1))} disabled={!value}>⌫</button></div>
+   <button type="button" className="accept-answer" onClick={()=>onSave(questionId,value.trim())} disabled={!value.trim()||saving}>{saving?'Saqlanmoqda...':'OK'}</button>
+  </div>
+ </div>
+}
+function Question({q,number,answer,onChoose,saving}){
+ const opts=Array.isArray(q.options)&&q.options.length?q.options:['A','B','C','D'];
+ return <article className="question-card" id={'question-'+q.id}>
+  <div className="question-heading"><span className="question-number">{number}.</span><div className="question-text">{q.question||'Savol'}</div></div>
+  {q.image_url&&<img src={q.image_url} alt="Savol rasmi" className="question-image" loading="lazy"/>}
+  {q.kind==='written'?<Written questionId={q.id} answer={answer} onSave={onChoose} saving={!!saving[q.id]}/>:<div className="option-list">{opts.map((option,i)=>{const letter=String.fromCharCode(65+i);const picked=answer===letter;return <button type="button" key={letter} aria-pressed={picked} className={'option-choice'+(picked?' is-selected':'')} onClick={()=>onChoose(q.id,letter)}><span className="option-letter">{letter}</span><span className="option-label">{String(option??letter)}</span></button>})}</div>}
+  {saving[q.id]&&q.kind!=='written'&&<p className="save-status">Saqlanmoqda...</p>}
+ </article>
+}
 export default function Test(){
  const answerQueue=useRef({});
- const[initData,setInitData]=useState(''),[qs,setQs]=useState([]),[answers,setAnswers]=useState({}),[results,setResults]=useState({}),[saving,setSaving]=useState({}),[status,setStatus]=useState('loading'),[msg,setMsg]=useState(''),[score,setScore]=useState(null),[correctCount,setCorrectCount]=useState(null),[totalQuestions,setTotalQuestions]=useState(null),[gradeValue,setGradeValue]=useState(''),[name,setName]=useState(''),[testName,setTestName]=useState(''),[endsAt,setEndsAt]=useState(null),[index,setIndex]=useState(0),[now,setNow]=useState(Date.now());
- const code=useMemo(()=>{try{return new URLSearchParams(window.location.search).get('code')||''}catch{return ''}},[]);
- const load=useCallback(async raw=>{if(!raw){setStatus('blocked');setMsg('Telegram sessiyasi topilmadi. Bot ichidan oching.');return}try{const s=await fetch(`${API}/api/test/state?code=${encodeURIComponent(code)}`,{cache:'no-store',headers:{Authorization:`tma ${raw}`}});const sj=await s.json();if(!sj.ok){setStatus(sj.error==='already_submitted'?'done':'blocked');setMsg(sj.error==='test_stopped'?'Test administrator tomonidan to‘xtatildi.':sj.error==='test_closed'?'Test yopiq.':sj.error==='test_not_found'?'Test kodi topilmadi.':sj.error==='already_submitted'?'Bu test avval yakunlangan.':sj.error==='registration_required'?'Avval botda ro‘yxatdan o‘ting, keyin Mini Appni qayta oching.':'Test sessiyasi topilmadi.');setScore(sj.score??null);setCorrectCount(sj.correct_count??null);setTotalQuestions(sj.total_questions??null);setGradeValue(sj.grade||'');setName(sj.full_name||'');setTestName(sj.test_name||'');return}if(!Array.isArray(sj.questions))throw new Error('questions_missing');setQs(sj.questions);setAnswers(sj.answers||{});setResults(sj.results||{});setName(sj.full_name||'');setTestName(sj.test_name||'');setEndsAt(sj.ends_at);setStatus('test')}catch{setStatus('blocked');setMsg('Testni yuklashda xatolik. Internet yoki Telegram sessiyasini tekshiring.')}},[code]);
+ const [initData,setInitData]=useState('');
+ const [questions,setQuestions]=useState([]);
+ const [answers,setAnswers]=useState({});
+ const [saving,setSaving]=useState({});
+ const [status,setStatus]=useState('loading');
+ const [message,setMessage]=useState('');
+ const [name,setName]=useState('');
+ const [testName,setTestName]=useState('');
+ const [code,setCode]=useState('');
+ const [endsAt,setEndsAt]=useState(null);
+ const [now,setNow]=useState(Date.now());
+ const [score,setScore]=useState(null);
+ const [grade,setGrade]=useState('');
+ const [correctCount,setCorrectCount]=useState(null);
+ const [totalQuestions,setTotalQuestions]=useState(null);
+ const [finishBusy,setFinishBusy]=useState(false);
+ const codeFromUrl=useMemo(()=>{try{return new URLSearchParams(window.location.search).get('code')||''}catch{return ''}},[]);
+ const load=useCallback(async(raw)=>{
+  if(!raw){setStatus('blocked');setMessage('Telegram boti ichidan oching.');return}
+  try{
+   const response=await fetch(API+'/api/test/state?code='+encodeURIComponent(codeFromUrl),{cache:'no-store',headers:{Authorization:'tma '+raw}});
+   const data=await response.json();
+   if(!data.ok){
+    setStatus(data.error==='already_submitted'?'done':'blocked');
+    setMessage(data.error==='test_stopped'?'Test administrator tomonidan to‘xtatildi.':data.error==='test_closed'?'Test hozir yopiq.':data.error==='test_not_found'?'Test kodi topilmadi.':data.error==='registration_required'?'Avval botda ro‘yxatdan o‘ting.':data.error==='already_submitted'?'Bu test avval yakunlangan.':'Test ma’lumotlarini olish imkoni bo‘lmadi.');
+    setScore(data.score??null);setGrade(data.grade||'');setCorrectCount(data.correct_count??null);setTotalQuestions(data.total_questions??null);setName(data.full_name||'');setTestName(data.test_name||'');return;
+   }
+   if(!Array.isArray(data.questions))throw new Error('questions_missing');
+   setQuestions(data.questions);setAnswers(data.answers||{});setName(data.full_name||'');setTestName(data.test_name||'');setCode(data.test_code||codeFromUrl);setEndsAt(data.ends_at||null);setStatus('test');
+  }catch{setStatus('blocked');setMessage('Ulanishda xatolik. Bir ozdan keyin qayta oching.')}
+ },[codeFromUrl]);
  useEffect(()=>{
-  let stopped=false;
-  let attempts=0;
-  const boot=()=>{
-    if(stopped)return;
-    const tg=window.Telegram?.WebApp;
-    const raw=tg?.initData||'';
-    if(tg && raw){
-      try{tg.ready();tg.expand();}catch{}
-      setInitData(raw);
-      load(raw);
-      return;
-    }
-    attempts++;
-    if(attempts<30){setTimeout(boot,250);return}
-    setStatus('blocked');
-    setMsg('Telegram sessiyasi topilmadi. Mini Appni Telegram botidagi TESTNI BOSHLASH tugmasi orqali oching.');
-  };
-  boot();
-  const timer=setInterval(()=>setNow(Date.now()),1000);
-  return()=>{stopped=true;clearInterval(timer)};
-},[load]);
- async function choose(id,value){if(!value||!String(value).trim())return;setAnswers(a=>({...a,[id]:value}));setSaving(s=>({...s,[id]:true}));setMsg('');const previous=answerQueue.current[id]||Promise.resolve();const request=previous.catch(()=>{}).then(async()=>{const r=await fetch(API+'/api/test/answer',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`tma ${initData}`},body:JSON.stringify({initData,code,question_id:id,answer:value})});const j=await r.json();if(!j.ok)throw new Error(j.error||'save_failed');return j});answerQueue.current[id]=request;try{await request}catch{setMsg('Javob serverga saqlanmadi. Internetni tekshirib, qayta tanlang.')}finally{if(answerQueue.current[id]===request){delete answerQueue.current[id];setSaving(s=>{const n={...s};delete n[id];return n})}}}
- const finish=useCallback(async()=>{if(status!=='test')return;try{const r=await fetch(API+'/api/test/finish',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`tma ${initData}`},body:JSON.stringify({initData,code})});const j=await r.json();if(j.ok){setScore(j.score);setCorrectCount(j.correct_count??null);setTotalQuestions(j.total_questions??qs.length);setGradeValue(j.grade||'');setStatus('done');setMsg('Test muvaffaqiyatli yakunlandi.')}
-else if(j.error==='already_submitted'){setScore(j.score??null);setCorrectCount(j.correct_count??null);setTotalQuestions(j.total_questions??qs.length);setGradeValue(j.grade||'');setStatus('done');setMsg('Test allaqachon yakunlangan.')}
-else setMsg(j.error==='test_stopped'?'Test administrator tomonidan to‘xtatildi.':j.error==='test_closed'?'Test yopildi.':'Testni yakunlab bo‘lmadi.')}catch{setMsg('Natijani saqlashda xatolik.')}},[status,initData,code,qs.length]);
- const seconds=endsAt?Math.max(0,Math.floor((new Date(endsAt).getTime()-now)/1000)):0;useEffect(()=>{if(status==='test'&&endsAt&&seconds<=0)finish()},[status,endsAt,seconds,finish]);
- if(status==='loading')return <main className="screen"><section className="glass-card"><Logo/><h1>Yuklanmoqda</h1><p>Test ma'lumotlari olinmoqda...</p></section></main>;
- if(status!=='test')return <main className="screen"><section className="glass-card"><Logo/><h1>{status==='done'?'Test yakunlandi':'Test holati'}</h1>{testName&&<p className="test-title">{testName}</p>}{name&&<p className="user-name">{name}</p>}<p>{msg}</p>{score!==null&&<><strong className="final-score">{Number(score).toFixed(2)} ball</strong>{correctCount!==null&&totalQuestions!==null&&<p className="score-detail">To‘g‘ri javoblar: <b>{correctCount}/{totalQuestions}</b>{totalQuestions>0&&` · ${Math.max(0,totalQuestions-correctCount)} ta xato yoki javobsiz`}</p>}{gradeValue&&<p className="score-detail">Baho: <b>{gradeValue}</b></p>}</>}<div className="finish-actions"><a className="finish-home" href="/">Test kodini kiritish</a><a className="finish-secondary" href="/profile">Profilim</a><a className="finish-secondary" href={'/ranking?code='+encodeURIComponent(code)}>Reyting</a></div></section><nav className="bottom-glass-nav" aria-label="Asosiy navigatsiya"><a className="nav-item active" href="/"><span>⌂</span><small>Test</small></a><a className="nav-item" href="/profile"><span>◉</span><small>Profil</small></a><a className="nav-item" href={'/ranking?code='+encodeURIComponent(code)}><span>♜</span><small>Reyting</small></a></nav></main>;
- const answeredCount=Object.keys(answers).filter(k=>String(answers[k]??'').trim()!=='').length;const seconds=endsAt?Math.max(0,Math.floor((new Date(endsAt).getTime()-now)/1000)):0;useEffect(()=>{if(status==='test'&&endsAt&&seconds<=0)finish()},[status,endsAt,seconds,finish]);
- if(status==='loading')return <main className="screen"><section className="glass-card"><Logo/><h1>Test ochilmoqda</h1><p>Bir oz kuting…</p></section></main>;
- if(status!=='test')return <main className="screen"><section className="glass-card"><Logo/><h1>{status==='done'?'Test yakunlandi':'Test holati'}</h1>{testName&&<p className="test-title">{testName}</p>}{name&&<p className="user-name">{name}</p>}<p>{msg}</p>{score!==null&&<><strong className="final-score">{Number(score).toFixed(2)} ball</strong>{correctCount!==null&&totalQuestions!==null&&<p className="score-detail">To‘g‘ri javoblar: <b>{correctCount}/{totalQuestions}</b>{totalQuestions>0&&` · ${Math.max(0,totalQuestions-correctCount)} ta xato yoki javobsiz`}</p>}{gradeValue&&<p className="score-detail">Baho: <b>{gradeValue}</b></p>}</>}<div className="finish-actions"><a className="finish-home" href="/">Test kodini kiritish</a><a className="finish-secondary" href="/profile">Profilim</a><a className="finish-secondary" href={'/ranking?code='+encodeURIComponent(code)}>Reyting</a></div></section><nav className="bottom-glass-nav" aria-label="Asosiy navigatsiya"><a className="nav-item active" href="/"><span>⌂</span><small>Test</small></a><a className="nav-item" href="/profile"><span>◉</span><small>Profil</small></a><a className="nav-item" href={'/ranking?code='+encodeURIComponent(code)}><span>♜</span><small>Reyting</small></a></nav></main>;
- return <div className="test-shell"><header className="test-header"><div><b>{testName||'NUR O‘QIW ORAYI'}</b><small>{name||'Test'}</small></div><span>{answeredCount}/{qs.length} javob</span></header><div className="progress-track"><i style={{width:`${qs.length?(answeredCount/qs.length)*100:0}%`}}/></div><div className="live-bar"><span>Qolgan vaqt</span><strong>{endsAt?Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0'):'Cheklanmagan'}</strong></div><main className="test-wrap"><section className="test-intro"><small>{code||'TEST'}</small><h1>{testName||'Test'}</h1><p>Barcha savollar pastga ketma-ket joylangan. Javobni istalgan payt o‘zgartirishingiz mumkin.</p></section>{msg&&<p className="test-message">{msg}</p>}{qs.length?qs.map((item,i)=><Choice key={item.id} q={{...item,display_number:i+1}} answer={answers[item.id]} onChoose={choose} saving={saving}/>):<section className="q-card"><h2>Savollar topilmadi.</h2></section>}<div className="finish-test-area"><p>{answeredCount} / {qs.length} savolga javob berildi</p><button className="finish-test-button" onClick={finish}>Testni yakunlash</button></div></main><nav className="bottom-glass-nav" aria-label="Asosiy navigatsiya"><a className="nav-item" href="/"><span>⌂</span><small>Test</small></a><a className="nav-item" href="/profile"><span>◉</span><small>Profil</small></a><a className="nav-item" href={'/ranking?code='+encodeURIComponent(code)}><span>♜</span><small>Reyting</small></a></nav></div>}
+  let cancelled=false;let attempts=0;let timer;
+  const boot=()=>{if(cancelled)return;const tg=window.Telegram?.WebApp;const raw=tg?.initData||'';if(tg&&raw){try{tg.ready();tg.expand();tg.disableVerticalSwipes?.()}catch{}setInitData(raw);load(raw);return}attempts++;if(attempts<12){timer=setTimeout(boot,100);return}setStatus('blocked');setMessage('Mini Appni Telegram botidagi Testni boshlash tugmasi orqali oching.')};
+  boot();const clock=setInterval(()=>setNow(Date.now()),1000);
+  return()=>{cancelled=true;clearTimeout(timer);clearInterval(clock)}
+ },[load]);
+ const choose=useCallback(async(id,value)=>{
+  if(value===undefined||value===null||!String(value).trim())return;
+  setAnswers(old=>({...old,[id]:value}));setSaving(old=>({...old,[id]:true}));setMessage('');
+  const previous=answerQueue.current[id]||Promise.resolve();
+  const task=previous.catch(()=>{}).then(async()=>{
+   const response=await fetch(API+'/api/test/answer',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'tma '+initData},body:JSON.stringify({initData,code:code||codeFromUrl,question_id:id,answer:value})});
+   const data=await response.json();if(!data.ok)throw new Error(data.error||'save_failed');return data;
+  });
+  answerQueue.current[id]=task;
+  try{await task}catch{setMessage('Javob saqlanmadi. Internetni tekshirib, qayta tanlang.')}finally{
+   if(answerQueue.current[id]===task){delete answerQueue.current[id];setSaving(old=>{const next={...old};delete next[id];return next})}
+  }
+ },[initData,code,codeFromUrl]);
+ const finish=useCallback(async()=>{
+  if(status!=='test'||finishBusy)return;
+  setFinishBusy(true);
+  try{
+   await Promise.all(Object.values(answerQueue.current).map(p=>p.catch(()=>{})));
+   const response=await fetch(API+'/api/test/finish',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'tma '+initData},body:JSON.stringify({initData,code:code||codeFromUrl})});
+   const data=await response.json();
+   if(data.ok||data.error==='already_submitted'){setScore(data.score??null);setGrade(data.grade||'');setCorrectCount(data.correct_count??null);setTotalQuestions(data.total_questions??questions.length);setStatus('done');setMessage('Test yakunlandi. Natijangiz saqlandi.')}
+   else setMessage(data.error==='test_stopped'?'Test administrator tomonidan to‘xtatildi.':'Testni yakunlab bo‘lmadi. Qayta urinib ko‘ring.');
+  }catch{setMessage('Natijani saqlashda xatolik. Qayta urinib ko‘ring.')}finally{setFinishBusy(false)}
+ },[status,finishBusy,initData,code,codeFromUrl,questions.length]);
+ const seconds=endsAt?Math.max(0,Math.floor((new Date(endsAt).getTime()-now)/1000)):null;
+ useEffect(()=>{if(status==='test'&&seconds===0&&endsAt)finish()},[status,seconds,endsAt,finish]);
+ const answered=Object.keys(answers).filter(k=>String(answers[k]??'').trim()).length;
+ if(status==='loading')return <main className="test-loading"><div className="loading-mark"><Logo/></div><h1>Nur oqıw orayı</h1><p>Test ochilmoqda...</p></main>;
+ if(status!=='test')return <main className="test-result-page"><section className="result-card"><Logo/><h1>{status==='done'?'Test yakunlandi':'Test ochilmadi'}</h1>{testName&&<p className="result-subtitle">{testName}</p>}{name&&<p className="result-subtitle">{name}</p>}<p>{message}</p>{score!==null&&<div className="result-score">{Number(score).toFixed(2)} <small>ball</small></div>}{grade&&<p>Baho: <b>{grade}</b></p>}{correctCount!==null&&totalQuestions!==null&&<p>To‘g‘ri javoblar: {correctCount}/{totalQuestions}</p>}<a className="result-link" href="/">Asosiy sahifa</a></section></main>;
+ return <main className="test-page">
+  <header className="test-topbar"><div className="top-brand"><Logo/><div><strong>Nur oqıw orayı</strong><small>{testName||'Milliy sertifikat testi'}</small></div></div><div className="top-progress"><b>{answered}/{questions.length}</b><small>javob</small></div></header>
+  <div className="test-meta"><span>{questions.length} savol</span><span>{seconds===null?'Vaqt cheklanmagan':String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0')}</span></div>
+  <section className="test-introduction"><h1>{testName||'Test'}</h1><p>Barcha savollar ketma-ket joylangan. Tanlagan javobingizni istalgan payt o‘zgartirishingiz mumkin.</p></section>
+  {message&&<p className="test-alert" role="status">{message}</p>}
+  <section className="question-stack">{questions.map((q,index)=><Question key={q.id} q={q} number={index+1} answer={answers[q.id]} onChoose={choose} saving={saving}/>)}</section>
+  <footer className="test-finish-panel"><div><strong>{answered} / {questions.length}</strong><span>savolga javob berildi</span></div><button type="button" onClick={finish} disabled={finishBusy}>{finishBusy?'Saqlanmoqda...':'Testni yakunlash'}</button></footer>
+ </main>
+}
