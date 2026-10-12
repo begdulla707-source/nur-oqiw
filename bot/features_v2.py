@@ -374,6 +374,28 @@ def register(core,dp,bot,webapp_url):
      lines.append(f"{g.get('title',g['id'])} ({g['id']}) — {member.status}; xabar yuborish: {'ha' if can_send else 'yo‘q'}")
     except Exception:lines.append(f"{g.get('title',g['id'])} ({g['id']}) — tekshirib bo‘lmadi; bot huquqini tekshiring")
    return await m.answer('\\n'.join(lines)[:3900])
+  if txt=='Majburiy obuna':
+   ast('subscription_channels')
+   current=json.loads(db.get_setting('subscription_channels','[]') or '[]') if db.get_setting('subscription_channels','') else []
+   return await m.answer("Majburiy obuna kanallarini @username yoki -100... ID ko‘rinishida, har birini yangi qatordan yuboring. O‘chirish uchun OFF yozing.\\n\\nHozirgi kanallar: "+(', '.join(str(x) for x in current) if current else 'o‘chirilgan'))
+  if s=='subscription_channels':
+   if txt.strip().upper()=='OFF':
+    db.set_setting('subscription_required','0');db.set_setting('subscription_channels','[]');ast('admin')
+    return await m.answer("Majburiy obuna o‘chirildi.")
+   channels=[x.strip() for x in txt.replace(',','\\n').splitlines() if x.strip()]
+   if not channels:return await m.answer("Kanal username yoki ID kiriting, yoki OFF yozing.")
+   db.set_setting('subscription_channels',json.dumps(channels,ensure_ascii=False));db.set_setting('subscription_required','1');ast('admin')
+   return await m.answer(f"Majburiy obuna saqlandi. Kanallar: {len(channels)}. Bot kanalga admin sifatida qo‘shilganini tekshiring.")
+  if txt=='Tariflar':
+   ast('premium_user_id')
+   return await m.answer("Tarifini o‘zgartirmoqchi bo‘lgan foydalanuvchining Telegram ID raqamini kiriting.")
+  if s=='premium_user_id':
+   try:target=int(txt)
+   except:return await m.answer("Telegram ID faqat raqam bo‘lishi kerak.")
+   user=db.get_user(target)
+   if not user:return await m.answer("Foydalanuvchi topilmadi. Avval botga /start bosgan bo‘lishi kerak.")
+   db.set_setting('premium_target_user',str(target));ast('premium_tier')
+   return await m.answer(f"Foydalanuvchi: {user['full_name'] or 'Ismsiz'} (ID {target}). Tarifni tanlang:",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='PREMIUM BERISH',callback_data='premium_set:premium')],[InlineKeyboardButton(text='ODDIY TARIF',callback_data='premium_set:default')]]))
   if txt=='Bildirishnoma':
    ast('notification_message')
    return await m.answer("Barcha bot foydalanuvchilariga yuboriladigan xabarni kiriting. Yuborishdan oldin tasdiqlash chiqadi.")
@@ -642,4 +664,16 @@ def register(core,dp,bot,webapp_url):
   db.set_setting('pending_notification','{}');db.update_user(ADMIN,state='admin')
   await q.message.answer('Bildirishnoma bekor qilindi.')
   await q.answer('Bekor qilindi')
+ @r.callback_query(F.data.startswith('premium_set:'))
+ async def premium_set(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return
+  tier=q.data.split(':',1)[1]
+  if tier not in ('premium','default'):return await q.answer('Tarif noto‘g‘ri.',show_alert=True)
+  try:target=int(db.get_setting('premium_target_user','0'))
+  except Exception:target=0
+  user=db.get_user(target)
+  if not user:return await q.answer('Foydalanuvchi topilmadi.',show_alert=True)
+  db.set_tier(target,tier,ADMIN);db.update_user(ADMIN,state='admin')
+  await q.message.answer(f"Tarif yangilandi: {user['full_name'] or target} — {'PREMIUM' if tier=='premium' else 'ODDIY'}.")
+  await q.answer('Saqlandi')
  dp.include_router(r)
