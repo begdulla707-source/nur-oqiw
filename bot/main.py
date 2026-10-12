@@ -125,7 +125,8 @@ async def group_status_command(m:Message):
         me=await bot.get_me()
         member=await bot.get_chat_member(m.chat.id,me.id)
         chat=await bot.get_chat(m.chat.id)
-        can_send=member.status not in ('left','kicked') and not (member.status=='administrator' and getattr(member,'can_send_messages',True) is False)
+        permissions=getattr(chat,'permissions',None)
+        can_send=member.status not in ('left','kicked') and not (member.status=='administrator' and getattr(member,'can_send_messages',True) is False) and getattr(permissions,'can_send_messages',True) is not False
         groups=json.loads(get_setting('known_groups','[]') or '[]')
         groups=[g for g in groups if int(g.get('id',0))!=m.chat.id]
         groups.append({'id':m.chat.id,'title':m.chat.title or str(m.chat.id),'type':m.chat.type})
