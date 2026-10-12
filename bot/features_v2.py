@@ -410,8 +410,6 @@ def register(core,dp,bot,webapp_url):
    for i,user in enumerate(users[:35],1):
     lines.append(f"{i}. {user['full_name'] or 'Ismsiz'} | ID: {user['telegram_id']} | Tarif: {user['tier'] or 'default'}")
    return await m.answer('\\n'.join(lines)[:3900])
-  if txt=='Tariflar':
-   return await m.answer("Tariflarni boshqarish hozircha qo‘lda: foydalanuvchi ID raqamini va tarifni yuborish oqimi admin panelda alohida sozlanishi kerak. Hozir mavjud foydalanuvchi tarifini ko‘rish mumkin.")
   if txt=='Guruhga xabar yuborish':
    ast('broadcast_message')
    return await m.answer("Guruhlarga yuboriladigan xabar matnini yuboring. Keyin yuborishdan oldin tasdiqlash so‘raladi.")
@@ -650,7 +648,7 @@ def register(core,dp,bot,webapp_url):
   users=db.all_registered_users();sent=0;failed=0
   for user in users:
    uid=int(user['telegram_id'])
-   if uid==ADMIN:continue
+   if uid<=0 or uid==ADMIN:continue
    try:
     await BOT.send_message(uid,message);sent+=1
    except Exception:failed+=1
