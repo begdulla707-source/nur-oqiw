@@ -314,7 +314,7 @@ def register(core,dp,bot,webapp_url):
      else:safe_action={'type':'subscription_required','enabled':enabled}
     elif kind=='awake_window':
      start_time=str(proposed.get('start',''));end_time=str(proposed.get('end',''))
-     if re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',start_time) and re.fullmatch(r'(?:[01]\\d|2[0-3]):[0-5]\\d',end_time):
+     if re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',start_time) and re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',end_time):
       safe_action={'type':'awake_window','start':start_time,'end':end_time}
    if not reply:reply='Tushundim. Aniqroq ayta olasizmi?'
    return {'ok':True,'reply':reply,'action':safe_action}
