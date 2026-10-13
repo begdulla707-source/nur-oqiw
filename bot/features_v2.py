@@ -403,7 +403,7 @@ def register(core,dp,bot,webapp_url):
   if kind=='test_delete':
    test_id=str(action.get('test_id','')).strip();code=str(action.get('code','')).strip()
    test=db.get_test(test_id) if test_id else (db.get_test_by_code(code) if code else None)
-   if not test or str(test.get('code','')).casefold()!=code.casefold():return {'ok':False,'error':'test_not_found'}
+   if not test or str(test['code']).casefold()!=code.casefold():return {'ok':False,'error':'test_not_found'}
    deleted=db.delete_test(test['test_id'])
    return {'ok':bool(deleted),'message':f"{test['name']} testi o‘chirildi. Saqlangan natijalar arxivda qoldi." if deleted else 'Testni o‘chirib bo‘lmadi.'}
   if kind=='test_create':
