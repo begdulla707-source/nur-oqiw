@@ -246,16 +246,33 @@ def register(core,dp,bot,webapp_url):
    content=str(item.get('content','')).strip()[:3000]
    if role in ('user','assistant') and content:messages.append({'role':role,'content':content})
   if not messages or messages[-1]['role']!='user':return {'ok':False,'error':'invalid_messages'}
-  # Deterministic allowlist: Jarvis may propose a small set of admin actions, but never executes them without confirmation.
+  # Only a small allowlist of admin actions can be proposed; every mutation needs a separate confirmation.
   import re
   command=messages[-1]['content'].strip()
   low=command.casefold()
-  toggle_match=re.search(r'^(?:testni|test)\\s+(yop|yopiq qil|to[\'’‘]?xtat|och|qayta och)\\s+([A-Za-z0-9_-]{2,40})  context=p.get('context',{})
+  toggle_match=re.fullmatch(r"(?:testni|test)\s+(yop|yopiq qil|to['’‘]?xtat|och|qayta och)\s+([A-Za-z0-9_-]{2,40})",command,re.I)
+  if toggle_match:
+   verb=toggle_match.group(1).casefold();code=toggle_match.group(2).strip();test=db.get_test_by_code(code)
+   if not test:return {'ok':True,'reply':f"'{code}' kodi bilan test topilmadi. Kodni tekshirib qayta yuboring."}
+   desired_active=verb in ('och','qayta och')
+   if bool(int(test['active']))==desired_active:return {'ok':True,'reply':f"{test['name']} hozirning o‘zida {'ochiq' if desired_active else 'yopiq'}."}
+   return {'ok':True,'reply':f"Amal tayyor: {test['name']} testini {'ochish' if desired_active else 'to‘xtatish'}. Tasdiqlasangiz bajaraman.",'action':{'type':'test_toggle','test_id':str(test['test_id']),'code':str(test['code']),'name':str(test['name']),'active':desired_active}}
+  if re.search(r'majburiy\s+obuna.*(?:o[\'’‘]?chir|off)',low):
+   return {'ok':True,'reply':'Majburiy obunani o‘chirishni tasdiqlang. Bu barcha foydalanuvchilar uchun obuna tekshiruvini o‘chiradi.','action':{'type':'subscription_required','enabled':False}}
+  if re.search(r'majburiy\s+obuna.*(?:yoq|on)',low):
+   channels=db.get_setting('subscription_channels','')
+   if not channels or channels in ('[]','{}'):return {'ok':True,'reply':'Avval admin menyusidagi “Majburiy obuna” orqali kanal(lar)ni kiriting. Hozir kanal ro‘yxati bo‘sh.'}
+   return {'ok':True,'reply':'Majburiy obunani yoqishni tasdiqlang. Bot kanallarga admin sifatida qo‘shilgan bo‘lishi kerak.','action':{'type':'subscription_required','enabled':True}}
+  window_match=re.search(r'(?:jadval|ish vaqti).*?((?:[01]\d|2[0-3]):[0-5]\d)\s*[-–]\s*((?:[01]\d|2[0-3]):[0-5]\d)',low)
+  if window_match:
+   start_time,end_time=window_match.groups()
+   return {'ok':True,'reply':f"Ish vaqti jadvalini {start_time}-{end_time} qilib saqlashni tasdiqlang. Bu jadval Render Free serverini uyqudan majburan uyg‘otmaydi.",'action':{'type':'awake_window','start':start_time,'end':end_time}}
+  context=p.get('context',{})
   if not isinstance(context,dict):context={}
   safe_stats=context.get('stats',{}) if isinstance(context.get('stats',{}),dict) else {}
   safe_tests=context.get('tests',[]) if isinstance(context.get('tests',[]),list) else []
   safe_tests=[{'name':str(t.get('name',''))[:120],'code':str(t.get('code',''))[:40],'active':bool(t.get('active')),'questions':int(t.get('questions',0) or 0),'participants':int(t.get('participants',0) or 0),'completed':int(t.get('completed',0) or 0)} for t in safe_tests[:30] if isinstance(t,dict)]
-  system='You are Jarvis, the AI admin assistant for Nur oqıw orayı Milliy sertifikat test system. Reply in clear Uzbek Latin or Qaraqalpaq Latin. Be concise and practical. You can use the LIVE SNAPSHOT below to answer questions about bot users, tests, and results, but this snapshot is read-only and may be absent. You cannot directly change hosting, environment variables, secrets, or data in this chat. Never claim an action succeeded unless an API confirms it. For changes, explain what should be changed and request confirmation through supported admin controls. Never reveal secrets or ask the user to paste API keys into chat. LIVE SNAPSHOT: '+json.dumps({'stats':safe_stats,'tests':safe_tests},ensure_ascii=False)
+  system='You are Jarvis, the AI admin assistant for Nur oqıw orayı Milliy sertifikat test system. Reply in clear Uzbek Latin or Qaraqalpaq Latin. Be concise and practical. Use the LIVE SNAPSHOT below for current users, tests and results. Supported direct actions are limited to: "testni yop KOD", "testni och KOD", "majburiy obunani yoq", "majburiy obunani o‘chir", and "jadval 08:00-22:00". The backend proposes these actions and requires the administrator to press a confirmation button before execution. For other changes, explain how to do them through existing admin controls. Never claim an action succeeded unless an API confirms it. Never reveal secrets or ask the user to paste API keys into chat. LIVE SNAPSHOT: '+json.dumps({'stats':safe_stats,'tests':safe_tests},ensure_ascii=False)
   payload={'model':os.getenv('OPENAI_MODEL','gpt-4.1-mini'),'input':[{'role':'system','content':system}]+messages,'max_output_tokens':1200}
   def call_api():
    req_obj=urllib.request.Request('https://api.openai.com/v1/responses',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+api_key,'Content-Type':'application/json'},method='POST')
