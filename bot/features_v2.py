@@ -1,6 +1,6 @@
 from fastapi import Request
 import asyncio
-import json,secrets,os,reportlab,urllib.request,urllib.error,urllib.parse,logging
+import json,secrets,os,tempfile,reportlab,urllib.request,urllib.error,urllib.parse,logging
 from datetime import datetime,time,timedelta
 from aiogram import Router,F
 from aiogram.filters import CommandStart
@@ -283,7 +283,7 @@ def register(core,dp,bot,webapp_url):
   safe_stats=context.get('stats',{}) if isinstance(context.get('stats',{}),dict) else {}
   safe_tests=context.get('tests',[]) if isinstance(context.get('tests',[]),list) else []
   safe_tests=[{'name':str(t.get('name',''))[:120],'code':str(t.get('code',''))[:40],'active':bool(t.get('active')),'questions':int(t.get('questions',0) or 0),'participants':int(t.get('participants',0) or 0),'completed':int(t.get('completed',0) or 0)} for t in safe_tests[:30] if isinstance(t,dict)]
-  system='You are Jarvis, a capable assistant for the admin of Nur oqıw orayı Milliy sertifikat test system. Understand informal Uzbek Latin, Qaraqalpaq Latin, spelling mistakes, missing letters, phonetic typing, mixed languages, and context just as a helpful human assistant would. Infer intended meaning cautiously; if the test or setting is ambiguous, ask a short clarification. Reply in polished, formal, concise Uzbek Latin or Qaraqalpaq Latin matching the user’s language. Address the administrator respectfully. Use a restrained professional style with a few relevant standard Unicode emojis (for example: 🛡️, 📊, ✅, ⚠️, 🧠); do not spam emojis, do not use RGB/neon styling, and never claim an operation succeeded before its confirmation endpoint returns success. Format replies with clear short paragraphs and numbered steps when useful. Never output Markdown tables. Use LIVE SNAPSHOT for actual current statistics. You must output ONLY a valid JSON object with keys reply (string) and action (object or null). Allowed actions: {"type":"test_toggle","code":"EXACT_TEST_CODE","active":true_or_false}; {"type":"test_delete","code":"EXACT_TEST_CODE"}; {"type":"test_create","name":"TEST_NAME","code":"NEW_CODE"}; {"type":"subscription_required","enabled":true_or_false}; {"type":"awake_window","start":"HH:MM","end":"HH:MM"}. For creating a test, ask for a name and code if missing. Never delete unless the admin explicitly asks; results are archived, but the test itself is removed. Only use exact existing codes for deletion. Never invent test codes; match code/name from LIVE SNAPSHOT and if uncertain ask which test. For changes, propose the action but never claim it is done; admin must confirm via a separate button. If request is outside the supported action list, explain what you can do or give steps through existing admin controls and set action null. Never expose secrets or ask for API keys. LIVE SNAPSHOT: '+json.dumps({'stats':safe_stats,'tests':safe_tests},ensure_ascii=False)
+  system='You are Jarvis, a capable assistant for the admin of Nur oqıw orayı Milliy sertifikat test system. Understand informal Uzbek Latin, Qaraqalpaq Latin, spelling mistakes, missing letters, phonetic typing, mixed languages, and context just as a helpful human assistant would. Infer intended meaning cautiously; if the test or setting is ambiguous, ask a short clarification. Reply in polished, formal, concise Uzbek Latin or Qaraqalpaq Latin matching the user’s language. Address the administrator respectfully. Use a restrained professional style with a few relevant standard Unicode emojis (for example: 🛡️, 📊, ✅, ⚠️, 🧠); do not spam emojis, do not use RGB/neon styling, and never claim an operation succeeded before its confirmation endpoint returns success. Format replies with clear short paragraphs and numbered steps when useful. Never output Markdown tables. Use LIVE SNAPSHOT for actual current statistics. You must output ONLY a valid JSON object with keys reply (string) and action (object or null). Allowed actions: {"type":"test_toggle","code":"EXACT_TEST_CODE","active":true_or_false}; {"type":"test_delete","code":"EXACT_TEST_CODE"}; {"type":"test_create","name":"TEST_NAME","code":"NEW_CODE"}; {"type":"test_pdf","code":"EXACT_TEST_CODE"}; {"type":"question_add","code":"EXACT_TEST_CODE","number":1,"question":"QUESTION_TEXT","kind":"choice|written","answer":"A|B|C|D or written answer","options":["choice A text","choice B text","choice C text","choice D text"]}; {"type":"subscription_required","enabled":true_or_false}; {"type":"awake_window","start":"HH:MM","end":"HH:MM"}. For creating a test, ask for a name and code if missing. Never delete unless the admin explicitly asks; results are archived, but the test itself is removed. Only use exact existing codes for deletion. Never invent test codes; match code/name from LIVE SNAPSHOT and if uncertain ask which test. For changes, propose the action but never claim it is done; admin must confirm via a separate button. If request is outside the supported action list, explain what you can do or give steps through existing admin controls and set action null. Never expose secrets or ask for API keys. LIVE SNAPSHOT: '+json.dumps({'stats':safe_stats,'tests':safe_tests},ensure_ascii=False)
   payload={'model':os.getenv('OPENAI_MODEL','gpt-4.1-mini'),'input':[{'role':'system','content':system}]+messages,'max_output_tokens':1200}
   def call_api():
    req_obj=urllib.request.Request('https://api.openai.com/v1/responses',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+api_key,'Content-Type':'application/json'},method='POST')
@@ -341,6 +341,24 @@ def register(core,dp,bot,webapp_url):
       if db.test_code_exists(code): reply='Bu test kodi band. Boshqa kod tanlang.'
       else: safe_action={'type':'test_create','name':name,'code':code}
      else: reply='Yangi test uchun nom va 3–40 belgili lotin harf/raqamli kod kerak.'
+    elif kind=='test_pdf':
+     code=str(proposed.get('code','')).strip()[:40];test=db.get_test_by_code(code) if code else None
+     if test:safe_action={'type':'test_pdf','test_id':str(test['test_id']),'code':str(test['code']),'name':str(test['name'])}
+     else:reply='PDF tayyorlash uchun aniq test kodi topilmadi.'
+    elif kind=='question_add':
+     code=str(proposed.get('code','')).strip()[:40];test=db.get_test_by_code(code) if code else None
+     try:
+      number=int(proposed.get('number',0));question=str(proposed.get('question','')).strip()[:2000];qkind=str(proposed.get('kind','choice')).lower();answer=str(proposed.get('answer','')).strip();options=proposed.get('options',[])
+      if not test or not (1<=number<=1000) or not question:raise ValueError()
+      if qkind=='choice':
+       if not isinstance(options,list) or len(options)!=4 or any(not str(x).strip() for x in options) or answer.upper() not in ('A','B','C','D'):raise ValueError()
+       options=[str(x).strip()[:500] for x in options];answer=answer.upper()
+      elif qkind=='written':
+       if not answer:raise ValueError()
+       options=[]
+      else:raise ValueError()
+      safe_action={'type':'question_add','test_id':str(test['test_id']),'code':str(test['code']),'name':str(test['name']),'number':number,'question':question,'kind':qkind,'answer':answer,'options':options,'replaces_existing':bool(db.get_question_for_test(test['test_id'],number))}
+     except Exception:reply='Savolni qo‘shish uchun test kodi, savol raqami, matn va to‘g‘ri javob kerak. Oddiy savolda A/B/C/D matnlari ham bo‘lishi shart.'
     elif kind=='subscription_required' and isinstance(proposed.get('enabled'),bool):
      enabled=proposed['enabled'];channels=db.get_setting('subscription_channels','')
      if enabled and (not channels or channels in ('[]','{}')):
@@ -439,6 +457,40 @@ def register(core,dp,bot,webapp_url):
     test=db.create_test(name,code)
     return {'ok':True,'message':f"{test['name']} testi yaratildi. Kod: {test['code']}. Savollarni botdagi Test sozlamalari orqali qo‘shing."}
    except Exception:return {'ok':False,'error':'create_failed'}
+  if kind=='test_pdf':
+   test=db.get_test(str(action.get('test_id','')));code=str(action.get('code','')).strip()
+   if not test or str(test['code']).casefold()!=code.casefold():return {'ok':False,'error':'test_not_found'}
+   path=''
+   try:
+    with tempfile.NamedTemporaryFile(prefix='nur-test-',suffix='.pdf',delete=False) as tmp:path=tmp.name
+    build_test_pdf(test['test_id'],path)
+    await BOT.send_document(ADMIN,FSInputFile(path,filename=f"{test['code']}-natijalar.pdf"),caption=f"{test['name']} — qatnashchilar va natijalar")
+    return {'ok':True,'message':f"{test['name']} testi bo‘yicha PDF adminning Telegram chatiga yuborildi."}
+   except Exception:
+    logging.getLogger('nur-oqiw.jarvis').exception('Jarvis PDF export failed')
+    return {'ok':False,'error':'pdf_export_failed'}
+   finally:
+    if path:
+     try:os.remove(path)
+     except OSError:pass
+  if kind=='question_add':
+   test=db.get_test(str(action.get('test_id','')));code=str(action.get('code','')).strip()
+   if not test or str(test['code']).casefold()!=code.casefold():return {'ok':False,'error':'test_not_found'}
+   try:
+    number=int(action.get('number',0));question=str(action.get('question','')).strip();qkind=str(action.get('kind','choice'));answer=str(action.get('answer','')).strip();options=action.get('options',[])
+    if not (1<=number<=1000) or not question:return {'ok':False,'error':'invalid_action'}
+    if qkind=='choice':
+     if not isinstance(options,list) or len(options)!=4 or answer.upper() not in ('A','B','C','D') or any(not str(x).strip() for x in options):return {'ok':False,'error':'invalid_action'}
+     answer=answer.upper();options=[str(x).strip()[:500] for x in options]
+    elif qkind=='written':
+     if not answer:return {'ok':False,'error':'invalid_action'}
+     options=[]
+    else:return {'ok':False,'error':'invalid_action'}
+    db.upsert_test_question(test['test_id'],number,question,options,answer,qkind)
+    return {'ok':True,'message':f"{test['name']} testiga {number}-savol saqlandi. To‘g‘ri javob: {answer}."}
+   except Exception:
+    logging.getLogger('nur-oqiw.jarvis').exception('Jarvis question save failed')
+    return {'ok':False,'error':'question_save_failed'}
   if kind=='subscription_required':
    enabled=action.get('enabled')
    if not isinstance(enabled,bool):return {'ok':False,'error':'invalid_action'}
