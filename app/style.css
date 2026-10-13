@@ -397,3 +397,30 @@ body :is(.progress-track i){background:#245fd6!important;box-shadow:none!importa
 .result-card h1,.result-card p,.result-card .result-subtitle{color:#f7f9fc!important}
 .admin-shell,.admin-shell h1,.admin-shell h2,.admin-shell h3,.admin-shell strong,.admin-shell label{color:#f7f9fc}
 .admin-muted,.admin-section-title p,.admin-header p{color:#d4deec!important}
+
+
+/* Professional admin workspace: restrained navy and blue, high contrast, no RGB effects */
+.admin-shell{min-height:100svh;width:min(1120px,100%);margin:0 auto;padding:22px 18px 100px;background:#f2f5fa!important;color:#17243a!important;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.admin-shell h1,.admin-shell h2,.admin-shell h3,.admin-shell strong,.admin-shell label{color:#17243a!important}
+.admin-header{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px;padding:18px 20px;border:1px solid #dce4ef;border-radius:18px;background:#fff;box-shadow:0 4px 16px rgba(20,43,77,.05)}
+.admin-header>div{display:flex;align-items:center;gap:12px}.admin-brand{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#1d4f91;color:#fff;font-weight:900}
+.admin-header p{margin:0 0 3px;color:#52647c!important;font-size:10px;font-weight:850;letter-spacing:.12em}.admin-header h1{margin:0;font-size:22px;letter-spacing:-.4px}
+.admin-card,.admin-wake{margin:0 0 14px;padding:18px;border:1px solid #dce4ef;border-radius:17px;background:#fff!important;box-shadow:0 4px 16px rgba(20,43,77,.04);color:#17243a!important}
+.admin-section-title h2{color:#17243a!important;font-size:17px}.admin-section-title p,.admin-muted,.admin-header p{color:#586b84!important;line-height:1.55}
+.admin-refresh,.admin-wake button,.admin-primary,.admin-test-actions button,.admin-test-actions a,.admin-error button,.jarvis-form button,.jarvis-action-confirm button{min-height:40px;border:1px solid #cbd8e8;border-radius:10px;background:#f5f8fc;color:#17385f;padding:9px 13px;font:inherit;font-size:12px;font-weight:800;text-decoration:none;cursor:pointer}
+.admin-primary,.admin-test-actions .admin-primary,.jarvis-form button,.admin-create-form button{background:#205bb4!important;border-color:#205bb4!important;color:#fff!important}
+.admin-refresh:disabled,.admin-primary:disabled,.admin-test-actions button:disabled,.jarvis-form button:disabled{opacity:.55;cursor:not-allowed}
+.admin-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 16px}
+.admin-stat{padding:15px;border:1px solid #dce4ef;border-radius:14px;background:#fff;color:#17243a!important}.admin-stat span{display:block;margin-bottom:7px;color:#586b84!important;font-size:12px}.admin-stat strong{font-size:23px;font-weight:850;color:#17243a!important;font-variant-numeric:tabular-nums}
+.admin-wake{display:flex;align-items:center;justify-content:space-between;gap:16px}.admin-wake p{margin:4px 0 0;color:#586b84;font-size:12px;line-height:1.5}
+.admin-test-list{display:grid;gap:12px}.admin-test-card{margin:0}.admin-test-top h3{color:#17243a!important}.admin-test-top p,.admin-test-top p b{color:#586b84!important}.admin-status.is-active{background:#e7f5ed;color:#17633c!important}.admin-status.is-stopped{background:#fff0ee;color:#9c2a24!important}
+.admin-test-stats{color:#586b84!important}.admin-test-stats span{background:#f3f6fb;border:1px solid #e0e7f0}.admin-test-stats b{color:#17243a!important}
+.admin-test-actions button,.admin-test-actions a{background:#f5f8fc;color:#17385f;border-color:#d3deeb}.admin-details{border-color:#e1e7f0}.admin-details summary{color:#24466f}.admin-participant{border-color:#e6ebf2}.admin-participant strong,.admin-participant>b{color:#17243a!important}.admin-participant small{color:#63748b!important}
+.jarvis-panel{gap:14px}.jarvis-messages{max-height:440px;padding:12px;border:1px solid #dce4ef;border-radius:13px;background:#f7f9fc}.jarvis-message{font-size:13px;line-height:1.6}.jarvis-message.user{background:#205bb4;color:#fff}.jarvis-message.assistant{background:#fff;border:1px solid #dce4ef;color:#17243a}
+.jarvis-form textarea{min-height:100px;border:1px solid #cbd8e8;border-radius:12px;background:#fff;color:#17243a;outline:none}.jarvis-form textarea:focus{border-color:#205bb4;box-shadow:0 0 0 2px rgba(32,91,180,.12)}.jarvis-form textarea::placeholder{color:#687b94}
+.jarvis-error{padding:10px 12px;border:1px solid #f1c6c3;border-radius:10px;background:#fff2f1;color:#9c2a24!important}
+.admin-note{border-color:#c6d8f0;background:#edf4ff;color:#234e83}.admin-error{border-color:#edc8c5;background:#fff3f2;color:#842a25}.admin-error p{color:#7a4643}.admin-schedule input,.admin-create-form input{width:100%;min-height:42px;padding:10px 11px;border:1px solid #cbd8e8;border-radius:10px;background:#fff;color:#17243a;font:inherit;outline:none}.admin-schedule input:focus,.admin-create-form input:focus{border-color:#205bb4;box-shadow:0 0 0 2px rgba(32,91,180,.12)}
+.admin-create-test{margin-top:10px}.admin-create-form{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) auto;align-items:end;gap:10px}.admin-create-form label{display:grid;gap:6px;color:#52647c!important;font-size:12px;font-weight:750}.admin-create-form button{white-space:nowrap}
+.bottom-glass-nav{background:rgba(255,255,255,.97)!important;border:1px solid #dce4ef!important;box-shadow:0 8px 28px rgba(20,43,77,.12)!important}.bottom-glass-nav .nav-item,.bottom-glass-nav .nav-item small{color:#52647c!important}.bottom-glass-nav .nav-item.active{background:#e8f0fc!important;color:#1d4f91!important}
+.admin-error button{margin-top:8px}
+@media(max-width:700px){.admin-shell{padding:12px 10px 100px}.admin-header{padding:14px}.admin-header h1{font-size:18px}.admin-card,.admin-wake{padding:14px;border-radius:14px}.admin-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-stat strong{font-size:20px}.admin-create-form{grid-template-columns:1fr}.admin-create-form button{width:100%}.admin-test-actions>*{flex:1}.jarvis-messages{max-height:360px}}
