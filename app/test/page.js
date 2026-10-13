@@ -5,31 +5,36 @@ import {NUR_LOGO_DATA} from '../logo-data';
 const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw.onrender.com';
 function Logo(){return <img src={NUR_LOGO_DATA} alt="Nur oqıw orayı" className="brand-logo-image"/>}
 
-function Written({questionId,answer,onSave,saving}){
+function Written({questionId,answer,onSave}){
  const [value,setValue]=useState(answer??'');
  const [tab,setTab]=useState('number');
+ const timer=useRef(null);
  useEffect(()=>setValue(answer??''),[questionId,answer]);
+ useEffect(()=>()=>{if(timer.current)clearTimeout(timer.current)},[]);
  const keyRows={
   symbols:['x','y','π','√','(',')','^','²','³','+','−','×','÷','=','<','>','/'],
   number:['1','2','3','4','5','6','7','8','9','0','.','−','+','=','(',')','/']
  };
- const insert=(k)=>setValue(v=>v+k);
+ const updateValue=(next)=>{
+  setValue(next);
+  if(timer.current)clearTimeout(timer.current);
+  timer.current=setTimeout(()=>onSave(questionId,next.trim()),450);
+ };
+ const insert=(k)=>updateValue(value+k);
  return <div className="written-answer">
-  <div className="written-input-wrap"><input value={value} onChange={e=>setValue(e.target.value)} className="answer-input" placeholder="Javobni kiriting..." aria-label="Yozma javob"/><button type="button" className="clear-answer" onClick={()=>setValue('')} disabled={!value}>×</button></div>
+  <div className="written-input-wrap"><input value={value} onChange={e=>updateValue(e.target.value)} className="answer-input" placeholder="Javobıńızdı kiritiń..." aria-label="Yozma javob"/><button type="button" className="clear-answer" onClick={()=>updateValue('')} disabled={!value}>×</button></div>
   <div className="written-keyboard">
    <div className="keyboard-tabs"><button type="button" className={tab==='number'?'active':''} onClick={()=>setTab('number')}>Raqamlar</button><button type="button" className={tab==='symbols'?'active':''} onClick={()=>setTab('symbols')}>Belgilar</button></div>
-   <div className="keyboard-keys">{keyRows[tab].map((k,i)=><button type="button" key={k+'-'+i} onClick={()=>insert(k)}>{k}</button>)}<button type="button" onClick={()=>setValue(v=>v.slice(0,-1))} disabled={!value}>⌫</button></div>
-   <button type="button" className="accept-answer" onClick={()=>onSave(questionId,value.trim())} disabled={!value.trim()||saving}>{saving?'Saqlanmoqda...':'OK'}</button>
+   <div className="keyboard-keys">{keyRows[tab].map((k,i)=><button type="button" key={k+'-'+i} onClick={()=>insert(k)}>{k}</button>)}<button type="button" onClick={()=>updateValue(value.slice(0,-1))} disabled={!value}>⌫</button></div>
   </div>
  </div>
 }
-function Question({q,number,answer,onChoose,saving}){
+function Question({q,number,answer,onChoose}){
  const opts=Array.isArray(q.options)&&q.options.length?q.options:['A','B','C','D'];
  return <article className="question-card" id={'question-'+q.id}>
   <div className="question-heading"><span className="question-number">{number}.</span><div className="question-text">{q.question||'Savol'}</div></div>
   {q.image_url&&<img src={q.image_url} alt="Savol rasmi" className="question-image" loading="lazy"/>}
-  {q.kind==='written'?<Written questionId={q.id} answer={answer} onSave={onChoose} saving={!!saving[q.id]}/>:<div className="option-list">{opts.map((option,i)=>{const letter=String.fromCharCode(65+i);const picked=answer===letter;return <button type="button" key={letter} aria-pressed={picked} className={'option-choice'+(picked?' is-selected':'')} onClick={()=>onChoose(q.id,letter)}><span className="option-letter">{letter}</span><span className="option-label">{String(option??letter)}</span></button>})}</div>}
-  {saving[q.id]&&q.kind!=='written'&&<p className="save-status">Saqlanmoqda...</p>}
+  {q.kind==='written'?<Written questionId={q.id} answer={answer} onSave={onChoose}/>:<div className="option-list">{opts.map((option,i)=>{const letter=String.fromCharCode(65+i);const picked=answer===letter;return <button type="button" key={letter} aria-pressed={picked} className={'option-choice'+(picked?' is-selected':'')} onClick={()=>onChoose(q.id,letter)}><span className="option-letter">{letter}</span><span className="option-label">{String(option??letter)}</span></button>})}</div>}
  </article>
 }
 export default function Test(){
@@ -72,7 +77,7 @@ export default function Test(){
   return()=>{cancelled=true;clearTimeout(timer);clearInterval(clock)}
  },[load]);
  const choose=useCallback(async(id,value)=>{
-  if(value===undefined||value===null||!String(value).trim())return;
+  if(value===undefined||value===null)return;
   setAnswers(old=>({...old,[id]:value}));setSaving(old=>({...old,[id]:true}));setMessage('');
   const previous=answerQueue.current[id]||Promise.resolve();
   const task=previous.catch(()=>{}).then(async()=>{
@@ -98,7 +103,7 @@ export default function Test(){
  const seconds=endsAt?Math.max(0,Math.floor((new Date(endsAt).getTime()-now)/1000)):null;
  useEffect(()=>{if(status==='test'&&seconds===0&&endsAt)finish()},[status,seconds,endsAt,finish]);
  const answered=Object.keys(answers).filter(k=>String(answers[k]??'').trim()).length;
- if(status==='loading')return <main className="test-loading"><div className="loading-mark"><Logo/></div><h1>Nur oqıw orayı</h1><p>Test ochilmoqda...</p></main>;
+ if(status==='loading')return <main className="test-loading" aria-label="Test"><div className="loading-mark"><Logo/></div></main>;
  if(status!=='test')return <main className="test-result-page"><section className="result-card"><Logo/><h1>{status==='done'?'Test yakunlandi':'Test ochilmadi'}</h1>{testName&&<p className="result-subtitle">{testName}</p>}{name&&<p className="result-subtitle">{name}</p>}<p>{message}</p>{score!==null&&<div className="result-score">{Number(score).toFixed(2)} <small>ball</small></div>}{grade&&<p>Baho: <b>{grade}</b></p>}{correctCount!==null&&totalQuestions!==null&&<p>To‘g‘ri javoblar: {correctCount}/{totalQuestions}</p>}<a className="result-link" href="/">Asosiy sahifa</a></section></main>;
  return <main className="test-page">
   <header className="test-topbar"><div className="top-brand"><Logo/><div><strong>Nur oqıw orayı</strong><small>{testName||'Milliy sertifikat testi'}</small></div></div><div className="top-progress"><b>{answered}/{questions.length}</b><small>javob</small></div></header>
