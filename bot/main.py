@@ -13,7 +13,13 @@ from fastapi.responses import JSONResponse
 import uvicorn
 from .db import *
 
-load_dotenv();\n# Keep deployment startup fast: schema setup is required, bulk maintenance runs in background.\nimport time as _time\n_boot_t0=_time.monotonic()\ninit();ensure_schema();seed()\nlogging.basicConfig(level=logging.INFO);logger=logging.getLogger('nur-oqiw');logger.info('Database schema ready in %.2fs',_time.monotonic()-_boot_t0)
+load_dotenv()
+import time as _time
+logging.basicConfig(level=logging.INFO)
+logger=logging.getLogger('nur-oqiw')
+_boot_t0=_time.monotonic()
+init();ensure_schema();seed()
+logger.info('Database schema ready in %.2fs',_time.monotonic()-_boot_t0)
 TOKEN=os.getenv('BOT_TOKEN','');ADMIN=int(os.getenv('ADMIN_CHAT_ID','8379731556'));TZ=ZoneInfo(os.getenv('TIMEZONE','Asia/Tashkent'));PORT=int(os.getenv('PORT','10000'))
 WEBAPP=os.getenv('WEBAPP_URL','https://nukuspro.uz');WEBHOOK_URL=os.getenv('WEBHOOK_URL','https://nur-oqiw.onrender.com/telegram/webhook');WEBHOOK_SECRET=os.getenv('WEBHOOK_SECRET','nur_oqiw_webhook')
 ORIGINS=[x.strip().rstrip('/') for x in os.getenv('WEBAPP_ORIGINS','https://nukuspro.uz,https://www.nukuspro.uz,https://nur-oqiw.uz,https://www.nur-oqiw.uz,https://nur-oqiw-santizz.vercel.app,https://nur-oqiw-three.vercel.app').split(',') if x.strip()]
@@ -255,6 +261,10 @@ register_features(__import__(__name__,fromlist=['*']),dp,bot,WEBAPP)
 
 async def main():
     cleanup=asyncio.create_task(cleanup_loop());server=uvicorn.Server(uvicorn.Config(app,host='0.0.0.0',port=PORT,log_level='info'));task=asyncio.create_task(server.serve())
-    try:\n        await bot.set_webhook(WEBHOOK_URL,secret_token=WEBHOOK_SECRET,drop_pending_updates=False,allowed_updates=dp.resolve_used_update_types())\n        logger.info('Telegram webhook registered; background database maintenance scheduled')\n        asyncio.create_task(asyncio.to_thread(startup_maintenance))\n        await task
+    try:
+        await bot.set_webhook(WEBHOOK_URL,secret_token=WEBHOOK_SECRET,drop_pending_updates=False,allowed_updates=dp.resolve_used_update_types())
+        logger.info('Telegram webhook registered; background database maintenance scheduled')
+        asyncio.create_task(asyncio.to_thread(startup_maintenance))
+        await task
     finally:cleanup.cancel();task.cancel();await asyncio.gather(cleanup,task,return_exceptions=True);await bot.session.close()
 if __name__=='__main__':asyncio.run(main())
