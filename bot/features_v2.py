@@ -271,7 +271,12 @@ def register(core,dp,bot,webapp_url):
    if not v:return {'ok':False,'error':'invalid_answer'}
   else:
    v=v.upper()
-   if v not in ('A','B','C','D'):return {'ok':False,'error':'invalid_answer'}
+   try:
+    option_list=json.loads(q['options_json'] or '[]')
+   except Exception:
+    option_list=[]
+   allowed={chr(65+i) for i in range(min(26,len(option_list) if option_list else 4))}
+   if v not in allowed:return {'ok':False,'error':'invalid_answer'}
   saved=save_answer_atomically(t['test_id'],tid,q['number'],v)
   if saved=='locked':return {'ok':False,'error':'answer_locked'}
   if saved=='submitted':return {'ok':False,'error':'already_submitted'}
