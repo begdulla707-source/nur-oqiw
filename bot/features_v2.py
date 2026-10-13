@@ -1,6 +1,6 @@
 from fastapi import Request
 import asyncio
-import json,secrets,os,reportlab
+import json,secrets,os,reportlab,urllib.request,urllib.error
 from datetime import datetime,time,timedelta
 from aiogram import Router,F
 from aiogram.filters import CommandStart
@@ -189,6 +189,44 @@ def register(core,dp,bot,webapp_url):
   db.set_setting('awake_schedule',json.dumps(cfg,ensure_ascii=False))
   db.set_setting('awake_window',start+'-'+end)
   return {'ok':True,'schedule':cfg,'message':'Jadval saqlandi. Bu sozlama Render uyquga ketgan instansiyasini o‘zi uyg‘otmaydi.'}
+ @core.app.post('/api/admin/jarvis')
+ async def admin_jarvis(p:dict, req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  api_key=os.getenv('OPENAI_API_KEY','').strip()
+  if not api_key:return {'ok':False,'error':'api_key_missing'}
+  incoming=p.get('messages',[])
+  if not isinstance(incoming,list):return {'ok':False,'error':'invalid_messages'}
+  messages=[]
+  for item in incoming[-16:]:
+   if not isinstance(item,dict):continue
+   role=item.get('role')
+   content=str(item.get('content','')).strip()[:3000]
+   if role in ('user','assistant') and content:messages.append({'role':role,'content':content})
+  if not messages or messages[-1]['role']!='user':return {'ok':False,'error':'invalid_messages'}
+  payload={'model':os.getenv('OPENAI_MODEL','gpt-4.1-mini'),'input':[{'role':'system','content':'You are Jarvis, the AI assistant inside the administrator panel for Nur oqıw orayı, a Milliy sertifikat test system. Reply in clear Uzbek Latin or Qaraqalpaq Latin. Be concise and practical. You do not have direct access to the database or hosting controls and must never claim to have changed anything. Explain technical steps safely. Never reveal secrets or ask the user to paste API keys into chat.'}]+messages,'max_output_tokens':1000}
+  def call_api():
+   req_obj=urllib.request.Request('https://api.openai.com/v1/responses',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+api_key,'Content-Type':'application/json'},method='POST')
+   with urllib.request.urlopen(req_obj,timeout=45) as response:return json.loads(response.read().decode('utf-8'))
+  try:
+   result=await asyncio.to_thread(call_api)
+   answer=str(result.get('output_text','')).strip()
+   if not answer:
+    chunks=[]
+    for item in result.get('output',[]):
+     for part in item.get('content',[]):
+      if part.get('type')=='output_text':chunks.append(str(part.get('text','')))
+    answer='\\n'.join(chunks).strip()
+   if not answer:return {'ok':False,'error':'empty_response'}
+   return {'ok':True,'reply':answer}
+  except urllib.error.HTTPError as exc:
+   if exc.code==401:return {'ok':False,'error':'api_key_invalid'}
+   logger.warning('Jarvis API returned HTTP %s',exc.code)
+   return {'ok':False,'error':'jarvis_api_error'}
+  except Exception:
+   logger.exception('Jarvis API request failed')
+   return {'ok':False,'error':'jarvis_api_error'}
+
  @core.app.get('/api/admin/overview')
  async def admin_overview(req:Request):
   tid,u=await auth(req)
@@ -268,7 +306,7 @@ def register(core,dp,bot,webapp_url):
   if not q:return {'ok':False,'error':'question_not_found'}
   v=str(p.get('answer','')).strip()
   if q['kind']=='written':
-   if not v:return {'ok':False,'error':'invalid_answer'}
+   pass
   else:
    v=v.upper()
    try:
