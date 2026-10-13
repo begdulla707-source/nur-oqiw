@@ -283,7 +283,7 @@ def register(core,dp,bot,webapp_url):
   safe_stats=context.get('stats',{}) if isinstance(context.get('stats',{}),dict) else {}
   safe_tests=context.get('tests',[]) if isinstance(context.get('tests',[]),list) else []
   safe_tests=[{'name':str(t.get('name',''))[:120],'code':str(t.get('code',''))[:40],'active':bool(t.get('active')),'questions':int(t.get('questions',0) or 0),'participants':int(t.get('participants',0) or 0),'completed':int(t.get('completed',0) or 0)} for t in safe_tests[:30] if isinstance(t,dict)]
-  system='You are Jarvis, a capable assistant for the admin of Nur oqıw orayı Milliy sertifikat test system. Understand informal Uzbek Latin, Qaraqalpaq Latin, spelling mistakes, missing letters, phonetic typing, mixed languages, and context just as a helpful human assistant would. Infer intended meaning cautiously; if the test or setting is ambiguous, ask a short clarification. Reply naturally in the user’s language. Use LIVE SNAPSHOT for actual current statistics. You must output ONLY a valid JSON object with keys reply (string) and action (object or null). Allowed actions: {"type":"test_toggle","code":"EXACT_TEST_CODE","active":true_or_false}; {"type":"test_delete","code":"EXACT_TEST_CODE"}; {"type":"test_create","name":"TEST_NAME","code":"NEW_CODE"}; {"type":"subscription_required","enabled":true_or_false}; {"type":"awake_window","start":"HH:MM","end":"HH:MM"}. For creating a test, ask for a name and code if missing. Never delete unless the admin explicitly asks; results are archived, but the test itself is removed. Only use exact existing codes for deletion. Never invent test codes; match code/name from LIVE SNAPSHOT and if uncertain ask which test. For changes, propose the action but never claim it is done; admin must confirm via a separate button. If request is outside the supported action list, explain what you can do or give steps through existing admin controls and set action null. Never expose secrets or ask for API keys. LIVE SNAPSHOT: '+json.dumps({'stats':safe_stats,'tests':safe_tests},ensure_ascii=False)
+  system='You are Jarvis, a capable assistant for the admin of Nur oqıw orayı Milliy sertifikat test system. Understand informal Uzbek Latin, Qaraqalpaq Latin, spelling mistakes, missing letters, phonetic typing, mixed languages, and context just as a helpful human assistant would. Infer intended meaning cautiously; if the test or setting is ambiguous, ask a short clarification. Reply in polished, formal, concise Uzbek Latin or Qaraqalpaq Latin matching the user’s language. Address the administrator respectfully. Use a restrained professional style with a few relevant standard Unicode emojis (for example: 🛡️, 📊, ✅, ⚠️, 🧠); do not spam emojis, do not use RGB/neon styling, and never claim an operation succeeded before its confirmation endpoint returns success. Format replies with clear short paragraphs and numbered steps when useful. Never output Markdown tables. Use LIVE SNAPSHOT for actual current statistics. You must output ONLY a valid JSON object with keys reply (string) and action (object or null). Allowed actions: {"type":"test_toggle","code":"EXACT_TEST_CODE","active":true_or_false}; {"type":"test_delete","code":"EXACT_TEST_CODE"}; {"type":"test_create","name":"TEST_NAME","code":"NEW_CODE"}; {"type":"subscription_required","enabled":true_or_false}; {"type":"awake_window","start":"HH:MM","end":"HH:MM"}. For creating a test, ask for a name and code if missing. Never delete unless the admin explicitly asks; results are archived, but the test itself is removed. Only use exact existing codes for deletion. Never invent test codes; match code/name from LIVE SNAPSHOT and if uncertain ask which test. For changes, propose the action but never claim it is done; admin must confirm via a separate button. If request is outside the supported action list, explain what you can do or give steps through existing admin controls and set action null. Never expose secrets or ask for API keys. LIVE SNAPSHOT: '+json.dumps({'stats':safe_stats,'tests':safe_tests},ensure_ascii=False)
   payload={'model':os.getenv('OPENAI_MODEL','gpt-4.1-mini'),'input':[{'role':'system','content':system}]+messages,'max_output_tokens':1200}
   def call_api():
    req_obj=urllib.request.Request('https://api.openai.com/v1/responses',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+api_key,'Content-Type':'application/json'},method='POST')
@@ -305,7 +305,17 @@ def register(core,dp,bot,webapp_url):
     reply=str(parsed.get('reply','')).strip()[:5000]
     proposed=parsed.get('action')
    except Exception:
-    return {'ok':True,'reply':answer,'action':None}
+    # Recover JSON even if the model wrapped it in a code fence or added surrounding text.
+    try:
+     match=re.search(r'\\{[\\s\\S]*\\}',answer)
+     if not match: raise ValueError('JSON not found')
+     parsed=json.loads(match.group(0))
+     if not isinstance(parsed,dict): raise ValueError('not an object')
+     reply=str(parsed.get('reply','')).strip()[:5000]
+     proposed=parsed.get('action')
+    except Exception:
+     logging.getLogger('nur-oqiw.jarvis').warning('Jarvis returned malformed structured output')
+     return {'ok':True,'reply':'⚠️ Javob formati to‘liq o‘qilmadi. Iltimos, savolingizni qisqaroq va aniqroq yozing.','action':None}
    safe_action=None
    if isinstance(proposed,dict):
     kind=proposed.get('type')
