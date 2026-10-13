@@ -27,7 +27,17 @@ export default function Admin(){
   const next=[...jarvisMessages,{role:'user',content:prompt}];
   setJarvisMessages(next);setJarvisDraft('');setJarvisBusy(true);setJarvisError('');
   try{
-   const response=await fetch(API+'/api/admin/jarvis',{method:'POST',cache:'no-store',headers:{Authorization:'tma '+initData,'Content-Type':'application/json'},body:JSON.stringify({messages:next,context:{stats:data?.stats||{},tests:(data?.tests||[]).map(t=>({name:t.name,code:t.code,active:t.active,questions:t.questions,participants:t.participants,completed:t.completed}))}})});
+   const requestBody=JSON.stringify({messages:next,context:{stats:data?.stats||{},tests:(data?.tests||[]).map(t=>({name:t.name,code:t.code,active:t.active,questions:t.questions,participants:t.participants,completed:t.completed}))}});
+   let response=null,lastError=null;
+   for(let attempt=0;attempt<2;attempt++){
+    try{
+     const controller=new AbortController();const timer=window.setTimeout(()=>controller.abort(),50000);
+     try{response=await fetch(API+'/api/admin/jarvis',{method:'POST',cache:'no-store',signal:controller.signal,headers:{Authorization:'tma '+initData,'Content-Type':'application/json'},body:requestBody})}finally{window.clearTimeout(timer)}
+     if(response.status>=500&&attempt===0){await new Promise(resolve=>window.setTimeout(resolve,700));continue}
+     break;
+    }catch(err){lastError=err;if(attempt===0){await new Promise(resolve=>window.setTimeout(resolve,700));continue}throw lastError}
+   }
+   if(!response)throw lastError||new Error('No response');
    const result=await response.json();
    if(!result.ok){
     const message=result.error==='api_key_missing'?'Jarvis API kaliti ulanmagan. Render muhitiga OPENAI_API_KEY qo‘shing.':result.error==='api_key_invalid'?'OpenAI API kaliti noto‘g‘ri yoki bekor qilingan.':result.error==='api_quota_exceeded'?'OpenAI API krediti yoki foydalanish limiti tugagan. OpenAI platformasida Billing/Usage holatini tekshiring.':result.error==='api_permission_denied'?'OpenAI API kalitida ushbu model uchun ruxsat yo‘q. Kalit va loyiha ruxsatlarini tekshiring.':result.error==='api_request_invalid'?'OpenAI so‘rovi rad etildi. OPENAI_MODEL qiymatini va API sozlamasini tekshirish kerak.':result.error==='admin_only'?'Bu yordamchi faqat administrator uchun.':result.error==='empty_response'?'AI bo‘sh javob qaytardi. Qisqaroq savol bilan qayta urinib ko‘ring.':'Jarvis serverida xatolik yuz berdi. Birozdan keyin qayta urinib ko‘ring.';
@@ -44,7 +54,9 @@ export default function Admin(){
  <section id="jarvis" className="admin-card jarvis-panel"><div className="admin-section-title"><div><h2>Jarvis AI yordamchi</h2><p>Admin savollari va texnik tahlil uchun ChatGPT API.</p></div></div>
   <div className="jarvis-messages" aria-live="polite">{jarvisMessages.length===0?<p className="admin-muted">Jarvisga savol yozing. Jarvis bot statistikasi va testlar haqida jonli ma’lumotga tayana oladi. Muhim o‘zgarishlar tasdiq bilan bajarilishi kerak.</p>:jarvisMessages.map((m,i)=><div key={i} className={'jarvis-message '+m.role}>{m.content}</div>)}</div>
   {jarvisAction&&<div className="jarvis-action-confirm"><p className="admin-muted">Jarvis taklif qilgan amal: <strong>{jarvisAction.name||jarvisAction.type||'Boshqaruv amali'}</strong>{jarvisAction.code?' · Kod: '+jarvisAction.code:''}. Bajarishdan oldin tekshiring. Testni o‘chirish arxivdagi natijalarni saqlaydi, lekin testning o‘zi olib tashlanadi.</p><button className="admin-primary" type="button" onClick={confirmJarvisAction} disabled={busy==='jarvis-action'}>{busy==='jarvis-action'?'Bajarilmoqda…':'Amalni tasdiqlash'}</button><button type="button" onClick={()=>setJarvisAction(null)} disabled={busy==='jarvis-action'}>Bekor qilish</button></div>}
-  <form className="jarvis-form" onSubmit={sendJarvis}><textarea value={jarvisDraft} onChange={e=>setJarvisDraft(e.target.value)} placeholder="Masalan: statistika; testni yop MAT2026; majburiy obunani o‘chir; jadval 08:00-22:00" aria-label="Jarvisga xabar" maxLength={3000}/><button type="submit" disabled={jarvisBusy||!jarvisDraft.trim()}>{jarvisBusy?'...':'Yuborish'}</button></form>
+  <div className="jarvis-emoji-tools" aria-label="Tez emoji qo‘shish"><span>Tez emoji:</span>{['✅','📊','🛡️','⚠️','🧠','🚀','📌','💎','🔧','📄'].map(emoji=><button key={emoji} type="button" onClick={()=>setJarvisDraft(v=>(v? v+' ':'')+emoji)} disabled={jarvisBusy} aria-label={'Emoji '+emoji}>{emoji}</button>)}</div>
+  <form className="jarvis-form" onSubmit={sendJarvis}><textarea value={jarvisDraft} onChange={e=>setJarvisDraft(e.target.value)} placeholder="Jarvisga rasmiy topshiriq yozing. Masalan: 📊 Testlar va tizim holatini tahlil qil." aria-label="Jarvisga xabar" maxLength={3000}/><button type="submit" disabled={jarvisBusy||!jarvisDraft.trim()}>{jarvisBusy?'Yuborilmoqda…':'Yuborish'}</button></form>
+  <p className="admin-muted">Unicode emojilarni va klaviaturangizdagi emojilarni ishlatishingiz mumkin. Telegram Premium’ning animatsion maxsus emojilari oddiy matn maydonida saqlanmaydi; ular uchun Telegram custom-emoji entity ID kerak bo‘ladi.</p>
   {jarvisError&&<p className="jarvis-error" role="status">{jarvisError}</p>}
  </section>
  {note&&<p className="admin-note">{note}</p>}
