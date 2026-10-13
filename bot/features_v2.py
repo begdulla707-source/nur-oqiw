@@ -307,7 +307,7 @@ def register(core,dp,bot,webapp_url):
    except Exception:
     # Recover JSON even if the model wrapped it in a code fence or added surrounding text.
     try:
-     match=re.search(r'\\{[\\s\\S]*\\}',answer)
+     match=re.search(r'\{[\s\S]*\}',answer)
      if not match: raise ValueError('JSON not found')
      parsed=json.loads(match.group(0))
      if not isinstance(parsed,dict): raise ValueError('not an object')
