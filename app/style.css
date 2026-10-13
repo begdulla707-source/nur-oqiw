@@ -339,3 +339,38 @@ body :is(.question-card,.q-card,.test-introduction,.test-intro,.profile-card,.ra
 body :is(.test-header,.progress-track){backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 body :is(.progress-track i){background:#245fd6!important;box-shadow:none!important}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+
+
+/* Current Mini App test UI: high contrast, circular choices, no option cards */
+.test-page{min-height:100svh;padding:0 0 30px;background:#080c14!important;color:#fff!important}
+.test-topbar,.test-meta,.test-introduction,.question-card,.test-finish-panel{background:#101827!important;color:#f7f9fc!important;border-color:#29364b!important;box-shadow:none!important}
+.test-topbar{border-bottom:1px solid #29364b!important}
+.test-topbar strong,.test-topbar small,.test-meta span,.test-introduction h1,.test-introduction p,.question-heading,.question-number,.question-text,.test-finish-panel strong,.test-finish-panel span{color:#f7f9fc!important}
+.question-stack{gap:10px}
+.question-card{border-radius:15px!important;padding:14px!important}
+.option-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:start}
+.option-choice{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:flex-start!important;gap:7px!important;min-height:0!important;padding:4px 0!important;border:0!important;border-radius:0!important;background:transparent!important;color:#fff!important;box-shadow:none!important}
+.option-letter{display:grid!important;place-items:center!important;width:44px!important;height:44px!important;border:1px solid #63738d!important;border-radius:50%!important;background:#172238!important;color:#fff!important;font-size:14px!important;font-weight:900!important}
+.option-choice.is-selected .option-letter{background:#2469d8!important;border-color:#2469d8!important;color:#fff!important}
+.option-label{padding:0!important;text-align:center!important;color:#f7f9fc!important;font-size:12px!important;line-height:1.4!important}
+.option-choice:focus-visible{outline:2px solid #79aaff!important;outline-offset:3px!important}
+.written-keyboard{background:#121c2d!important;border:1px solid #29364b!important}
+.keyboard-tabs button,.keyboard-keys button{background:#1a2940!important;border-color:#354761!important;color:#fff!important}
+.answer-input{background:#0b1220!important;border-color:#354761!important;color:#fff!important}
+.answer-input::placeholder{color:#a8b4c8!important}
+.clear-answer{background:#1a2940!important;border-color:#354761!important;color:#fff!important}
+.test-loading{min-height:100svh;background:#080c14!important;color:#fff!important}
+.test-alert{color:#fff!important;background:#172238!important;border-color:#354761!important}
+.admin-skeleton,.profile-skeleton,.ranking-skeleton{min-height:64px;opacity:.45}
+.jarvis-panel{display:grid;gap:12px}
+.jarvis-messages{display:grid;gap:9px;max-height:360px;overflow:auto}
+.jarvis-message{max-width:100%;padding:11px 13px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.5}
+.jarvis-message.user{justify-self:end;background:#1d4f91;color:#fff}
+.jarvis-message.assistant{justify-self:stretch;background:#111a2a;border:1px solid #29364b;color:#f7f9fc}
+.jarvis-form{display:grid;gap:8px}
+.jarvis-form textarea{width:100%;min-height:84px;resize:vertical;padding:12px;border-radius:11px;border:1px solid #354761;background:#0b1220;color:#fff;font:inherit}
+.jarvis-form textarea::placeholder{color:#a8b4c8}
+.jarvis-form button{min-height:42px;border:0;border-radius:10px;background:#2469d8;color:#fff;font-weight:800}
+.jarvis-form button:disabled{opacity:.55}
+.jarvis-error{color:#ffd0d0!important;font-size:12px}
+@media(max-width:420px){.option-letter{width:40px!important;height:40px!important}.option-label{font-size:11px!important}}
