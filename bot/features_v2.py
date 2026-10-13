@@ -272,7 +272,7 @@ def register(core,dp,bot,webapp_url):
   safe_stats=context.get('stats',{}) if isinstance(context.get('stats',{}),dict) else {}
   safe_tests=context.get('tests',[]) if isinstance(context.get('tests',[]),list) else []
   safe_tests=[{'name':str(t.get('name',''))[:120],'code':str(t.get('code',''))[:40],'active':bool(t.get('active')),'questions':int(t.get('questions',0) or 0),'participants':int(t.get('participants',0) or 0),'completed':int(t.get('completed',0) or 0)} for t in safe_tests[:30] if isinstance(t,dict)]
-  system='You are Jarvis, the AI admin assistant for Nur oqıw orayı Milliy sertifikat test system. Reply in clear Uzbek Latin or Qaraqalpaq Latin. Be concise and practical. Use the LIVE SNAPSHOT below for current users, tests and results. Supported direct actions are limited to: "testni yop KOD", "testni och KOD", "majburiy obunani yoq", "majburiy obunani o‘chir", and "jadval 08:00-22:00". The backend proposes these actions and requires the administrator to press a confirmation button before execution. For other changes, explain how to do them through existing admin controls. Never claim an action succeeded unless an API confirms it. Never reveal secrets or ask the user to paste API keys into chat. LIVE SNAPSHOT: '+json.dumps({'stats':safe_stats,'tests':safe_tests},ensure_ascii=False)
+  system='You are Jarvis, a capable assistant for the admin of Nur oqıw orayı Milliy sertifikat test system. Understand informal Uzbek Latin, Qaraqalpaq Latin, spelling mistakes, missing letters, phonetic typing, mixed languages, and context just as a helpful human assistant would. Infer intended meaning cautiously; if the test or setting is ambiguous, ask a short clarification. Reply naturally in the user’s language. Use LIVE SNAPSHOT for actual current statistics. You must output ONLY a valid JSON object with keys reply (string) and action (object or null). Allowed actions: {"type":"test_toggle","code":"EXACT_TEST_CODE","active":true_or_false}; {"type":"subscription_required","enabled":true_or_false}; {"type":"awake_window","start":"HH:MM","end":"HH:MM"}. Never invent test codes; match code/name from LIVE SNAPSHOT and if uncertain ask which test. For changes, propose the action but never claim it is done; admin must confirm via a separate button. If request is outside the supported action list, explain what you can do or give steps through existing admin controls and set action null. Never expose secrets or ask for API keys. LIVE SNAPSHOT: '+json.dumps({'stats':safe_stats,'tests':safe_tests},ensure_ascii=False)
   payload={'model':os.getenv('OPENAI_MODEL','gpt-4.1-mini'),'input':[{'role':'system','content':system}]+messages,'max_output_tokens':1200}
   def call_api():
    req_obj=urllib.request.Request('https://api.openai.com/v1/responses',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+api_key,'Content-Type':'application/json'},method='POST')
@@ -287,7 +287,37 @@ def register(core,dp,bot,webapp_url):
       if part.get('type')=='output_text':chunks.append(str(part.get('text','')))
     answer='\n'.join(chunks).strip()
    if not answer:return {'ok':False,'error':'empty_response'}
-   return {'ok':True,'reply':answer}
+   # Let the model interpret misspellings, but validate every requested action on the server.
+   try:
+    parsed=json.loads(answer)
+    if not isinstance(parsed,dict):raise ValueError('not an object')
+    reply=str(parsed.get('reply','')).strip()[:5000]
+    proposed=parsed.get('action')
+   except Exception:
+    return {'ok':True,'reply':answer,'action':None}
+   safe_action=None
+   if isinstance(proposed,dict):
+    kind=proposed.get('type')
+    if kind=='test_toggle':
+     code=str(proposed.get('code','')).strip()[:40]
+     desired=proposed.get('active')
+     test=db.get_test_by_code(code) if code else None
+     if test and isinstance(desired,bool):
+      if bool(int(test['active']))==desired:
+       reply=(reply+'\\n\\nBu test hozirning o‘zida '+('ochiq.' if desired else 'yopiq.')).strip()
+      else:
+       safe_action={'type':'test_toggle','test_id':str(test['test_id']),'code':str(test['code']),'name':str(test['name']),'active':desired}
+    elif kind=='subscription_required' and isinstance(proposed.get('enabled'),bool):
+     enabled=proposed['enabled'];channels=db.get_setting('subscription_channels','')
+     if enabled and (not channels or channels in ('[]','{}')):
+      reply=(reply+'\\n\\nAvval majburiy obuna kanallarini sozlash kerak.').strip()
+     else:safe_action={'type':'subscription_required','enabled':enabled}
+    elif kind=='awake_window':
+     start_time=str(proposed.get('start',''));end_time=str(proposed.get('end',''))
+     if re.fullmatch(r'(?:[01]\\d|2[0-3]):[0-5]\\d',start_time) and re.fullmatch(r'(?:[01]\\d|2[0-3]):[0-5]\\d',end_time):
+      safe_action={'type':'awake_window','start':start_time,'end':end_time}
+   if not reply:reply='Tushundim. Aniqroq ayta olasizmi?'
+   return {'ok':True,'reply':reply,'action':safe_action}
   except urllib.error.HTTPError as exc:
    if exc.code==401:return {'ok':False,'error':'api_key_invalid'}
    logging.getLogger('nur-oqiw.jarvis').warning('Jarvis API returned HTTP %s',exc.code)
