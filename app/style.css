@@ -374,3 +374,26 @@ body :is(.progress-track i){background:#245fd6!important;box-shadow:none!importa
 .jarvis-form button:disabled{opacity:.55}
 .jarvis-error{color:#ffd0d0!important;font-size:12px}
 @media(max-width:420px){.option-letter{width:40px!important;height:40px!important}.option-label{font-size:11px!important}}
+
+
+/* Contrast pass for every Mini App section */
+.landing-card h1,.landing-card .landing-copy,.landing-eyebrow,.start-form label,.landing-note{color:#f7f9fc!important}
+.landing-card{background:#101827!important;border-color:#29364b!important}
+.start-form input{background:#0b1220!important;border-color:#354761!important;color:#fff!important}
+.start-form input::placeholder{color:#a8b4c8!important}
+.bottom-glass-nav{background:rgba(16,24,39,.96)!important;border-color:#29364b!important;box-shadow:0 12px 35px rgba(0,0,0,.35)!important}
+.bottom-glass-nav .nav-item,.bottom-glass-nav .nav-item small{color:#f7f9fc!important}
+.bottom-glass-nav .nav-item.active{background:#1c2d47!important;color:#fff!important;box-shadow:none!important}
+.profile-shell,.ranking-shell{background:#080c14!important;color:#f7f9fc!important}
+.profile-card,.ranking-card{background:#101827!important;border-color:#29364b!important;color:#f7f9fc!important}
+.profile-card h1,.profile-card h2,.ranking-card h1,.ranking-card h2,.profile-hero h1,.history-row strong,.ranking-main strong,.history-score{color:#fff!important}
+.profile-muted,.profile-hero p,.history-row small,.ranking-main small,.podium-card small{color:#d4deec!important}
+.podium-card,.podium-card.first{background:#172238!important;border-color:#354761!important;color:#fff!important}
+.rank-number{background:#24344b!important;color:#fff!important}
+.profile-error{background:#101827!important;border-color:#29364b!important;color:#fff!important}
+.profile-error h1,.profile-error p,.profile-error a{color:#fff!important}
+.test-result-page{background:#080c14!important;color:#fff!important}
+.result-card{background:#101827!important;border-color:#29364b!important;color:#fff!important}
+.result-card h1,.result-card p,.result-card .result-subtitle{color:#f7f9fc!important}
+.admin-shell,.admin-shell h1,.admin-shell h2,.admin-shell h3,.admin-shell strong,.admin-shell label{color:#f7f9fc}
+.admin-muted,.admin-section-title p,.admin-header p{color:#d4deec!important}
