@@ -63,9 +63,20 @@ def init():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_permanent_results_test ON permanent_results(test_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_permanent_results_user ON permanent_results(telegram_id)")
-    if USE_POSTGRES:
-        _migrate_local_sqlite()
-    archive_completed_results()
+    # Large migration and result backfill run after webhook setup, not during cold start.
+
+def startup_maintenance():
+    """Run nonessential bulk work after the bot is reachable."""
+    import logging, time
+    log=logging.getLogger("nur-oqiw.db")
+    started=time.monotonic()
+    try:
+        if USE_POSTGRES:
+            _migrate_local_sqlite()
+        archive_completed_results()
+        log.info("Background database maintenance completed in %.2fs",time.monotonic()-started)
+    except Exception:
+        log.exception("Background database maintenance failed after %.2fs",time.monotonic()-started)
 
 def _migrate_local_sqlite():
     """Best-effort one-time import of any SQLite data still present on the instance."""
