@@ -272,7 +272,7 @@ def register(core,dp,bot,webapp_url):
   safe_stats=context.get('stats',{}) if isinstance(context.get('stats',{}),dict) else {}
   safe_tests=context.get('tests',[]) if isinstance(context.get('tests',[]),list) else []
   safe_tests=[{'name':str(t.get('name',''))[:120],'code':str(t.get('code',''))[:40],'active':bool(t.get('active')),'questions':int(t.get('questions',0) or 0),'participants':int(t.get('participants',0) or 0),'completed':int(t.get('completed',0) or 0)} for t in safe_tests[:30] if isinstance(t,dict)]
-  system='You are Jarvis, a capable assistant for the admin of Nur oqıw orayı Milliy sertifikat test system. Understand informal Uzbek Latin, Qaraqalpaq Latin, spelling mistakes, missing letters, phonetic typing, mixed languages, and context just as a helpful human assistant would. Infer intended meaning cautiously; if the test or setting is ambiguous, ask a short clarification. Reply naturally in the user’s language. Use LIVE SNAPSHOT for actual current statistics. You must output ONLY a valid JSON object with keys reply (string) and action (object or null). Allowed actions: {"type":"test_toggle","code":"EXACT_TEST_CODE","active":true_or_false}; {"type":"subscription_required","enabled":true_or_false}; {"type":"awake_window","start":"HH:MM","end":"HH:MM"}. Never invent test codes; match code/name from LIVE SNAPSHOT and if uncertain ask which test. For changes, propose the action but never claim it is done; admin must confirm via a separate button. If request is outside the supported action list, explain what you can do or give steps through existing admin controls and set action null. Never expose secrets or ask for API keys. LIVE SNAPSHOT: '+json.dumps({'stats':safe_stats,'tests':safe_tests},ensure_ascii=False)
+  system='You are Jarvis, a capable assistant for the admin of Nur oqıw orayı Milliy sertifikat test system. Understand informal Uzbek Latin, Qaraqalpaq Latin, spelling mistakes, missing letters, phonetic typing, mixed languages, and context just as a helpful human assistant would. Infer intended meaning cautiously; if the test or setting is ambiguous, ask a short clarification. Reply naturally in the user’s language. Use LIVE SNAPSHOT for actual current statistics. You must output ONLY a valid JSON object with keys reply (string) and action (object or null). Allowed actions: {"type":"test_toggle","code":"EXACT_TEST_CODE","active":true_or_false}; {"type":"test_delete","code":"EXACT_TEST_CODE"}; {"type":"test_create","name":"TEST_NAME","code":"NEW_CODE"}; {"type":"subscription_required","enabled":true_or_false}; {"type":"awake_window","start":"HH:MM","end":"HH:MM"}. For creating a test, ask for a name and code if missing. Never delete unless the admin explicitly asks; results are archived, but the test itself is removed. Only use exact existing codes for deletion. Never invent test codes; match code/name from LIVE SNAPSHOT and if uncertain ask which test. For changes, propose the action but never claim it is done; admin must confirm via a separate button. If request is outside the supported action list, explain what you can do or give steps through existing admin controls and set action null. Never expose secrets or ask for API keys. LIVE SNAPSHOT: '+json.dumps({'stats':safe_stats,'tests':safe_tests},ensure_ascii=False)
   payload={'model':os.getenv('OPENAI_MODEL','gpt-4.1-mini'),'input':[{'role':'system','content':system}]+messages,'max_output_tokens':1200}
   def call_api():
    req_obj=urllib.request.Request('https://api.openai.com/v1/responses',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+api_key,'Content-Type':'application/json'},method='POST')
@@ -307,6 +307,19 @@ def register(core,dp,bot,webapp_url):
        reply=(reply+'\\n\\nBu test hozirning o‘zida '+('ochiq.' if desired else 'yopiq.')).strip()
       else:
        safe_action={'type':'test_toggle','test_id':str(test['test_id']),'code':str(test['code']),'name':str(test['name']),'active':desired}
+    elif kind=='test_delete':
+     code=str(proposed.get('code','')).strip()[:40]
+     test=db.get_test_by_code(code) if code else None
+     if test:
+      safe_action={'type':'test_delete','test_id':str(test['test_id']),'code':str(test['code']),'name':str(test['name'])}
+     else: reply='O‘chirish uchun aniq test kodi topilmadi. Test kodini yuboring.'
+    elif kind=='test_create':
+     name=str(proposed.get('name','')).strip()[:120]
+     code=str(proposed.get('code','')).strip()[:40]
+     if name and re.fullmatch(r'[A-Za-z0-9_-]{3,40}',code):
+      if db.test_code_exists(code): reply='Bu test kodi band. Boshqa kod tanlang.'
+      else: safe_action={'type':'test_create','name':name,'code':code}
+     else: reply='Yangi test uchun nom va 3–40 belgili lotin harf/raqamli kod kerak.'
     elif kind=='subscription_required' and isinstance(proposed.get('enabled'),bool):
      enabled=proposed['enabled'];channels=db.get_setting('subscription_channels','')
      if enabled and (not channels or channels in ('[]','{}')):
@@ -341,6 +354,20 @@ def register(core,dp,bot,webapp_url):
   with db.conn() as con:
    user_count=int(con.execute("SELECT COUNT(*) AS n FROM users").fetchone()['n'])
   return {'ok':True,'stats':{'users':user_count,'tests':len(tests),'participants':len(all_rows),'completed':sum(1 for a in all_rows if a['submitted'])},'tests':tests}
+ @core.app.post('/api/admin/test/create')
+ async def admin_create_test(p:dict,req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  name=str(p.get('name','')).strip()[:120];code=str(p.get('code','')).strip()
+  import re
+  if not name or not re.fullmatch(r'[A-Za-z0-9_-]{3,40}',code):return {'ok':False,'error':'invalid_test'}
+  if db.test_code_exists(code):return {'ok':False,'error':'code_exists'}
+  try:
+   test=db.create_test(name,code)
+   return {'ok':True,'test':{'test_id':str(test['test_id']),'name':test['name'],'code':test['code'],'active':bool(test['active'])},'message':'Test yaratildi. Savollarni botdagi “Test sozlamalari” bo‘limidan qo‘shing.'}
+  except Exception:
+   logging.getLogger('nur-oqiw.admin').exception('Could not create test')
+   return {'ok':False,'error':'create_failed'}
  @core.app.post('/api/admin/test/toggle')
  async def admin_toggle_test(p:dict,req:Request):
   tid,u=await auth(req)
@@ -373,6 +400,21 @@ def register(core,dp,bot,webapp_url):
    result=await admin_toggle_test({'test_id':test_id},req)
    if not result.get('ok') or bool(result.get('active'))!=desired:return {'ok':False,'error':'action_failed'}
    return {'ok':True,'message':result.get('message','Amal bajarildi.')}
+  if kind=='test_delete':
+   test_id=str(action.get('test_id','')).strip();code=str(action.get('code','')).strip()
+   test=db.get_test(test_id) if test_id else (db.get_test_by_code(code) if code else None)
+   if not test or str(test.get('code','')).casefold()!=code.casefold():return {'ok':False,'error':'test_not_found'}
+   deleted=db.delete_test(test['test_id'])
+   return {'ok':bool(deleted),'message':f"{test['name']} testi o‘chirildi. Saqlangan natijalar arxivda qoldi." if deleted else 'Testni o‘chirib bo‘lmadi.'}
+  if kind=='test_create':
+   name=str(action.get('name','')).strip()[:120];code=str(action.get('code','')).strip()
+   import re
+   if not name or not re.fullmatch(r'[A-Za-z0-9_-]{3,40}',code):return {'ok':False,'error':'invalid_action'}
+   if db.test_code_exists(code):return {'ok':False,'error':'code_exists'}
+   try:
+    test=db.create_test(name,code)
+    return {'ok':True,'message':f"{test['name']} testi yaratildi. Kod: {test['code']}. Savollarni botdagi Test sozlamalari orqali qo‘shing."}
+   except Exception:return {'ok':False,'error':'create_failed'}
   if kind=='subscription_required':
    enabled=action.get('enabled')
    if not isinstance(enabled,bool):return {'ok':False,'error':'invalid_action'}
