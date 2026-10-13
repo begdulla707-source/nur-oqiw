@@ -169,6 +169,48 @@ def register(core,dp,bot,webapp_url):
   rows.sort(key=lambda x:(-float(x['score'] or 0),str(x['finished_at'] or '9999')))
   top=[{'rank':i+1,'full_name':x['full_name'] or 'Ismsiz','photo_url':x['telegram_photo'] or '', 'score':float(x['score'] or 0),'grade':x['grade'] or '', 'finished_at':x['finished_at']} for i,x in enumerate(rows[:15])]
   return {'ok':True,'test_name':t['name'],'code':t['code'],'total':len(rows),'ranking':top}
+
+ async def render_usage_data():
+  api_key=os.getenv('RENDER_API_KEY','').strip()
+  if not api_key:
+   return {'ok':False,'error':'render_api_key_missing','limit_hours':750,'dashboard_url':'https://dashboard.render.com/billing'}
+  now=datetime.now().astimezone()
+  month_start=now.replace(day=1,hour=0,minute=0,second=0,microsecond=0)
+  window_start=month_start
+  partial=False
+  if (now-window_start).total_seconds()>30*86400:
+   window_start=now-timedelta(days=30);partial=True
+  params=urllib.parse.urlencode({'startTime':window_start.isoformat().replace('+00:00','Z'),'endTime':now.isoformat().replace('+00:00','Z'),'resolutionSeconds':3600,'resource':os.getenv('RENDER_SERVICE_ID','srv-dav8s4m7bikc73f779v0')})
+  req_obj=urllib.request.Request('https://api.render.com/v1/metrics/instance-count?'+params,headers={'Authorization':'Bearer '+api_key,'Accept':'application/json'})
+  try:
+   def fetch_metrics():
+    with urllib.request.urlopen(req_obj,timeout=12) as response:return json.loads(response.read().decode('utf-8'))
+   series=await asyncio.to_thread(fetch_metrics)
+   points=[]
+   for item in series if isinstance(series,list) else []:
+    for value in item.get('values',[]) if isinstance(item,dict) else []:
+     try:points.append((datetime.fromisoformat(str(value.get('timestamp','')).replace('Z','+00:00')),max(0,float(value.get('value',0)))))
+     except Exception:pass
+   points.sort(key=lambda x:x[0])
+   hours=0.0
+   for i,(stamp,count) in enumerate(points):
+    if i+1<len(points):delta=max(0,min(3600,(points[i+1][0]-stamp).total_seconds()))
+    else:delta=3600
+    hours+=count*delta/3600
+   limit=750.0
+   return {'ok':True,'limit_hours':limit,'used_hours':round(hours,1),'remaining_hours':round(max(0,limit-hours),1),'percent':round(min(100,hours/limit*100),1),'partial':partial,'samples':len(points),'window_start':window_start.isoformat(),'window_end':now.isoformat(),'dashboard_url':'https://dashboard.render.com/billing','note':'Instance-count metrikasidan taxminiy hisob; Billing sahifasidagi hisob aniqroq.'}
+  except urllib.error.HTTPError as exc:
+   logging.getLogger('nur-oqiw.render_usage').warning('Render metrics HTTP %s',exc.code)
+   return {'ok':False,'error':'render_metrics_unavailable','limit_hours':750,'dashboard_url':'https://dashboard.render.com/billing'}
+  except Exception:
+   logging.getLogger('nur-oqiw.render_usage').exception('Could not read Render usage metrics')
+   return {'ok':False,'error':'render_metrics_unavailable','limit_hours':750,'dashboard_url':'https://dashboard.render.com/billing'}
+ @core.app.get('/api/admin/render-usage')
+ async def admin_render_usage(req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  return await render_usage_data()
+
  @core.app.get('/api/admin/schedule')
  async def admin_schedule_get(req:Request):
   tid,u=await auth(req)
@@ -204,7 +246,13 @@ def register(core,dp,bot,webapp_url):
    content=str(item.get('content','')).strip()[:3000]
    if role in ('user','assistant') and content:messages.append({'role':role,'content':content})
   if not messages or messages[-1]['role']!='user':return {'ok':False,'error':'invalid_messages'}
-  payload={'model':os.getenv('OPENAI_MODEL','gpt-4.1-mini'),'input':[{'role':'system','content':'You are Jarvis, the AI assistant inside the administrator panel for Nur oqıw orayı, a Milliy sertifikat test system. Reply in clear Uzbek Latin or Qaraqalpaq Latin. Be concise and practical. You do not have direct access to the database or hosting controls and must never claim to have changed anything. Explain technical steps safely. Never reveal secrets or ask the user to paste API keys into chat.'}]+messages,'max_output_tokens':1000}
+  context=p.get('context',{})
+  if not isinstance(context,dict):context={}
+  safe_stats=context.get('stats',{}) if isinstance(context.get('stats',{}),dict) else {}
+  safe_tests=context.get('tests',[]) if isinstance(context.get('tests',[]),list) else []
+  safe_tests=[{'name':str(t.get('name',''))[:120],'code':str(t.get('code',''))[:40],'active':bool(t.get('active')),'questions':int(t.get('questions',0) or 0),'participants':int(t.get('participants',0) or 0),'completed':int(t.get('completed',0) or 0)} for t in safe_tests[:30] if isinstance(t,dict)]
+  system='You are Jarvis, the AI admin assistant for Nur oqıw orayı Milliy sertifikat test system. Reply in clear Uzbek Latin or Qaraqalpaq Latin. Be concise and practical. You can use the LIVE SNAPSHOT below to answer questions about bot users, tests, and results, but this snapshot is read-only and may be absent. You cannot directly change hosting, environment variables, secrets, or data in this chat. Never claim an action succeeded unless an API confirms it. For changes, explain what should be changed and request confirmation through supported admin controls. Never reveal secrets or ask the user to paste API keys into chat. LIVE SNAPSHOT: '+json.dumps({'stats':safe_stats,'tests':safe_tests},ensure_ascii=False)
+  payload={'model':os.getenv('OPENAI_MODEL','gpt-4.1-mini'),'input':[{'role':'system','content':system}]+messages,'max_output_tokens':1200}
   def call_api():
    req_obj=urllib.request.Request('https://api.openai.com/v1/responses',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+api_key,'Content-Type':'application/json'},method='POST')
    with urllib.request.urlopen(req_obj,timeout=45) as response:return json.loads(response.read().decode('utf-8'))
@@ -399,6 +447,13 @@ def register(core,dp,bot,webapp_url):
     db.update_attempt(a['attempt_id'],answers_json=json.dumps(answers,ensure_ascii=False));ast('admin')
     return await check_prompt(tid,fake_id,index+1)
    except Exception:return await m.answer('Tekshirish javobi saqlanmadi. Tekshirishni qaytadan boshlang.')
+  if txt=='Render limitini ko‘rish':
+   usage=await render_usage_data()
+   if not usage.get('ok'):
+    reason='RENDER_API_KEY ulanmagan.' if usage.get('error')=='render_api_key_missing' else 'Render metrikasini olishning imkoni bo‘lmadi.'
+    return await m.answer(f"RENDER FREE LIMITI\\n\\nOylik limit: 750 instance-soat\\n\\n{reason}\\nAniq limitni Render Billing sahifasidan ko‘ring: https://dashboard.render.com/billing\\n\\nAniq ko‘rsatkichni admin menyusida olish uchun Render API key yaratib, Render Environment Variables ichiga RENDER_API_KEY nomi bilan saqlang.")
+   partial='\\nEslatma: oxirgi 30 kun bilan cheklangan taxminiy hisob.' if usage.get('partial') else ''
+   return await m.answer(f"RENDER FREE LIMITI\\n\\nTaxminiy ishlatilgan: {usage['used_hours']} / {usage['limit_hours']} soat\\nQolgan limit: {usage['remaining_hours']} soat\\nIshlatilgan: {usage['percent']}%\\n\\n{usage['note']}{partial}\\nAniq hisob: https://dashboard.render.com/billing")
   if txt=='Botni uyg‘otish':
    try:
     me=await BOT.get_me()
