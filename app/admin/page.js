@@ -3,19 +3,41 @@ import {useCallback,useEffect,useState} from 'react';
 const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw.onrender.com';
 export default function Admin(){
  const [initData,setInitData]=useState(''),[loading,setLoading]=useState(true),[data,setData]=useState(null),[error,setError]=useState(''),[note,setNote]=useState(''),[busy,setBusy]=useState('');
- const [schedule,setSchedule]=useState({date:'',start:'08:00',end:'22:00',timezone:'Asia/Tashkent'});
+ const [schedule,setSchedule]=useState({date:'',start:'08:00',end:'22:00',timezone:'Asia/Tashkent'});\n const [jarvisMessages,setJarvisMessages]=useState([]),[jarvisDraft,setJarvisDraft]=useState(''),[jarvisBusy,setJarvisBusy]=useState(false),[jarvisError,setJarvisError]=useState('');
  const request=useCallback(async(raw,method='GET',body)=>{const res=await fetch(API+(method==='GET'?'/api/admin/overview':'/api/admin/test/toggle'),{method,cache:'no-store',headers:{Authorization:'tma '+raw,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return res.json()},[]);
  const refresh=useCallback(async(raw)=>{setLoading(true);setError('');try{const j=await request(raw);if(!j.ok)throw new Error(j.error==='admin_only'?'Bu bo‘lim faqat administrator uchun.':'Admin ma’lumotlari yuklanmadi.');setData(j);const sr=await fetch(API+'/api/admin/schedule',{cache:'no-store',headers:{Authorization:'tma '+raw}});const sj=await sr.json();if(sj.ok&&sj.schedule)setSchedule(sj.schedule)}catch(e){setError(e.message||'Server bilan aloqa yo‘q.');}finally{setLoading(false)}},[request]);
- useEffect(()=>{let stopped=false;let tries=0;const boot=()=>{if(stopped)return;const tg=window.Telegram?.WebApp;const raw=tg?.initData||'';if(tg&&raw){try{tg.ready();tg.expand();}catch{}setInitData(raw);refresh(raw);return}tries++;if(tries<30){setTimeout(boot,250);return}setError('Admin panelini bot ichidagi Mini App orqali oching. Telegram sessiyasi topilmadi.');setLoading(false)};boot();return()=>{stopped=true}},[refresh]);
+ useEffect(()=>{let stopped=false;let tries=0;const boot=()=>{if(stopped)return;const tg=window.Telegram?.WebApp;const raw=tg?.initData||'';if(tg&&raw){try{tg.ready();tg.expand();}catch{}setInitData(raw);refresh(raw);return}tries++;if(tries<10){setTimeout(boot,100);return}setError('Admin panelini bot ichidagi Mini App orqali oching. Telegram sessiyasi topilmadi.');setLoading(false)};boot();return()=>{stopped=true}},[refresh]);
  async function wake(){setBusy('wake');setNote('Bot serveri uyg‘onmoqda. Birinchi so‘rov biroz vaqt olishi mumkin…');try{const r=await fetch(API+'/health',{cache:'no-store'});if(!r.ok)throw new Error();setNote('Server javob berdi. Bot xizmati ishga tushgan.');if(initData)await refresh(initData)}catch{setNote('Server hozircha javob bermadi. Biroz kutib yana bosing.')}finally{setBusy('')}}
  async function saveSchedule(){if(!initData||!schedule.date||!schedule.start||!schedule.end){setNote('Sana, boshlanish va tugash vaqtini kiriting.');return}setBusy('schedule');setNote('');try{const r=await fetch(API+'/api/admin/schedule',{method:'POST',headers:{Authorization:'tma '+initData,'Content-Type':'application/json'},body:JSON.stringify(schedule)});const j=await r.json();if(!j.ok)throw new Error('Sana yoki vaqt formati noto‘g‘ri.');setSchedule(j.schedule);setNote(j.message||'Jadval saqlandi.')}catch(e){setNote(e.message||'Jadvalni saqlab bo‘lmadi.')}finally{setBusy('')}}
  async function toggle(t){setBusy(t.test_id);setNote('');try{const j=await request(initData,'POST',{test_id:t.test_id});if(!j.ok)throw new Error(j.error==='admin_only'?'Admin ruxsati tasdiqlanmadi.':'Test holatini o‘zgartirib bo‘lmadi.');setNote(j.message+(j.finalized?' Yakunlangan urinishlar: '+j.finalized+'.':''));await refresh(initData)}catch(e){setNote(e.message||'Xatolik yuz berdi.')}finally{setBusy('')}}
+ async function sendJarvis(e){
+  e.preventDefault();
+  const prompt=jarvisDraft.trim();
+  if(!prompt||jarvisBusy)return;
+  const next=[...jarvisMessages,{role:'user',content:prompt}];
+  setJarvisMessages(next);setJarvisDraft('');setJarvisBusy(true);setJarvisError('');
+  try{
+   const response=await fetch(API+'/api/admin/jarvis',{method:'POST',cache:'no-store',headers:{Authorization:'tma '+initData,'Content-Type':'application/json'},body:JSON.stringify({messages:next})});
+   const result=await response.json();
+   if(!result.ok){
+    const message=result.error==='api_key_missing'?'Jarvis API kaliti ulanmagan. Render muhitiga OPENAI_API_KEY qo‘shish kerak.':result.error==='api_key_invalid'?'OpenAI API kaliti noto‘g‘ri yoki bekor qilingan.':result.error==='admin_only'?'Bu yordamchi faqat administrator uchun.':'Jarvis bilan aloqa bo‘lmadi. API sozlamasini tekshiring.';
+    setJarvisError(message);return;
+   }
+   setJarvisMessages(v=>[...v,{role:'assistant',content:result.reply}]);
+  }catch{setJarvisError('Jarvis serveriga ulanib bo‘lmadi. Internet va API sozlamalarini tekshiring.')}
+  finally{setJarvisBusy(false)}
+ }
  return <main className="admin-shell"><header className="admin-header"><div><div className="admin-brand">N</div><div><p>NUR O‘QIW ORAYI</p><h1>Admin boshqaruvi</h1></div></div><button className="admin-refresh" onClick={()=>initData&&refresh(initData)} disabled={loading||!initData}>Yangilash</button></header>
  <section className="admin-wake"><div><strong>Bot holati</strong><p>Javob kechiksa, serverni uyg‘otish va ulanishni tekshirish.</p></div><button onClick={wake} disabled={busy==='wake'}>{busy==='wake'?'Uyg‘onmoqda…':'Botni uyg‘otish'}</button></section>
- {note&&<p className="admin-note">{note}</p>}
+ <section className="admin-card jarvis-panel"><div className="admin-section-title"><div><h2>Jarvis AI yordamchi</h2><p>Admin savollari va texnik tahlil uchun ChatGPT API.</p></div></div>
+  <div className="jarvis-messages" aria-live="polite">{jarvisMessages.length===0?<p className="admin-muted">Jarvisga savol yozing. Hozircha u maslahat beradi, testlarni o‘zi o‘zgartirmaydi.</p>:jarvisMessages.map((m,i)=><div key={i} className={'jarvis-message '+m.role}>{m.content}</div>)}</div>
+  <form className="jarvis-form" onSubmit={sendJarvis}><textarea value={jarvisDraft} onChange={e=>setJarvisDraft(e.target.value)} placeholder="Jarvisga savol yozing..." aria-label="Jarvisga xabar" maxLength={3000}/><button type="submit" disabled={jarvisBusy||!jarvisDraft.trim()||!initData}>{jarvisBusy?'...':'Yuborish'}</button></form>
+  {jarvisError&&<p className="jarvis-error" role="status">{jarvisError}</p>}
+ </section>
+ {note&&<p className="admin-note">{note}</p>
  <section className="admin-card admin-schedule"><div className="admin-section-title"><div><h2>Ish vaqti jadvali</h2><p>Toshkent vaqti (UTC+5)</p></div></div><div className="schedule-fields"><label>Sana<input type="date" value={schedule.date||''} onChange={e=>setSchedule(v=>({...v,date:e.target.value}))}/></label><label>Boshlanish<input type="time" value={schedule.start||'08:00'} onChange={e=>setSchedule(v=>({...v,start:e.target.value}))}/></label><label>Tugash<input type="time" value={schedule.end||'22:00'} onChange={e=>setSchedule(v=>({...v,end:e.target.value}))}/></label></div><button className="admin-primary schedule-save" onClick={saveSchedule} disabled={busy==='schedule'}>{busy==='schedule'?'Saqlanmoqda…':'Jadvalni saqlash'}</button><p className="admin-muted">Muhim: jadval saqlanadi, ammo Render bepul serveri uyquga ketgan bo‘lsa, shu jadvalning o‘zi uni avtomatik uyg‘ota olmaydi. Doim tez javob berishi uchun tashqi uptime monitor yoki doimiy ishlaydigan hosting kerak.</p></section>
 {error&&<section className="admin-error"><strong>{error}</strong><p>Admin paneliga faqat administratorning Telegram akkaunti orqali kirish mumkin.</p><button onClick={wake}>Serverni tekshirish</button></section>}
- {loading&&!data?<section className="admin-card">Ma’lumotlar yuklanmoqda…</section>:null}
+ {loading&&!data?<section className="admin-card admin-skeleton" aria-hidden="true"></section>:null}
  {data&&<><section className="admin-stats">{[['Foydalanuvchilar',data.stats.users],['Testlar',data.stats.tests],['Urinishlar',data.stats.participants],['Yakunlangan',data.stats.completed]].map(([label,value])=><div className="admin-stat" key={label}><span>{label}</span><strong>{value}</strong></div>)}</section>
  <div className="admin-section-title"><div><h2>Testlarni boshqarish</h2><p>Testni ochish/yopish, qatnashchilar va reyting.</p></div><span>{data.tests.length} ta</span></div>
  {data.tests.length===0&&<section className="admin-card">Hozircha test yo‘q. Yangi test yaratish uchun Telegram botidagi admin menyusidan foydalaning.</section>}
