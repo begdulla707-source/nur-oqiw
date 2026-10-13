@@ -22,7 +22,7 @@ function Written({questionId,answer,onSave}){
  };
  const insert=(k)=>updateValue(value+k);
  return <div className="written-answer">
-  <div className="written-input-wrap"><input value={value} onChange={e=>updateValue(e.target.value)} className="answer-input" placeholder="Javobıńızdı kiritiń..." aria-label="Yozma javob"/><button type="button" className="clear-answer" onClick={()=>updateValue('')} disabled={!value}>×</button></div>
+  <div className="written-input-wrap"><input value={value} onChange={e=>updateValue(e.target.value)} onBlur={()=>{if(timer.current)clearTimeout(timer.current);onSave(questionId,value.trim())}} className="answer-input" placeholder="Javobıńızdı kiritiń..." aria-label="Yozma javob"/><button type="button" className="clear-answer" onClick={()=>updateValue('')} disabled={!value}>×</button></div>
   <div className="written-keyboard">
    <div className="keyboard-tabs"><button type="button" className={tab==='number'?'active':''} onClick={()=>setTab('number')}>Raqamlar</button><button type="button" className={tab==='symbols'?'active':''} onClick={()=>setTab('symbols')}>Belgilar</button></div>
    <div className="keyboard-keys">{keyRows[tab].map((k,i)=><button type="button" key={k+'-'+i} onClick={()=>insert(k)}>{k}</button>)}<button type="button" onClick={()=>updateValue(value.slice(0,-1))} disabled={!value}>⌫</button></div>
