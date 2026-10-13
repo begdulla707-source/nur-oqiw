@@ -388,6 +388,8 @@ def register(core,dp,bot,webapp_url):
  @r.message(F.from_user.id==ADMIN)
  async def admin_text(m:Message):
   u=db.ensure_user(ADMIN);s=u['state'] or 'admin';txt=(m.text or '').strip()
+  if txt in {'Test sozlamalari','Ishtirokchilar','Statistika','Guruhlar holati','Guruhga xabar yuborish','Bildirishnoma','Ish vaqti jadvali','Majburiy obuna','PDF natijalar','Tekshirish','Tariflar','Botni uyg‘otish'}:
+   ast('admin');u=db.ensure_user(ADMIN);s='admin'
   if s.startswith('check_written:'):
    try:
     _,tid,fake_id,index=s.split(':');fake_id=int(fake_id);index=int(index)
