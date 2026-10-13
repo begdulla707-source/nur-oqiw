@@ -205,6 +205,17 @@ def register(core,dp,bot,webapp_url):
   except Exception:
    logging.getLogger('nur-oqiw.render_usage').exception('Could not read Render usage metrics')
    return {'ok':False,'error':'render_metrics_unavailable','limit_hours':750,'dashboard_url':'https://dashboard.render.com/billing'}
+ @core.app.get('/api/admin/diagnostics')
+ async def admin_diagnostics(req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  try:
+   tests=db.all_tests();questions=sum(len(db.questions_for_test(t['test_id'])) for t in tests)
+   storage='PostgreSQL' if db.USE_POSTGRES else 'SQLite (Render restartida ma’lumot yo‘qolishi mumkin)'
+   return {'ok':True,'service':'online','storage':storage,'tests':len(tests),'questions':questions,'openai_key_configured':bool(os.getenv('OPENAI_API_KEY','').strip()),'render_key_configured':bool(os.getenv('RENDER_API_KEY','').strip()),'telegram_token_configured':bool(os.getenv('BOT_TOKEN','').strip()),'admin_authorized':True}
+  except Exception:
+   logging.getLogger('nur-oqiw.admin').exception('Admin diagnostics failed')
+   return {'ok':False,'error':'diagnostics_failed'}
  @core.app.get('/api/admin/render-usage')
  async def admin_render_usage(req:Request):
   tid,u=await auth(req)
