@@ -19,6 +19,7 @@ export default function Admin(){
   e.preventDefault();
   const prompt=jarvisDraft.trim();
   if(!prompt||jarvisBusy)return;
+  if(!initData){setJarvisError('Telegram sessiyasi aniqlanmadi. Bu sahifani oddiy brauzerdan emas, Telegram botidagi “Jarvis” tugmasi orqali oching. Sahifani qayta ochib ham tekshiring.');return;}
   const next=[...jarvisMessages,{role:'user',content:prompt}];
   setJarvisMessages(next);setJarvisDraft('');setJarvisBusy(true);setJarvisError('');
   try{
@@ -38,7 +39,7 @@ export default function Admin(){
  <section id="jarvis" className="admin-card jarvis-panel"><div className="admin-section-title"><div><h2>Jarvis AI yordamchi</h2><p>Admin savollari va texnik tahlil uchun ChatGPT API.</p></div></div>
   <div className="jarvis-messages" aria-live="polite">{jarvisMessages.length===0?<p className="admin-muted">Jarvisga savol yozing. Jarvis bot statistikasi va testlar haqida jonli ma’lumotga tayana oladi. Muhim o‘zgarishlar tasdiq bilan bajarilishi kerak.</p>:jarvisMessages.map((m,i)=><div key={i} className={'jarvis-message '+m.role}>{m.content}</div>)}</div>
   {jarvisAction&&<div className="jarvis-action-confirm"><p className="admin-muted">Jarvis quyidagi amalni taklif qildi. Bajarish uchun tasdiqlang.</p><button className="admin-primary" type="button" onClick={confirmJarvisAction} disabled={busy==='jarvis-action'}>{busy==='jarvis-action'?'Bajarilmoqda…':'Amalni tasdiqlash'}</button><button type="button" onClick={()=>setJarvisAction(null)} disabled={busy==='jarvis-action'}>Bekor qilish</button></div>}
-  <form className="jarvis-form" onSubmit={sendJarvis}><textarea value={jarvisDraft} onChange={e=>setJarvisDraft(e.target.value)} placeholder="Masalan: statistika; testni yop MAT2026; majburiy obunani o‘chir; jadval 08:00-22:00" aria-label="Jarvisga xabar" maxLength={3000}/><button type="submit" disabled={jarvisBusy||!jarvisDraft.trim()||!initData}>{jarvisBusy?'...':'Yuborish'}</button></form>
+  <form className="jarvis-form" onSubmit={sendJarvis}><textarea value={jarvisDraft} onChange={e=>setJarvisDraft(e.target.value)} placeholder="Masalan: statistika; testni yop MAT2026; majburiy obunani o‘chir; jadval 08:00-22:00" aria-label="Jarvisga xabar" maxLength={3000}/><button type="submit" disabled={jarvisBusy||!jarvisDraft.trim()}>{jarvisBusy?'...':'Yuborish'}</button></form>
   {jarvisError&&<p className="jarvis-error" role="status">{jarvisError}</p>}
  </section>
  {note&&<p className="admin-note">{note}</p>}
