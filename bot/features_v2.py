@@ -1,6 +1,6 @@
 from fastapi import Request
 import asyncio
-import json,secrets,os,reportlab,urllib.request,urllib.error
+import json,secrets,os,reportlab,urllib.request,urllib.error,logging
 from datetime import datetime,time,timedelta
 from aiogram import Router,F
 from aiogram.filters import CommandStart
@@ -216,15 +216,15 @@ def register(core,dp,bot,webapp_url):
     for item in result.get('output',[]):
      for part in item.get('content',[]):
       if part.get('type')=='output_text':chunks.append(str(part.get('text','')))
-    answer='\\n'.join(chunks).strip()
+    answer='\n'.join(chunks).strip()
    if not answer:return {'ok':False,'error':'empty_response'}
    return {'ok':True,'reply':answer}
   except urllib.error.HTTPError as exc:
    if exc.code==401:return {'ok':False,'error':'api_key_invalid'}
-   logger.warning('Jarvis API returned HTTP %s',exc.code)
+   logging.getLogger('nur-oqiw.jarvis').warning('Jarvis API returned HTTP %s',exc.code)
    return {'ok':False,'error':'jarvis_api_error'}
   except Exception:
-   logger.exception('Jarvis API request failed')
+   logging.getLogger('nur-oqiw.jarvis').exception('Jarvis API request failed')
    return {'ok':False,'error':'jarvis_api_error'}
 
  @core.app.get('/api/admin/overview')
