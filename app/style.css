@@ -424,3 +424,6 @@ body :is(.progress-track i){background:#245fd6!important;box-shadow:none!importa
 .bottom-glass-nav{background:rgba(255,255,255,.97)!important;border:1px solid #dce4ef!important;box-shadow:0 8px 28px rgba(20,43,77,.12)!important}.bottom-glass-nav .nav-item,.bottom-glass-nav .nav-item small{color:#52647c!important}.bottom-glass-nav .nav-item.active{background:#e8f0fc!important;color:#1d4f91!important}
 .admin-error button{margin-top:8px}
 @media(max-width:700px){.admin-shell{padding:12px 10px 100px}.admin-header{padding:14px}.admin-header h1{font-size:18px}.admin-card,.admin-wake{padding:14px;border-radius:14px}.admin-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-stat strong{font-size:20px}.admin-create-form{grid-template-columns:1fr}.admin-create-form button{width:100%}.admin-test-actions>*{flex:1}.jarvis-messages{max-height:360px}}
+
+.admin-diagnostic-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:12px 0}.admin-diagnostic-grid>div{display:grid;gap:6px;min-width:0;padding:12px;border:1px solid #e0e7f0;border-radius:11px;background:#f7f9fc}.admin-diagnostic-grid span{color:#586b84;font-size:11px}.admin-diagnostic-grid strong{font-size:13px;line-height:1.45;overflow-wrap:anywhere;color:#17243a!important}
+@media(max-width:700px){.admin-diagnostic-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
