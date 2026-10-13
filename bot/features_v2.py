@@ -353,7 +353,7 @@ def register(core,dp,bot,webapp_url):
   if kind=='awake_window':
    import re
    start=str(action.get('start',''));end=str(action.get('end',''))
-   if not re.fullmatch(r'(?:[01]\\d|2[0-3]):[0-5]\\d',start) or not re.fullmatch(r'(?:[01]\\d|2[0-3]):[0-5]\\d',end):return {'ok':False,'error':'invalid_action'}
+   if not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',start) or not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',end):return {'ok':False,'error':'invalid_action'}
    db.set_setting('awake_window',start+'-'+end)
    db.set_setting('awake_schedule',json.dumps({'date':'','start':start,'end':end,'timezone':'Asia/Tashkent'},ensure_ascii=False))
    return {'ok':True,'message':f'Jadval saqlandi: {start}-{end}. Bu Render serverining uyqu rejimini bekor qilmaydi.'}
@@ -834,13 +834,13 @@ def register(core,dp,bot,webapp_url):
    desired_active=verb in ('och','qayta och')
    if bool(int(test['active']))==desired_active:return {'ok':True,'reply':f"{test['name']} hozirning o‘zida {'ochiq' if desired_active else 'yopiq'}."}
    return {'ok':True,'reply':f"Amal tayyor: {test['name']} testini {'ochish' if desired_active else 'to‘xtatish'}. Tasdiqlasangiz bajaraman.",'action':{'type':'test_toggle','test_id':str(test['test_id']),'code':str(test['code']),'name':str(test['name']),'active':desired_active}}
-  if re.search(r'majburiy\\s+obuna.*(?:o[\'’‘]?chir|off)',low):
+  if re.search(r'majburiy\s+obuna.*(?:o[\'’‘]?chir|off)',low):
    return {'ok':True,'reply':'Majburiy obunani o‘chirishni tasdiqlang. Bu barcha foydalanuvchilar uchun obuna tekshiruvini o‘chiradi.','action':{'type':'subscription_required','enabled':False}}
-  if re.search(r'majburiy\\s+obuna.*(?:yoq|on)',low):
+  if re.search(r'majburiy\s+obuna.*(?:yoq|on)',low):
    channels=db.get_setting('subscription_channels','')
    if not channels or channels in ('[]','{}'):return {'ok':True,'reply':'Avval admin menyusidagi “Majburiy obuna” orqali kanal(lar)ni kiriting. Hozir kanal ro‘yxati bo‘sh.'}
    return {'ok':True,'reply':'Majburiy obunani yoqishni tasdiqlang. Bot kanallarga admin sifatida qo‘shilgan bo‘lishi kerak.','action':{'type':'subscription_required','enabled':True}}
-  window_match=re.search(r'(?:jadval|ish vaqti).*?((?:[01]\\d|2[0-3]):[0-5]\\d)\\s*[-–]\\s*((?:[01]\\d|2[0-3]):[0-5]\\d)',low)
+  window_match=re.search(r'(?:jadval|ish vaqti).*?((?:[01]\d|2[0-3]):[0-5]\d)\s*[-–]\s*((?:[01]\d|2[0-3]):[0-5]\d)',low)
   if window_match:
    start,end=window_match.groups()
    return {'ok':True,'reply':f"Ish vaqti jadvalini {start}-{end} qilib saqlashni tasdiqlang. Eslatma: bu sozlama Render Free serverini uyqudan majburan uyg‘otmaydi.",'action':{'type':'awake_window','start':start,'end':end}}
