@@ -333,6 +333,9 @@ def register(core,dp,bot,webapp_url):
    return {'ok':True,'reply':reply,'action':safe_action}
   except urllib.error.HTTPError as exc:
    if exc.code==401:return {'ok':False,'error':'api_key_invalid'}
+   if exc.code==429:return {'ok':False,'error':'api_quota_exceeded'}
+   if exc.code==403:return {'ok':False,'error':'api_permission_denied'}
+   if exc.code==400:return {'ok':False,'error':'api_request_invalid'}
    logging.getLogger('nur-oqiw.jarvis').warning('Jarvis API returned HTTP %s',exc.code)
    return {'ok':False,'error':'jarvis_api_error'}
   except Exception:
