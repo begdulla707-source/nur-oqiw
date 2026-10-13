@@ -5,7 +5,7 @@ export default function Admin(){
  const [initData,setInitData]=useState(''),[loading,setLoading]=useState(true),[data,setData]=useState(null),[error,setError]=useState(''),[note,setNote]=useState(''),[busy,setBusy]=useState('');
  const [schedule,setSchedule]=useState({date:'',start:'08:00',end:'22:00',timezone:'Asia/Tashkent'});
  const [usage,setUsage]=useState(null),[usageBusy,setUsageBusy]=useState(false);
- const [jarvisMessages,setJarvisMessages]=useState([]),[jarvisDraft,setJarvisDraft]=useState(''),[jarvisBusy,setJarvisBusy]=useState(false),[jarvisError,setJarvisError]=useState('');
+ const [jarvisMessages,setJarvisMessages]=useState([]),[jarvisAction,setJarvisAction]=useState(null),[jarvisDraft,setJarvisDraft]=useState(''),[jarvisBusy,setJarvisBusy]=useState(false),[jarvisError,setJarvisError]=useState('');
  const request=useCallback(async(raw,method='GET',body)=>{const res=await fetch(API+(method==='GET'?'/api/admin/overview':'/api/admin/test/toggle'),{method,cache:'no-store',headers:{Authorization:'tma '+raw,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return res.json()},[]);
  const refresh=useCallback(async(raw)=>{setLoading(true);setError('');try{const j=await request(raw);if(!j.ok)throw new Error(j.error==='admin_only'?'Bu bo‘lim faqat administrator uchun.':'Admin ma’lumotlari yuklanmadi.');setData(j);const sr=await fetch(API+'/api/admin/schedule',{cache:'no-store',headers:{Authorization:'tma '+raw}});const sj=await sr.json();if(sj.ok&&sj.schedule)setSchedule(sj.schedule)}catch(e){setError(e.message||'Server bilan aloqa yo‘q.');}finally{setLoading(false)}},[request]);
  useEffect(()=>{let stopped=false;let tries=0;const boot=()=>{if(stopped)return;const tg=window.Telegram?.WebApp;const raw=tg?.initData||'';if(tg&&raw){try{tg.ready();tg.expand();}catch{}setInitData(raw);refresh(raw);return}tries++;if(tries<10){setTimeout(boot,100);return}setError('Admin panelini bot ichidagi Mini App orqali oching. Telegram sessiyasi topilmadi.');setLoading(false)};boot();return()=>{stopped=true}},[refresh]);
@@ -13,6 +13,7 @@ export default function Admin(){
  async function loadUsage(){if(!initData)return;setUsageBusy(true);try{const r=await fetch(API+'/api/admin/render-usage',{cache:'no-store',headers:{Authorization:'tma '+initData}});setUsage(await r.json())}catch{setUsage({ok:false,error:'network'})}finally{setUsageBusy(false)}}
  async function saveSchedule(){if(!initData||!schedule.date||!schedule.start||!schedule.end){setNote('Sana, boshlanish va tugash vaqtini kiriting.');return}setBusy('schedule');setNote('');try{const r=await fetch(API+'/api/admin/schedule',{method:'POST',headers:{Authorization:'tma '+initData,'Content-Type':'application/json'},body:JSON.stringify(schedule)});const j=await r.json();if(!j.ok)throw new Error('Sana yoki vaqt formati noto‘g‘ri.');setSchedule(j.schedule);setNote(j.message||'Jadval saqlandi.')}catch(e){setNote(e.message||'Jadvalni saqlab bo‘lmadi.')}finally{setBusy('')}}
  async function toggle(t){setBusy(t.test_id);setNote('');try{const j=await request(initData,'POST',{test_id:t.test_id});if(!j.ok)throw new Error(j.error==='admin_only'?'Admin ruxsati tasdiqlanmadi.':'Test holatini o‘zgartirib bo‘lmadi.');setNote(j.message+(j.finalized?' Yakunlangan urinishlar: '+j.finalized+'.':''));await refresh(initData)}catch(e){setNote(e.message||'Xatolik yuz berdi.')}finally{setBusy('')}}
+ async function confirmJarvisAction(){if(!jarvisAction||!initData||busy==='jarvis-action')return;setBusy('jarvis-action');setJarvisError('');try{const response=await fetch(API+'/api/admin/jarvis/action',{method:'POST',cache:'no-store',headers:{Authorization:'tma '+initData,'Content-Type':'application/json'},body:JSON.stringify({action:jarvisAction})});const result=await response.json();if(!result.ok)throw new Error(result.error==='channels_missing'?'Avval majburiy obuna kanallarini sozlang.':'Amal bajarilmadi. Admin ruxsati va sozlamalarni tekshiring.');setJarvisMessages(v=>[...v,{role:'assistant',content:'Bajarildi: '+result.message}]);setJarvisAction(null);await refresh(initData)}catch(e){setJarvisError(e.message||'Amalni bajarib bo‘lmadi.')}finally{setBusy('')}}
  async function sendJarvis(e){
   e.preventDefault();
   const prompt=jarvisDraft.trim();
@@ -26,7 +27,7 @@ export default function Admin(){
     const message=result.error==='api_key_missing'?'Jarvis API kaliti ulanmagan. Render muhitiga OPENAI_API_KEY qo‘shish kerak.':result.error==='api_key_invalid'?'OpenAI API kaliti noto‘g‘ri yoki bekor qilingan.':result.error==='admin_only'?'Bu yordamchi faqat administrator uchun.':'Jarvis bilan aloqa bo‘lmadi. API sozlamasini tekshiring.';
     setJarvisError(message);return;
    }
-   setJarvisMessages(v=>[...v,{role:'assistant',content:result.reply}]);
+   setJarvisMessages(v=>[...v,{role:'assistant',content:result.reply}]);setJarvisAction(result.action||null);
   }catch{setJarvisError('Jarvis serveriga ulanib bo‘lmadi. Internet va API sozlamalarini tekshiring.')}
   finally{setJarvisBusy(false)}
  }
@@ -35,6 +36,7 @@ export default function Admin(){
  <section className="admin-wake"><div><strong>Bot holati</strong><p>Javob kechiksa, serverni uyg‘otish va ulanishni tekshirish.</p></div><button onClick={wake} disabled={busy==='wake'}>{busy==='wake'?'Uyg‘onmoqda…':'Botni uyg‘otish'}</button></section>
  <section className="admin-card jarvis-panel"><div className="admin-section-title"><div><h2>Jarvis AI yordamchi</h2><p>Admin savollari va texnik tahlil uchun ChatGPT API.</p></div></div>
   <div className="jarvis-messages" aria-live="polite">{jarvisMessages.length===0?<p className="admin-muted">Jarvisga savol yozing. Jarvis bot statistikasi va testlar haqida jonli ma’lumotga tayana oladi. Muhim o‘zgarishlar tasdiq bilan bajarilishi kerak.</p>:jarvisMessages.map((m,i)=><div key={i} className={'jarvis-message '+m.role}>{m.content}</div>)}</div>
+  {jarvisAction&&<div className="jarvis-action-confirm"><p className="admin-muted">Jarvis quyidagi amalni taklif qildi. Bajarish uchun tasdiqlang.</p><button className="admin-primary" type="button" onClick={confirmJarvisAction} disabled={busy==='jarvis-action'}>{busy==='jarvis-action'?'Bajarilmoqda…':'Amalni tasdiqlash'}</button><button type="button" onClick={()=>setJarvisAction(null)} disabled={busy==='jarvis-action'}>Bekor qilish</button></div>}
   <form className="jarvis-form" onSubmit={sendJarvis}><textarea value={jarvisDraft} onChange={e=>setJarvisDraft(e.target.value)} placeholder="Jarvisga savol yozing..." aria-label="Jarvisga xabar" maxLength={3000}/><button type="submit" disabled={jarvisBusy||!jarvisDraft.trim()||!initData}>{jarvisBusy?'...':'Yuborish'}</button></form>
   {jarvisError&&<p className="jarvis-error" role="status">{jarvisError}</p>}
  </section>
