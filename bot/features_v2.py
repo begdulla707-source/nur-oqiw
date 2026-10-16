@@ -182,7 +182,7 @@ def register(core,dp,bot,webapp_url):
   rows=[x for x in db.all_attempts_for_test(t['test_id']) if x['submitted']]
   rows.sort(key=lambda x:(-float(x['score'] or 0),str(x['finished_at'] or '9999')))
   # Apply only positions explicitly overridden by an admin. All other places remain score-sorted automatically.
-  for rank_no in range(15,0,-1):
+  for rank_no in range(1,16):
    raw_id=db.get_setting('admin_rank_'+str(t['test_id'])+'_'+str(rank_no),'')
    if not raw_id and rank_no==1:raw_id=db.get_setting('admin_top1_'+str(t['test_id']),'')
    try:manual_id=int(raw_id or 0)
