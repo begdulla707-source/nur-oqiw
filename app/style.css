@@ -553,3 +553,39 @@ body :is(.progress-track i){background:#245fd6!important;box-shadow:none!importa
 .admin-question-edit textarea{min-height:70px;resize:vertical}
 .admin-question-edit>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 @media(max-width:520px){.admin-question-edit>div{grid-template-columns:1fr}}
+
+
+/* Public leaderboard and participant profiles */
+.ranking-code-form{display:grid;gap:7px;text-align:left;margin:16px 0}
+.ranking-code-form label{font-size:12px;font-weight:800;color:#505762}
+.ranking-code-form>div{display:flex;gap:8px}
+.ranking-code-form input{flex:1;min-width:0;padding:12px;border:1px solid #d7dce2;border-radius:12px;background:#fff;color:#111318}
+.ranking-code-form button{padding:0 15px;border:0;border-radius:12px;background:#15191f;color:#fff;font-weight:800}
+.ranking-code-form button:disabled{opacity:.5}
+.ranking-summary{display:flex;justify-content:space-between;gap:12px;padding:14px;margin:12px 0;border:1px solid #e0e4e9;border-radius:14px;background:#f9fafb;text-align:left}
+.ranking-summary>div{display:grid;gap:5px;min-width:0}
+.ranking-summary small{font-size:9px;letter-spacing:.08em;color:#717985;font-weight:900}
+.ranking-summary strong{font-size:13px;overflow-wrap:anywhere}
+.ranking-list{display:grid;gap:8px;margin-top:14px;text-align:left}
+.ranking-person{display:flex;align-items:center;gap:10px;min-width:0;padding:10px;border:1px solid #e0e4e9;border-radius:15px;background:#fff;color:#171a20;text-decoration:none}
+.ranking-person:active{transform:scale(.995)}
+.ranking-place{width:28px;height:28px;flex-shrink:0;display:grid;place-items:center;border-radius:9px;background:#eef0f3;color:#353b44;font-size:12px;font-weight:900}
+.ranking-place.place-1{background:#fff0c9;color:#79510c}
+.ranking-place.place-2{background:#e8edf4;color:#4a596c}
+.ranking-place.place-3{background:#f7e5d8;color:#86502b}
+.ranking-avatar{width:38px;height:38px;flex-shrink:0;object-fit:cover;border-radius:50%;background:#e9edf1}
+.ranking-avatar-empty{display:grid;place-items:center;color:#414853;font-weight:900}
+.ranking-person-main{flex:1;min-width:0;display:grid;gap:3px}
+.ranking-person-main strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ranking-person-main small{font-size:10px;color:#747b84;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ranking-score{font-size:12px;font-weight:900;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ranking-chevron{font-size:22px;color:#8a919b}
+.ranking-state{padding:16px 10px;color:#6b737d;font-size:13px;line-height:1.5}
+.profile-username{margin-top:4px!important;font-size:12px!important;color:#6b737d!important}
+.admin-rank-editor{display:grid;gap:9px;margin:12px 0;padding:12px;border:1px solid #b58b4b66;border-radius:12px;background:#c99b2510}
+.admin-rank-editor>strong{font-size:13px}
+.admin-rank-editor>div{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:8px}
+.admin-rank-editor input,.admin-rank-editor select{min-width:0;padding:9px;border:1px solid #7775;border-radius:8px;background:transparent;color:inherit}
+.admin-rank-editor button{padding:9px 12px;border:0;border-radius:8px;background:#9b783d;color:#fff;font-weight:800}
+.admin-rank-editor small{font-size:11px;line-height:1.5;opacity:.75}
+@media(max-width:520px){.admin-rank-editor>div{grid-template-columns:1fr 1fr}.admin-rank-editor>div button{grid-column:1/-1}}
