@@ -193,7 +193,8 @@ def register(core,dp,bot,webapp_url):
      rows=[x for x in rows if int(x['telegram_id'])!=manual_id]
      rows.insert(min(rank_no-1,len(rows)),chosen)
   top=[{'rank':i+1,'telegram_id':int(x['telegram_id']),'username':db.get_setting('telegram_username_'+str(x['telegram_id']),'') or '', 'full_name':x['full_name'] or 'Ismsiz','photo_url':x['telegram_photo'] or '', 'score':float(x['score'] or 0),'grade':x['grade'] or '', 'finished_at':x['finished_at']} for i,x in enumerate(rows[:15])]
-  return {'ok':True,'test_name':t['name'],'code':t['code'],'total':len(rows),'ranking':top}
+  my_rank=next((i+1 for i,x in enumerate(rows) if int(x['telegram_id'])==int(tid)),None)
+  return {'ok':True,'test_name':t['name'],'code':t['code'],'total':len(rows),'my_rank':my_rank,'ranking':top}
 
  async def render_usage_data():
   api_key=os.getenv('RENDER_API_KEY','').strip()
