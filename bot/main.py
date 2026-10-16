@@ -263,6 +263,16 @@ async def telegram_webhook(request:Request):
 from .features_v2 import register as register_features
 register_features(__import__(__name__,fromlist=['*']),dp,bot,WEBAPP)
 
+@dp.message(F.text=='Admin paneliga o‘tish')
+async def enter_admin_panel(m:Message):
+    if m.from_user.id != ADMIN:
+        await m.answer('Bu bo‘lim faqat administrator uchun.')
+        return
+    update_user(ADMIN,state='admin')
+    kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Admin panelini ochish',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'))]])
+    await m.answer('Admin paneli tayyor. Ochish uchun quyidagi tugmani bosing.',reply_markup=kb)
+    await m.answer('Admin boshqaruv menyusi.',reply_markup=admin_kb())
+
 async def main():
     cleanup=asyncio.create_task(cleanup_loop());server=uvicorn.Server(uvicorn.Config(app,host='0.0.0.0',port=PORT,log_level='info'));task=asyncio.create_task(server.serve())
     try:
@@ -272,10 +282,3 @@ async def main():
         await task
     finally:cleanup.cancel();task.cancel();await asyncio.gather(cleanup,task,return_exceptions=True);await bot.session.close()
 if __name__=='__main__':asyncio.run(main())
-
-@dp.message(F.text=='Admin paneliga o‘tish')
-async def enter_admin_panel(m:Message):
-    if m.from_user.id != ADMIN:
-        return
-    update_user(ADMIN,state='admin')
-    await m.answer('Admin boshqaruv paneli.',reply_markup=admin_kb())
