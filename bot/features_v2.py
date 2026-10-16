@@ -159,7 +159,7 @@ def register(core,dp,bot,webapp_url):
   with db.conn() as c:
    rows=c.execute("SELECT a.test_id,t.name,t.code,a.started_at,a.finished_at,a.score,a.grade,a.submitted FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id WHERE a.telegram_id=? ORDER BY COALESCE(a.finished_at,a.started_at) DESC",(tid,)).fetchall()
   history=[{'test_id':x['test_id'],'test_name':x['name'] or 'Test','code':x['code'] or '', 'started_at':x['started_at'],'finished_at':x['finished_at'],'score':float(x['score'] or 0),'grade':x['grade'] or '', 'submitted':bool(x['submitted'])} for x in rows]
-  return {'ok':True,'full_name':u['full_name'] or '','photo_url':u['telegram_photo'] or '','tests':history}
+  return {'ok':True,'full_name':u['full_name'] or '','photo_url':u['telegram_photo'] or '','tier':u['tier'] or 'default','tests':history}
  @core.app.get('/api/test/public-profile')
  async def public_profile_api(req:Request):
   tid,u=await auth(req)
