@@ -605,3 +605,50 @@ body :is(.progress-track i){background:#245fd6!important;box-shadow:none!importa
  .profile-card{box-shadow:none!important;border:1px solid #bbb!important;break-inside:avoid}
  .history-row{border-bottom:1px solid #ddd!important}
 }
+
+
+/* Final verified answer-choice treatment: selection belongs to the round marker only. */
+.test-page .option-list .option-choice,
+.test-page .option-list .option-choice:hover,
+.test-page .option-list .option-choice:active,
+.test-page .option-list .option-choice.is-selected,
+.test-page .option-list .option-choice[aria-pressed="true"] {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  border-radius: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  color: #17243a !important;
+}
+.test-page .option-list .option-choice .option-letter {
+  width: 42px !important;
+  height: 42px !important;
+  min-width: 42px !important;
+  min-height: 42px !important;
+  flex: 0 0 42px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  border: 2px solid #71839d !important;
+  border-radius: 50% !important;
+  clip-path: circle(50%) !important;
+  background: #fff !important;
+  color: #17243a !important;
+  -webkit-text-fill-color: #17243a !important;
+  box-shadow: none !important;
+}
+.test-page .option-list .option-choice.is-selected .option-letter,
+.test-page .option-list .option-choice[aria-pressed="true"] .option-letter {
+  background: #205bb4 !important;
+  border-color: #205bb4 !important;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+  box-shadow: none !important;
+}
+.test-page .option-list .option-choice .option-label,
+.test-page .option-list .option-choice.is-selected .option-label,
+.test-page .option-list .option-choice[aria-pressed="true"] .option-label {
+  color: #17243a !important;
+  -webkit-text-fill-color: #17243a !important;
+}
