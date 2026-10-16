@@ -589,3 +589,19 @@ body :is(.progress-track i){background:#245fd6!important;box-shadow:none!importa
 .admin-rank-editor button{padding:9px 12px;border:0;border-radius:8px;background:#9b783d;color:#fff;font-weight:800}
 .admin-rank-editor small{font-size:11px;line-height:1.5;opacity:.75}
 @media(max-width:520px){.admin-rank-editor>div{grid-template-columns:1fr 1fr}.admin-rank-editor>div button{grid-column:1/-1}}
+
+
+.profile-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.profile-section-head h2{margin:0}
+.profile-report-button{display:inline-flex;align-items:center;justify-content:center;padding:9px 12px;border:1px solid #d7dce2;border-radius:10px;background:#15191f;color:#fff;text-decoration:none;font-size:12px;font-weight:800;white-space:nowrap}
+.tariff-card h2{margin:0 0 10px}
+.tariff-card p{font-size:13px;line-height:1.55}
+.tariff-link{margin-top:6px}
+@media print{
+ html,body{background:#fff!important;color:#111!important}
+ .bottom-glass-nav,.profile-report-button{display:none!important}
+ .profile-shell{padding:0!important;background:#fff!important}
+ .profile-wrap{width:100%!important;max-width:none!important;padding:0!important}
+ .profile-card{box-shadow:none!important;border:1px solid #bbb!important;break-inside:avoid}
+ .history-row{border-bottom:1px solid #ddd!important}
+}
