@@ -110,7 +110,7 @@ export default function Test(){
   <div className="test-meta"><span>{questions.length} savol</span><span>{seconds===null?'Vaqt cheklanmagan':String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0')}</span></div>
   <section className="test-introduction"><h1>{testName||'Test'}</h1><p>Barcha savollar ketma-ket joylangan. Tanlagan javobingizni istalgan payt o‘zgartirishingiz mumkin.</p></section>
   {message&&<p className="test-alert" role="status">{message}</p>}
-  <section className="question-stack">{questions.map((q,index)=><Question key={q.id} q={q} number={index+1} answer={answers[q.id]} onChoose={choose} saving={saving}/>)}</section>
+  <section className="question-stack">{[...questions].sort((a,b)=>Number(a.kind==='written')-Number(b.kind==='written')).map((q,index)=><Question key={q.id} q={q} number={index+1} answer={answers[q.id]} onChoose={choose} saving={saving}/>)}</section>
   <footer className="test-finish-panel"><div><strong>{answered} / {questions.length}</strong><span>savolga javob berildi</span></div><button type="button" onClick={finish} disabled={finishBusy}>{finishBusy?'Saqlanmoqda...':'Testni yakunlash'}</button></footer>
  </main>
 }
