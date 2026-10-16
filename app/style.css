@@ -458,3 +458,53 @@ body :is(.progress-track i){background:#245fd6!important;box-shadow:none!importa
   color: #fff !important;
   box-shadow: none !important;
 }
+
+
+/* Final Mini App answer-option fix: only the circle may show selection */
+.test-page .question-stack .option-list .option-choice,
+.test-page .question-stack .option-list .option-choice:hover,
+.test-page .question-stack .option-list .option-choice:active,
+.test-page .question-stack .option-list .option-choice.is-selected,
+.test-page .question-stack .option-list .option-choice[aria-pressed="true"] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  outline: none;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  color: #17243a !important;
+}
+.test-page .question-stack .option-list .option-choice:focus-visible {
+  outline: none !important;
+}
+.test-page .question-stack .option-list .option-choice .option-letter {
+  width: 42px !important;
+  height: 42px !important;
+  min-width: 42px !important;
+  border-radius: 50% !important;
+  clip-path: circle(50%) !important;
+  background: #ffffff !important;
+  border: 2px solid #8495ad !important;
+  color: #17243a !important;
+  box-shadow: none !important;
+  -webkit-text-fill-color: #17243a !important;
+}
+.test-page .question-stack .option-list .option-choice.is-selected .option-letter,
+.test-page .question-stack .option-list .option-choice[aria-pressed="true"] .option-letter {
+  background: #205bb4 !important;
+  border-color: #205bb4 !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  box-shadow: none !important;
+}
+.test-page .question-stack .option-list .option-choice .option-label {
+  color: #17243a !important;
+  -webkit-text-fill-color: #17243a !important;
+}
+.test-page .question-stack .option-list .option-choice.is-selected .option-label,
+.test-page .question-stack .option-list .option-choice[aria-pressed="true"] .option-label {
+  color: #123f7a !important;
+  -webkit-text-fill-color: #123f7a !important;
+}
