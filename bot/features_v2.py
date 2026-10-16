@@ -497,6 +497,8 @@ def register(core,dp,bot,webapp_url):
   for pos in range(1,16):
    if (db.get_setting('admin_rank_'+test_id+'_'+str(pos),'') or '')==str(target):
     db.set_setting('admin_rank_'+test_id+'_'+str(pos),'')
+  # Clear the legacy Top 1 pin so it cannot override a newer position edit.
+  db.set_setting('admin_top1_'+test_id,'')
   db.set_setting('admin_rank_'+test_id+'_'+str(rank_no),str(target))
   if rank_no==1:db.set_setting('admin_top1_'+test_id,str(target))
   return {'ok':True,'message':'@'+(username or (db.get_setting('telegram_username_'+str(target),'') or str(target)))+' uchun '+str(rank_no)+'-o‘rin qo‘lda belgilandi. Qolgan o‘rinlar avtomatik.'}
