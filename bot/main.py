@@ -272,3 +272,10 @@ async def main():
         await task
     finally:cleanup.cancel();task.cancel();await asyncio.gather(cleanup,task,return_exceptions=True);await bot.session.close()
 if __name__=='__main__':asyncio.run(main())
+
+@dp.message(F.text=='Admin paneliga o‘tish')
+async def enter_admin_panel(m:Message):
+    if m.from_user.id != ADMIN:
+        return
+    update_user(ADMIN,state='admin')
+    await m.answer('Admin boshqaruv paneli.',reply_markup=admin_kb())
