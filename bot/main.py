@@ -78,7 +78,11 @@ async def health():return {'ok':True,'service':'nur-oqiw','storage':'postgres' i
 @dp.message(CommandStart(deep_link=False))
 async def start(m:Message):
     u=ensure_user(m.from_user.id)
-    if m.from_user.id==ADMIN:update_user(ADMIN,state='admin');await m.answer('NUR O‘QIW ORAYI\n\nAdmin boshqaruv paneli.',reply_markup=admin_kb());return
+    if m.from_user.id==ADMIN:
+        name=' '.join(x for x in [m.from_user.first_name,m.from_user.last_name] if x).strip()
+        if name and not u['full_name']:upsert_user(ADMIN,name)
+        update_user(ADMIN,state='code')
+        return await m.answer('NUR O‘QIW ORAYI\n\nFoydalanuvchi bo‘limiga xush kelibsiz. Admin paneli alohida tugmada bo‘ladi.',reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Yordam')],[KeyboardButton(text='Admin paneliga o‘tish')]],resize_keyboard=True,is_persistent=True))
     if not await subscribed(m.from_user.id):update_user(m.from_user.id,state='subscribe',code_ok=0);await m.answer('Testga kirishdan oldin majburiy kanallarga obuna bo‘ling.',reply_markup=sub_kb());return
     if u['full_name']:
         update_user(m.from_user.id,state='ready' if u['code_ok'] else 'code')
