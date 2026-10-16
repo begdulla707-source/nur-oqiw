@@ -167,6 +167,12 @@ def register(core,dp,bot,webapp_url):
   if not t:return {'ok':False,'error':'test_not_found'}
   rows=[x for x in db.all_attempts_for_test(t['test_id']) if x['submitted']]
   rows.sort(key=lambda x:(-float(x['score'] or 0),str(x['finished_at'] or '9999')))
+  pinned_raw=db.get_setting('admin_top1_'+str(t['test_id']),'')
+  try:pinned_id=int(pinned_raw or 0)
+  except Exception:pinned_id=0
+  if pinned_id:
+   pinned=next((x for x in rows if int(x['telegram_id'])==pinned_id),None)
+   if pinned:rows=[pinned]+[x for x in rows if int(x['telegram_id'])!=pinned_id]
   top=[{'rank':i+1,'full_name':x['full_name'] or 'Ismsiz','photo_url':x['telegram_photo'] or '', 'score':float(x['score'] or 0),'grade':x['grade'] or '', 'finished_at':x['finished_at']} for i,x in enumerate(rows[:15])]
   return {'ok':True,'test_name':t['name'],'code':t['code'],'total':len(rows),'ranking':top}
 
@@ -410,6 +416,67 @@ def register(core,dp,bot,webapp_url):
   except Exception:
    logging.getLogger('nur-oqiw.admin').exception('Could not create test')
    return {'ok':False,'error':'create_failed'}
+ @core.app.get('/api/admin/test/questions')
+ async def admin_test_questions(req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  test_id=str(req.query_params.get('test_id','')).strip();t=db.get_test(test_id)
+  if not t:return {'ok':False,'error':'test_not_found'}
+  rows=db.questions_for_test(test_id)
+  out=[]
+  for q in rows:
+   try:opts=json.loads(q['options_json'] or '[]')
+   except Exception:opts=[]
+   out.append({'id':int(q['number'] or q['id']),'number':int(q['number'] or q['id']),'question':q['question'] or '', 'options':opts,'answer':q['answer'] or '', 'kind':q['kind'] or 'choice','image_url':q['image_url'] or ''})
+  return {'ok':True,'test':{'test_id':str(t['test_id']),'name':t['name'],'code':t['code']},'questions':out}
+ @core.app.post('/api/admin/test/question/update')
+ async def admin_test_question_update(p:dict,req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  test_id=str(p.get('test_id','')).strip();t=db.get_test(test_id)
+  if not t:return {'ok':False,'error':'test_not_found'}
+  try:
+   number=int(p.get('number',0));kind=str(p.get('kind','choice')).lower();question=str(p.get('question','')).strip()[:4000];answer=str(p.get('answer','')).strip();options=p.get('options',[])
+   if not 1<=number<=1000 or not question:return {'ok':False,'error':'invalid_question'}
+   if kind=='choice':
+    if not isinstance(options,list) or len(options)!=4 or any(not str(x).strip() for x in options):return {'ok':False,'error':'invalid_options'}
+    if answer.upper() not in ('A','B','C','D'):return {'ok':False,'error':'invalid_answer'}
+    options=[str(x).strip()[:1000] for x in options];answer=answer.upper()
+   elif kind=='written':
+    if not answer:return {'ok':False,'error':'invalid_answer'}
+    options=[]
+   else:return {'ok':False,'error':'invalid_kind'}
+   db.upsert_test_question(test_id,number,question,options,answer,kind)
+   return {'ok':True,'message':f'{number}-savol va uning to‘g‘ri javobi saqlandi.'}
+  except Exception:
+   logging.getLogger('nur-oqiw.admin').exception('Admin question update failed')
+   return {'ok':False,'error':'question_save_failed'}
+ @core.app.post('/api/admin/test/top1')
+ async def admin_test_top1(p:dict,req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  test_id=str(p.get('test_id','')).strip()
+  try:target=int(p.get('telegram_id',0))
+  except Exception:target=0
+  t=db.get_test(test_id)
+  if not t or target<=0:return {'ok':False,'error':'invalid_target'}
+  attempt=db.get_attempt(test_id,target)
+  if not attempt or not attempt['submitted']:return {'ok':False,'error':'result_not_found'}
+  db.set_setting('admin_top1_'+test_id,str(target))
+  return {'ok':True,'message':'Admin belgilagan Top 1 saqlandi.'}
+ @core.app.get('/api/admin/test/results')
+ async def admin_test_results(req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  test_id=str(req.query_params.get('test_id','')).strip();t=db.get_test(test_id)
+  if not t:return {'ok':False,'error':'test_not_found'}
+  rows=db.all_attempts_for_test(test_id)
+  out=[]
+  for a in rows:
+   try:answers=json.loads(a['answers_json'] or '{}')
+   except Exception:answers={}
+   out.append({'telegram_id':int(a['telegram_id']),'full_name':a['full_name'] or 'Ismsiz','phone':a['phone'] or '', 'submitted':bool(a['submitted']),'status':a['status'] or '', 'score':float(a['score'] or 0),'grade':a['grade'] or '', 'started_at':a['started_at'],'finished_at':a['finished_at'],'answers':answers})
+  return {'ok':True,'test':{'name':t['name'],'code':t['code']},'results':out}
  @core.app.post('/api/admin/test/toggle')
  async def admin_toggle_test(p:dict,req:Request):
   tid,u=await auth(req)
