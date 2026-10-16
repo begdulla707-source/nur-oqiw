@@ -149,6 +149,7 @@ def register(core,dp,bot,webapp_url):
     from urllib.parse import parse_qsl
     profile=json.loads(dict(parse_qsl(raw,keep_blank_values=True)).get('user','{}'))
     if profile.get('photo_url'):db.update_user(tid,telegram_photo=str(profile['photo_url']))
+    if profile.get('username'):db.set_setting('telegram_username_'+str(tid),str(profile['username']).lstrip('@').lower())
    except Exception:pass
   return tid,db.get_user(tid) if tid else None
  @core.app.get('/api/test/profile')
@@ -159,6 +160,19 @@ def register(core,dp,bot,webapp_url):
    rows=c.execute("SELECT a.test_id,t.name,t.code,a.started_at,a.finished_at,a.score,a.grade,a.submitted FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id WHERE a.telegram_id=? ORDER BY COALESCE(a.finished_at,a.started_at) DESC",(tid,)).fetchall()
   history=[{'test_id':x['test_id'],'test_name':x['name'] or 'Test','code':x['code'] or '', 'started_at':x['started_at'],'finished_at':x['finished_at'],'score':float(x['score'] or 0),'grade':x['grade'] or '', 'submitted':bool(x['submitted'])} for x in rows]
   return {'ok':True,'full_name':u['full_name'] or '','photo_url':u['telegram_photo'] or '','tests':history}
+ @core.app.get('/api/test/public-profile')
+ async def public_profile_api(req:Request):
+  tid,u=await auth(req)
+  if not tid or not u:return {'ok':False,'error':'not_authorized'}
+  try:target=int(req.query_params.get('telegram_id','0'))
+  except Exception:target=0
+  if target<=0:return {'ok':False,'error':'invalid_target'}
+  target_user=db.get_user(target)
+  if not target_user:return {'ok':False,'error':'user_not_found'}
+  with db.conn() as c:
+   rows=c.execute("SELECT a.test_id,t.name,t.code,a.started_at,a.finished_at,a.score,a.grade,a.submitted FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id WHERE a.telegram_id=? AND a.submitted=1 ORDER BY COALESCE(a.finished_at,a.started_at) DESC",(target,)).fetchall()
+  history=[{'test_id':x['test_id'],'test_name':x['name'] or 'Test','code':x['code'] or '', 'started_at':x['started_at'],'finished_at':x['finished_at'],'score':float(x['score'] or 0),'grade':x['grade'] or '', 'submitted':bool(x['submitted'])} for x in rows]
+  return {'ok':True,'telegram_id':target,'username':db.get_setting('telegram_username_'+str(target),'') or '', 'full_name':target_user['full_name'] or 'Foydalanuvchi','photo_url':target_user['telegram_photo'] or '', 'tests':history}
  @core.app.get('/api/test/ranking')
  async def ranking_api(req:Request):
   tid,u=await auth(req);code=req.query_params.get('code','').strip()
@@ -167,13 +181,18 @@ def register(core,dp,bot,webapp_url):
   if not t:return {'ok':False,'error':'test_not_found'}
   rows=[x for x in db.all_attempts_for_test(t['test_id']) if x['submitted']]
   rows.sort(key=lambda x:(-float(x['score'] or 0),str(x['finished_at'] or '9999')))
-  pinned_raw=db.get_setting('admin_top1_'+str(t['test_id']),'')
-  try:pinned_id=int(pinned_raw or 0)
-  except Exception:pinned_id=0
-  if pinned_id:
-   pinned=next((x for x in rows if int(x['telegram_id'])==pinned_id),None)
-   if pinned:rows=[pinned]+[x for x in rows if int(x['telegram_id'])!=pinned_id]
-  top=[{'rank':i+1,'full_name':x['full_name'] or 'Ismsiz','photo_url':x['telegram_photo'] or '', 'score':float(x['score'] or 0),'grade':x['grade'] or '', 'finished_at':x['finished_at']} for i,x in enumerate(rows[:15])]
+  # Apply only positions explicitly overridden by an admin. All other places remain score-sorted automatically.
+  for rank_no in range(15,0,-1):
+   raw_id=db.get_setting('admin_rank_'+str(t['test_id'])+'_'+str(rank_no),'')
+   if not raw_id and rank_no==1:raw_id=db.get_setting('admin_top1_'+str(t['test_id']),'')
+   try:manual_id=int(raw_id or 0)
+   except Exception:manual_id=0
+   if manual_id:
+    chosen=next((x for x in rows if int(x['telegram_id'])==manual_id),None)
+    if chosen:
+     rows=[x for x in rows if int(x['telegram_id'])!=manual_id]
+     rows.insert(min(rank_no-1,len(rows)),chosen)
+  top=[{'rank':i+1,'telegram_id':int(x['telegram_id']),'username':db.get_setting('telegram_username_'+str(x['telegram_id']),'') or '', 'full_name':x['full_name'] or 'Ismsiz','photo_url':x['telegram_photo'] or '', 'score':float(x['score'] or 0),'grade':x['grade'] or '', 'finished_at':x['finished_at']} for i,x in enumerate(rows[:15])]
   return {'ok':True,'test_name':t['name'],'code':t['code'],'total':len(rows),'ranking':top}
 
  async def render_usage_data():
@@ -455,15 +474,32 @@ def register(core,dp,bot,webapp_url):
  async def admin_test_top1(p:dict,req:Request):
   tid,u=await auth(req)
   if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
-  test_id=str(p.get('test_id','')).strip()
-  try:target=int(p.get('telegram_id',0))
-  except Exception:target=0
-  t=db.get_test(test_id)
-  if not t or target<=0:return {'ok':False,'error':'invalid_target'}
+  test_id=str(p.get('test_id','')).strip();t=db.get_test(test_id)
+  if not t:return {'ok':False,'error':'test_not_found'}
+  username=str(p.get('username','')).strip().lstrip('@').lower()
+  try:target=int(p.get('telegram_id',0) or 0);rank_no=int(p.get('rank',1) or 0)
+  except Exception:return {'ok':False,'error':'invalid_target'}
+  if username:
+   target=0
+   for user in db.all_registered_users():
+    if (db.get_setting('telegram_username_'+str(user['telegram_id']),'') or '').lower()==username:
+     target=int(user['telegram_id']);break
+   if not target:return {'ok':False,'error':'username_not_found'}
+  if rank_no==0:
+   for pos in range(1,16):
+    if (db.get_setting('admin_rank_'+test_id+'_'+str(pos),'') or '')==str(target):
+     db.set_setting('admin_rank_'+test_id+'_'+str(pos),'')
+   if (db.get_setting('admin_top1_'+test_id,'') or '')==str(target):db.set_setting('admin_top1_'+test_id,'')
+   return {'ok':True,'message':'Qo‘lda belgilangan o‘rin olib tashlandi; reyting avtomatik hisoblanadi.'}
+  if not 1<=rank_no<=15 or target<=0:return {'ok':False,'error':'invalid_target'}
   attempt=db.get_attempt(test_id,target)
   if not attempt or not attempt['submitted']:return {'ok':False,'error':'result_not_found'}
-  db.set_setting('admin_top1_'+test_id,str(target))
-  return {'ok':True,'message':'Admin belgilagan Top 1 saqlandi.'}
+  for pos in range(1,16):
+   if (db.get_setting('admin_rank_'+test_id+'_'+str(pos),'') or '')==str(target):
+    db.set_setting('admin_rank_'+test_id+'_'+str(pos),'')
+  db.set_setting('admin_rank_'+test_id+'_'+str(rank_no),str(target))
+  if rank_no==1:db.set_setting('admin_top1_'+test_id,str(target))
+  return {'ok':True,'message':'@'+(username or (db.get_setting('telegram_username_'+str(target),'') or str(target)))+' uchun '+str(rank_no)+'-o‘rin qo‘lda belgilandi. Qolgan o‘rinlar avtomatik.'}
  @core.app.get('/api/admin/test/results')
  async def admin_test_results(req:Request):
   tid,u=await auth(req)
@@ -475,7 +511,7 @@ def register(core,dp,bot,webapp_url):
   for a in rows:
    try:answers=json.loads(a['answers_json'] or '{}')
    except Exception:answers={}
-   out.append({'telegram_id':int(a['telegram_id']),'full_name':a['full_name'] or 'Ismsiz','phone':a['phone'] or '', 'submitted':bool(a['submitted']),'status':a['status'] or '', 'score':float(a['score'] or 0),'grade':a['grade'] or '', 'started_at':a['started_at'],'finished_at':a['finished_at'],'answers':answers})
+   out.append({'telegram_id':int(a['telegram_id']),'username':db.get_setting('telegram_username_'+str(a['telegram_id']),'') or '', 'full_name':a['full_name'] or 'Ismsiz','phone':a['phone'] or '', 'submitted':bool(a['submitted']),'status':a['status'] or '', 'score':float(a['score'] or 0),'grade':a['grade'] or '', 'started_at':a['started_at'],'finished_at':a['finished_at'],'answers':answers})
   return {'ok':True,'test':{'name':t['name'],'code':t['code']},'results':out}
  @core.app.post('/api/admin/test/toggle')
  async def admin_toggle_test(p:dict,req:Request):
