@@ -158,29 +158,36 @@ def create_test(name,code,start_time="00:00",end_time="23:59",mode="open"):
     return get_test(tid)
 
 def create_test_with_questions(name,code,items):
-    """Create a test only after every question type and answer has been supplied."""
+    """Create a complete answer key, including multi-part questions, atomically."""
     normalized=[]
-    for item in items:
+    for number,item in enumerate(items,1):
         kind=str(item.get('kind','choice')).lower()
-        answer=str(item.get('answer','')).strip()
-        if kind=='choice':
-            answer=answer.upper()
-            if answer not in ('A','B','C','D'): raise ValueError('Oddiy savol javobi A, B, C yoki D bo‘lishi kerak.')
-            options=['A','B','C','D']
-        elif kind=='written':
-            if not answer: raise ValueError('Yozma savol javobi bo‘sh bo‘lishi mumkin emas.')
-            options=[]
-        else: raise ValueError('Savol turi noto‘g‘ri.')
-        normalized.append((kind,answer,options))
-    if not normalized: raise ValueError('Testda kamida bitta savol bo‘lishi kerak.')
+        parts=item.get('parts',[]) if kind=='multi' else [item]
+        if kind=='multi' and not (2<=len(parts)<=20):
+            raise ValueError('Ko‘p savolda 2–20 kichik savol bo‘lishi kerak.')
+        for index,part in enumerate(parts):
+            subkind=str(part.get('kind','choice')).lower()
+            answer=str(part.get('answer','')).strip()
+            if subkind=='choice':
+                answer=answer.upper()
+                if answer not in ('A','B','C','D'):raise ValueError('Variant A/B/C/D bo‘lishi kerak.')
+                options=['A','B','C','D']
+            elif subkind=='written':
+                if not answer:raise ValueError('Yozma javob bo‘sh bo‘lmasin.')
+                options=[]
+            else:raise ValueError('Savol turi noto‘g‘ri.')
+            label=str(number)+(chr(97+index) if kind=='multi' else '')
+            normalized.append((label,subkind,answer,options))
+    if not normalized:raise ValueError('Kamida bitta savol bo‘lishi kerak.')
     tid=secrets.token_hex(8)
     with conn() as c:
         if c.execute('SELECT 1 FROM tests WHERE lower(code)=lower(?) LIMIT 1',(str(code).strip(),)).fetchone():
-            raise ValueError('Bu test kodi avval ishlatilgan. Boshqa kod tanlang.')
+            raise ValueError('Bu test kodi avval ishlatilgan.')
         c.execute('INSERT INTO tests(test_id,code,name,start_time,end_time,mode,active,created_at) VALUES(?,?,?,?,?,?,1,?)',(tid,str(code).strip(),str(name).strip(),'00:00','23:59','open',datetime.now(timezone.utc).isoformat()))
         next_id=int(c.execute('SELECT COALESCE(MAX(id),0)+1 AS n FROM questions').fetchone()['n'])
-        for number,(kind,answer,options) in enumerate(normalized,1):
-            c.execute('INSERT INTO questions(id,question,options_json,answer,kind,group_id,active,image_url,test_id,number) VALUES(?,?,?,?,?,?,1,?,?,?)',(next_id+number-1,f'{number}-savol',json.dumps(options,ensure_ascii=False),answer,kind,'','',tid,number))
+        for offset,(label,kind,answer,options) in enumerate(normalized):
+            c.execute('INSERT INTO questions(id,question,options_json,answer,kind,group_id,active,image_url,test_id,number) VALUES(?,?,?,?,?,?,1,?,?,?)',(next_id+offset,label+'-savol',json.dumps(options,ensure_ascii=False),answer,kind,'','',tid,offset+1))
+            c.execute('UPDATE questions SET group_id=? WHERE id=?',(label,next_id+offset))
     return get_test(tid)
 
 def create_test_with_answers(name,code,answers):
