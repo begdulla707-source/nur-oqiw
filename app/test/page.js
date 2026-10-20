@@ -32,7 +32,7 @@ function Written({questionId,answer,onSave}){
 function Question({q,number,answer,onChoose}){
  const opts=Array.isArray(q.options)&&q.options.length?q.options:['A','B','C','D'];
  return <article className="question-card" id={'question-'+q.id}>
-  <div className="question-heading"><span className="question-number">{number}.</span><div className="question-text">{q.question||'Savol'}</div></div>
+  <div className="question-heading"><span className="question-number">{q.display_number||number}.</span><div className="question-text">{q.question||'Savol'}</div></div>
   {q.image_url&&<img src={q.image_url} alt="Savol rasmi" className="question-image" loading="lazy"/>}
   {q.kind==='written'?<Written questionId={q.id} answer={answer} onSave={onChoose}/>:<div className="option-list">{opts.map((option,i)=>{const letter=String.fromCharCode(65+i);const picked=answer===letter;return <button type="button" key={letter} aria-pressed={picked} className={'option-choice'+(picked?' is-selected':'')} onClick={()=>onChoose(q.id,letter)}><span className="option-letter">{letter}</span><span className="option-label">{String(option??letter)}</span></button>})}</div>}
  </article>
@@ -110,7 +110,7 @@ export default function Test(){
   <div className="test-meta"><span>{questions.length} savol</span><span>{seconds===null?'Vaqt cheklanmagan':String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0')}</span></div>
   <section className="test-introduction"><h1>{testName||'Test'}</h1><p>Barcha savollar ketma-ket joylangan. Tanlagan javobingizni istalgan payt o‘zgartirishingiz mumkin.</p></section>
   {message&&<p className="test-alert" role="status">{message}</p>}
-  <section className="question-stack">{[...questions].sort((a,b)=>Number(a.kind==='written')-Number(b.kind==='written')).map((q,index)=><Question key={q.id} q={q} number={index+1} answer={answers[q.id]} onChoose={choose} saving={saving}/>)}</section>
+  <section className="question-stack">{questions.map((q,index)=><Question key={q.id} q={q} number={index+1} answer={answers[q.id]} onChoose={choose} saving={saving}/>)}</section>
   <footer className="test-finish-panel"><div><strong>{answered} / {questions.length}</strong><span>savolga javob berildi</span></div><button type="button" onClick={finish} disabled={finishBusy}>{finishBusy?'Saqlanmoqda...':'Testni yakunlash'}</button></footer>
  </main>
 }
