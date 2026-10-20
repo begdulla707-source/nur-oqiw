@@ -814,7 +814,7 @@ def register(core,dp,bot,webapp_url):
    if not users:return await m.answer("Hozircha foydalanuvchilar yo‘q.")
    lines=["FOYDALANUVCHILAR RO‘YXATI",""]
    for i,user in enumerate(users[:35],1):
-    lines.append(f"{i}. {user['full_name'] or 'Ismsiz'} | ID: {user['telegram_id']} | Tarif: {user['tier'] or 'default'}")
+    lines.append(f"{i}. {user['full_name'] or 'Ismsiz'}\n   ID: {user['telegram_id']}\n   Tarif: {user['tier'] or 'default'}\n")
    return await m.answer('\\n'.join(lines)[:3900])
   if txt=='Guruhga xabar yuborish':
    ast('broadcast_message')
