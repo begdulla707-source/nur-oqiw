@@ -64,11 +64,11 @@ async def subscribed(tid):
     result=all(x is True for x in checks);SUB_CACHE[int(tid)]=(now,result);return result
 
 def user_menu():
-    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Aktiv testlar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
 def phone_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telefon raqamingizni yuborish',request_contact=True)]],resize_keyboard=True,one_time_keyboard=True)
 def sub_kb():
     rows=[[InlineKeyboardButton(text='KANALGA OBUNA BO‘LISH',url=(c if c.startswith('http') else 'https://t.me/'+c.lstrip('@')))] for c in sub_channels()];rows.append([InlineKeyboardButton(text='OBUNANI TEKSHIRISH',callback_data='check_sub')]);return InlineKeyboardMarkup(inline_keyboard=rows)
-def admin_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test sozlamalari'),KeyboardButton(text='Jarvis',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin#jarvis'))],[KeyboardButton(text='Ishtirokchilar'),KeyboardButton(text='Statistika')],[KeyboardButton(text='Guruhlar holati'),KeyboardButton(text='Guruhga xabar yuborish')],[KeyboardButton(text='Bildirishnoma'),KeyboardButton(text='Ish vaqti jadvali')],[KeyboardButton(text='Majburiy obuna'),KeyboardButton(text='PDF natijalar')],[KeyboardButton(text='Tekshirish'),KeyboardButton(text='Render limitini ko‘rish')],[KeyboardButton(text='Botni uyg‘otish'),KeyboardButton(text='Mini App admini',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'))]],resize_keyboard=True)
+def admin_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test sozlamalari')],[KeyboardButton(text='Ishtirokchilar'),KeyboardButton(text='Statistika')],[KeyboardButton(text='Guruhlar holati'),KeyboardButton(text='Guruhga xabar yuborish')],[KeyboardButton(text='Bildirishnoma'),KeyboardButton(text='Ish vaqti jadvali')],[KeyboardButton(text='Majburiy obuna'),KeyboardButton(text='PDF natijalar')],[KeyboardButton(text='Tekshirish'),KeyboardButton(text='Render limitini ko‘rish')],[KeyboardButton(text='Botni uyg‘otish'),KeyboardButton(text='Mini App admini',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'))]],resize_keyboard=True)
 
 @app.get('/api/ping')
 async def ping():return {'ok':True}
@@ -153,7 +153,7 @@ async def contact(m:Message):
     if m.contact.user_id and m.contact.user_id!=m.from_user.id:await m.answer('O‘zingizning Telegram raqamingizni yuboring.');return
     upsert_user(m.from_user.id,u['full_name'],m.contact.phone_number);u=get_user(m.from_user.id);update_user(m.from_user.id,state='test_code' if u['test_id'] else 'code',code_ok=0);await m.answer('Telefon raqamingiz saqlandi.\n\nTest kodini kiriting:',reply_markup=ReplyKeyboardRemove())
 
-MENU_TEXTS={'Profilim','Tariflar','Testni boshlash','Test kodini kiritish','Mening natijam','Yordam','Telegram ismim bilan davom etish'}
+MENU_TEXTS={'Profilim','Tariflar','Testni boshlash','Test kodini kiritish','Mening natijam','Yordam','Aktiv testlar','Telegram ismim bilan davom etish'}
 
 @dp.message(F.text=='Telegram ismim bilan davom etish')
 async def use_telegram_name(m:Message):
@@ -206,6 +206,31 @@ async def registration_text(m:Message):
     if st=='ready':return await m.answer('Testni boshlash tugmasini bosing.',reply_markup=user_menu())
     return await m.answer('Test kodini kiriting:')
 
+@dp.message(F.text=='Aktiv testlar')
+async def active_tests(m:Message):
+    tests=[t for t in all_tests() if int(t['active'])]
+    if not tests:return await m.answer('Hozircha aktiv testlar mavjud emas.',reply_markup=user_menu())
+    rows=[[InlineKeyboardButton(text=str(t['name'])[:48],callback_data='active_test:'+str(t['test_id']))] for t in tests[:40]]
+    return await m.answer('AKTIV TESTLAR\\n\\nTestni tanlang:',reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+@dp.callback_query(F.data.startswith('active_test:'))
+async def select_active_test(q:CallbackQuery):
+    try:
+        tid=q.data.split(':',1)[1];t=get_test(tid)
+        if not t or not int(t['active']):return await q.answer('Test hozir yopiq.',show_alert=True)
+        u=ensure_user(q.from_user.id)
+        if not u['full_name']:
+            await q.answer('Avval ro‘yxatdan o‘ting.',show_alert=True)
+            return
+        update_user(q.from_user.id,test_id=t['test_id'],code_ok=1,state='ready')
+        ensure_attempt(t['test_id'],q.from_user.id)
+        url=f"{WEBAPP.rstrip('/')}/test?code={t['code']}"
+        await q.message.answer(str(t['name'])+'\\n\\nMini Appni oching:',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MINI APPNI OCHISH',web_app=WebAppInfo(url=url),style='primary')]]))
+        await q.answer()
+    except Exception:
+        logger.exception('active_test callback failed')
+        await q.answer('Xatolik. Qayta urinib ko‘ring.',show_alert=True)
+
 @dp.message(F.text=='Testni boshlash')
 async def start_test(m:Message):
     u=get_user(m.from_user.id) or ensure_user(m.from_user.id)
@@ -224,7 +249,7 @@ async def start_test(m:Message):
         return await m.answer('Bu test hozir administrator tomonidan yopilgan.')
     ensure_attempt(t['test_id'],m.from_user.id)
     url=f"{WEBAPP.rstrip('/')}/test?code={t['code']}"
-    kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='TESTNI BOSHLASH',web_app=WebAppInfo(url=url))]])
+    kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='TESTNI BOSHLASH',web_app=WebAppInfo(url=url),style='primary')]])
     return await m.answer(f"{t['name']}\n\nTest tayyor. Quyidagi tugmani bosing — Mini App ochiladi.",reply_markup=kb)
 
 async def cleanup_loop():
