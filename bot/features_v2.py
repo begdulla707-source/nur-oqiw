@@ -22,7 +22,7 @@ CORE=ADMIN=BOT=TZ=None;WEBAPP=''
 def norm(v):return ' '.join(str(v or '').strip().casefold().split())
 def grade(s):
  s=float(s);return 'A+' if s>=90 else 'A' if s>=80 else 'B' if s>=70 else 'C' if s>=60 else 'D' if s>=50 else 'F'
-def user_menu():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
+def user_menu():return CORE.user_menu()
 def tests_kb():
  r=[]
  for t in db.all_tests():
