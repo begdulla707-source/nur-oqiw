@@ -1,7 +1,7 @@
 'use client';
 import {useEffect,useState} from 'react';
 import Link from 'next/link';
-const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw.onrender.com';
+const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw-bot.mcweb.uz';
 export default function Home(){
  const [code,setCode]=useState(''),[view,setView]=useState('test'),[initData,setInitData]=useState(''),[ranking,setRanking]=useState(null),[loadingRanking,setLoadingRanking]=useState(false),[rankingError,setRankingError]=useState('');
  const start=e=>{e.preventDefault();const c=code.trim();if(c)window.location.href='/test?code='+encodeURIComponent(c)};
