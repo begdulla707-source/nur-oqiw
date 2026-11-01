@@ -729,10 +729,10 @@ def register(core,dp,bot,webapp_url):
   await m.answer('\\n'.join(lines),reply_markup=user_menu())
  @r.message(F.text=='Pulli testlar')
  async def tariffs(m:Message):
-  await m.answer('Pulli testlar bo‘yicha ma’lumot olish uchun administratorga murojaat qiling: @up17v',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/up17v')]]))
+  await m.answer('Pulli testlar bo‘yicha ma’lumot olish uchun administratorga murojaat qiling: @dd17x',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/dd17x')]]))
  @r.message(F.text=='Yordam')
  async def help_user(m:Message):
-  await m.answer('Savol yoki muammo bo‘lsa, administratorga yozing: @up17v',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/up17v')]]))
+  await m.answer('Savol yoki muammo bo‘lsa, administratorga yozing: @dd17x',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/dd17x')]]))
  async def check_prompt(tid,fake_id,index):
   t=db.get_test(tid);qs=db.questions_for_test(tid);u=db.get_user(fake_id);a=db.get_attempt(tid,fake_id)
   if not t or not u or not a:return await BOT.send_message(ADMIN,'Tekshirish sessiyasi topilmadi.')
