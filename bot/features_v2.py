@@ -742,7 +742,7 @@ def register(core,dp,bot,webapp_url):
  @r.message(F.from_user.id==ADMIN)
  async def admin_text(m:Message):
   u=db.ensure_user(ADMIN);s=u['state'] or 'admin';txt=(m.text or '').strip()
-  if txt in {'Test sozlamalari','Ishtirokchilar','Statistika','Guruhlar holati','Guruhga xabar yuborish','Bildirishnoma','Ish vaqti jadvali','Majburiy obuna','PDF natijalar','Tekshirish','Tariflar','Botni uyg‘otish','Render limitini ko‘rish'}:
+  if txt in {'Test sozlamalari','Ishtirokchilar','Statistika','Guruhlar holati','Guruhga xabar yuborish','Bildirishnoma','Ish vaqti jadvali','Majburiy obuna','PDF natijalar','Tekshirish','Tariflar'}:
    ast('admin');u=db.ensure_user(ADMIN);s='admin'
   if s.startswith('check_written:'):
    try:
@@ -753,22 +753,9 @@ def register(core,dp,bot,webapp_url):
     db.update_attempt(a['attempt_id'],answers_json=json.dumps(answers,ensure_ascii=False));ast('admin')
     return await check_prompt(tid,fake_id,index+1)
    except Exception:return await m.answer('Tekshirish javobi saqlanmadi. Tekshirishni qaytadan boshlang.')
-  if txt=='Render limitini ko‘rish':
-   usage=await render_usage_data()
-   if not usage.get('ok'):
-    reason='RENDER_API_KEY ulanmagan.' if usage.get('error')=='render_api_key_missing' else 'Render metrikasini olishning imkoni bo‘lmadi.'
-    return await m.answer(f"RENDER FREE LIMITI\\n\\nOylik limit: 750 instance-soat\\n\\n{reason}\\nAniq limitni Render Billing sahifasidan ko‘ring: https://dashboard.render.com/billing\\n\\nAniq ko‘rsatkichni admin menyusida olish uchun Render API key yaratib, Render Environment Variables ichiga RENDER_API_KEY nomi bilan saqlang.")
-   partial='\\nEslatma: oxirgi 30 kun bilan cheklangan taxminiy hisob.' if usage.get('partial') else ''
-   return await m.answer(f"RENDER FREE LIMITI\\n\\nTaxminiy ishlatilgan: {usage['used_hours']} / {usage['limit_hours']} soat\\nQolgan limit: {usage['remaining_hours']} soat\\nIshlatilgan: {usage['percent']}%\\n\\n{usage['note']}{partial}\\nAniq hisob: https://dashboard.render.com/billing")
-  if txt=='Botni uyg‘otish':
-   try:
-    me=await BOT.get_me()
-    return await m.answer(f'Bot faol: @{me.username}\nServer ishlayapti. Agar birinchi so‘rov sekin bo‘lsa, Mini App admin panelidagi «Botni uyg‘otish» tugmasini ham bosing.')
-   except Exception:
-    return await m.answer('Bot hozir javob bermadi. Biroz kutib qayta urinib ko‘ring.')
   if txt in {'/statistika','Statistika'}:
    users=db.all_registered_users();tests=db.all_tests();attempts=[a for t in tests for a in db.all_attempts_for_test(t['test_id'])];groups=json.loads(db.get_setting('known_groups','[]') or '[]')
-   return await m.answer(f"BOT STATISTIKASI\\n\\nFoydalanuvchilar: {len(users)}\\nTestlar: {len(tests)}\\nUrinishlar: {len(attempts)}\\nYakunlangan testlar: {sum(1 for a in attempts if a['submitted'])}\\nGuruhlar: {len(groups)}\\nVaqt zonasi: Asia/Tashkent",reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test sozlamalari'),KeyboardButton(text='Ishtirokchilar')],[KeyboardButton(text='Statistika'),KeyboardButton(text='Guruhlar holati')],[KeyboardButton(text='Guruhga xabar yuborish'),KeyboardButton(text='Bildirishnoma')],[KeyboardButton(text='Ish vaqti jadvali'),KeyboardButton(text='Majburiy obuna')],[KeyboardButton(text='PDF natijalar'),KeyboardButton(text='Tekshirish')],[KeyboardButton(text='Tariflar'),KeyboardButton(text='Botni uyg‘otish')]],resize_keyboard=True))
+   return await m.answer(f"BOT STATISTIKASI\\n\\nFoydalanuvchilar: {len(users)}\\nTestlar: {len(tests)}\\nUrinishlar: {len(attempts)}\\nYakunlangan testlar: {sum(1 for a in attempts if a['submitted'])}\\nGuruhlar: {len(groups)}\\nVaqt zonasi: Asia/Tashkent",reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test sozlamalari'),KeyboardButton(text='Ishtirokchilar')],[KeyboardButton(text='Statistika'),KeyboardButton(text='Guruhlar holati')],[KeyboardButton(text='Guruhga xabar yuborish'),KeyboardButton(text='Bildirishnoma')],[KeyboardButton(text='Ish vaqti jadvali'),KeyboardButton(text='Majburiy obuna')],[KeyboardButton(text='PDF natijalar'),KeyboardButton(text='Tekshirish')],[KeyboardButton(text='Tariflar')]],resize_keyboard=True))
   if txt=='Guruhlar holati':
    groups=json.loads(db.get_setting('known_groups','[]') or '[]')
    if not groups:return await m.answer("Guruhlar ro‘yxati bo‘sh. Botni guruhga qo‘shing va /group_status buyrug‘ini yuboring.")
