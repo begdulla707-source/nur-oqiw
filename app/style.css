@@ -652,3 +652,22 @@ body :is(.progress-track i){background:#245fd6!important;box-shadow:none!importa
   color: #17243a !important;
   -webkit-text-fill-color: #17243a !important;
 }
+
+/* Accessible light-glass colors, including Telegram dark WebView */
+:root{color-scheme:light!important;--nur-ink:#14243b;--nur-muted:#4c6079;--nur-accent:#245cba;--nur-stroke:#d5dfeb}
+html,body{color:var(--nur-ink)!important;background:#f2f6fb!important}
+body,button,input,textarea,select{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif}
+.landing,.test-shell,.test-page{color:var(--nur-ink)!important;background:linear-gradient(165deg,#f6f9fd,#eaf0f8)!important}
+.landing-card,.test-intro,.q-card,.live-bar,.ranking-person,.test-header{background:rgba(255,255,255,.94)!important;border-color:var(--nur-stroke)!important;color:var(--nur-ink)!important}
+.landing h1,.landing-card h1,.test-intro h1,.q-card h2,.q-card h3,.ranking-person strong,.test-page strong,.test-page label{color:var(--nur-ink)!important;-webkit-text-fill-color:var(--nur-ink)!important}
+.landing-copy,.landing-note,.test-page p,.q-card p,.ranking-person small,.test-page .muted,.test-page .hint{color:var(--nur-muted)!important;-webkit-text-fill-color:var(--nur-muted)!important}
+input,textarea,select{background:#fff!important;color:var(--nur-ink)!important;-webkit-text-fill-color:var(--nur-ink)!important;border-color:#bdccdf!important}
+input::placeholder,textarea::placeholder{color:#718198!important;-webkit-text-fill-color:#718198!important}
+.bottom-glass-nav{background:rgba(255,255,255,.94)!important;border:1px solid #d3deec!important;box-shadow:0 12px 40px rgba(29,53,91,.14)!important}
+.bottom-glass-nav .nav-item{color:#425772!important;background:transparent;gap:4px}
+.bottom-glass-nav .nav-item.active{background:#e3edff!important;color:#1559bd!important}
+.bottom-glass-nav .nav-item svg{display:block;flex-shrink:0;stroke:currentColor}
+.bottom-glass-nav .nav-item small{font-size:11px!important;color:inherit!important;-webkit-text-fill-color:currentColor!important}
+.option-choice,.option-row,.answer-option{border-color:#bdccdf!important}
+.option-choice.is-selected,.option-choice[aria-pressed="true"]{background:#dceaff!important;border-color:#2366bb!important;color:#17365f!important}
+@media(prefers-color-scheme:dark){html,body{color-scheme:light!important}}
