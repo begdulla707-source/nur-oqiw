@@ -1,7 +1,65 @@
 'use client';
 import {useCallback,useEffect,useState} from 'react';
 const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw-bot.mcweb.uz';
+function MenuEditor({initData}){
+ const [role,setRole]=useState('user');
+ const [menus,setMenus]=useState(null);
+ const [drafts,setDrafts]=useState({});
+ const [busy,setBusy]=useState('');
+ const [error,setError]=useState('');
+ const load=useCallback(async()=>{
+  if(!initData)return;
+  setBusy('load');setError('');
+  try{
+   const res=await fetch(API+'/api/admin/menus',{headers:{Authorization:'tma '+initData},cache:'no-store'});
+   const data=await res.json();
+   if(!data.ok)throw new Error(data.error||'Menyular olinmadi');
+   setMenus(data.menus);setDrafts({});
+  }catch(e){setError(e.message)}finally{setBusy('')}
+ },[initData]);
+ useEffect(()=>{load()},[load]);
+ async function update(item,action='save',direction=0){
+  setBusy(item.key);setError('');
+  try{
+   const values={...item,...(drafts[item.key]||{})};
+   const res=await fetch(API+'/api/admin/menus',{
+    method:'POST',headers:{Authorization:'tma '+initData,'Content-Type':'application/json'},
+    body:JSON.stringify({role,key:item.key,action,direction,label:values.label,style:values.style,emoji_id:values.emoji_id,visible:values.visible})
+   });
+   const data=await res.json();
+   if(!data.ok)throw new Error(data.error||'Saqlashda xatolik');
+   setMenus(data.menus);
+   setDrafts(old=>({...old,[item.key]:undefined}));
+  }catch(e){setError(e.message)}finally{setBusy('')}
+ }
+ const entries=menus?.[role]||[];
+ return <section className="admin-card menu-editor">
+  <div className="admin-section-title"><div><h2>Menyu sozlamalari</h2><p>Telegram pastki klaviaturasi: nom, rang, premium emoji, tartib va ko‘rinish.</p></div><button className="admin-refresh" onClick={load} disabled={!!busy}>Yangilash</button></div>
+  <div className="menu-editor-tabs"><button className={role==='user'?'selected':''} onClick={()=>{setRole('user');setDrafts({})}}>Foydalanuvchilar</button><button className={role==='admin'?'selected':''} onClick={()=>{setRole('admin');setDrafts({})}}>Admin</button></div>
+  {error&&<p role="alert" className="admin-error">{error}</p>}
+  {!menus?<p className="admin-muted">Menyu yuklanmoqda…</p>:<div className="menu-editor-items">{entries.map((item,index)=>{
+   const val={...item,...(drafts[item.key]||{})};
+   const change=(field,value)=>setDrafts(old=>({...old,[item.key]:{...(old[item.key]||{}),[field]:value}}));
+   return <div className="menu-editor-item" key={item.key}>
+    <div className="menu-editor-top"><strong>{index+1}. {item.key}</strong><span>{val.style==='success'?'Yashil':val.style==='danger'?'Qizil':val.style==='primary'?'Ko‘k':'Oddiy'}</span></div>
+    <div className="menu-editor-fields"><label>Tugma nomi<input value={val.label} maxLength={55} onChange={e=>change('label',e.target.value)}/></label>
+    <label>Rang<select value={val.style} onChange={e=>change('style',e.target.value)}><option value="primary">Ko‘k</option><option value="success">Yashil</option><option value="danger">Qizil</option><option value="default">Rangsiz</option></select></label>
+    <label>Premium emoji ID<input value={val.emoji_id||''} inputMode="numeric" placeholder="Telegram custom emoji ID" onChange={e=>change('emoji_id',e.target.value)}/></label></div>
+    <div className="menu-editor-actions">
+    <label className="menu-editor-checkbox"><input type="checkbox" checked={val.visible} disabled={item.key==='Aktiv testlar'||item.key==='Menyu sozlamalari'} onChange={e=>change('visible',e.target.checked)}/> Ko‘rsatish</label>
+    <button onClick={()=>update(item,'move',-1)} disabled={!!busy||index===0} title="Yuqoriga">↑</button>
+    <button onClick={()=>update(item,'move',1)} disabled={!!busy||index===entries.length-1} title="Pastga">↓</button>
+    <button className="action-danger" onClick={()=>update(item,'reset')} disabled={!!busy}>Tiklash</button>
+    <button className="admin-primary" onClick={()=>update(item)} disabled={!!busy}>{busy===item.key?'Saqlanmoqda…':'Saqlash'}</button>
+    </div>
+   </div>
+  })}</div>}
+  <p className="admin-muted">Premium emoji ID ni olish uchun Telegram botidagi «Menyu sozlamalari» bo‘limidan emoji yuboring. Rang va emoji ko‘rinishi Telegram versiyasiga bog‘liq. O‘zgarishlar foydalanuvchi /start bosganda yoki menyu qayta ko‘rsatilganda kuchga kiradi.</p>
+ </section>;
+}
+
 export default function Admin(){
+ const [showMenuEditor,setShowMenuEditor]=useState(false);
  const [initData,setInitData]=useState(''),[loading,setLoading]=useState(true),[data,setData]=useState(null),[error,setError]=useState(''),[note,setNote]=useState(''),[busy,setBusy]=useState('');
  const [schedule,setSchedule]=useState({date:'',start:'08:00',end:'22:00',timezone:'Asia/Tashkent'});
  const [usage,setUsage]=useState(null),[usageBusy,setUsageBusy]=useState(false);
@@ -73,6 +131,8 @@ export default function Admin(){
  }
  return <main className="admin-shell"><header className="admin-header"><div><div className="admin-brand">N</div><div><p>NUR O‘QIW ORAYI</p><h1>Admin boshqaruvi</h1></div></div><button className="admin-refresh" onClick={()=>initData&&refresh(initData)} disabled={loading||!initData}>Yangilash</button></header>
  <section className="admin-card admin-diagnostics"><div className="admin-section-title"><div><h2>Tizim diagnostikasi</h2><p>Admin sessiyasi, saqlash turi va zarur API sozlamalarining holati.</p></div><button className="admin-refresh" onClick={runDiagnostics} disabled={diagnosticsBusy||!initData}>{diagnosticsBusy?'Tekshirilmoqda…':'Tizimni tekshirish'}</button></div>{diagnostics?.ok?<><div className="admin-diagnostic-grid"><div><span>Backend</span><strong>Ulangan</strong></div><div><span>Admin sessiyasi</span><strong>{diagnostics.admin_authorized?'Tasdiqlangan':'Tasdiqlanmagan'}</strong></div><div><span>Ma’lumotlar bazasi</span><strong>{diagnostics.storage}</strong></div><div><span>Testlar / savollar</span><strong>{diagnostics.tests} / {diagnostics.questions}</strong></div><div><span>OpenAI kaliti</span><strong>{diagnostics.openai_key_configured?'Sozlangan':'Sozlanmagan'}</strong></div><div><span>Render kaliti</span><strong>{diagnostics.render_key_configured?'Sozlangan':'Sozlanmagan'}</strong></div></div><p className="admin-muted">Bu tekshiruv kalitlarning mavjudligini ko‘rsatadi, ularning qiymatini ochmaydi va OpenAI balansini tasdiqlamaydi.</p></>:diagnostics&&!diagnostics.ok?<p className="admin-muted">{diagnostics.error==='admin_only'?'Telegram admin ID serverdagi ADMIN_CHAT_ID bilan mos kelmadi.':'Diagnostika API bilan bog‘lanib bo‘lmadi. Telegram sessiyasini va backendni tekshiring.'}</p>:<p className="admin-muted">“Tizimni tekshirish” tugmasi orqali admin ruxsati, backend, ma’lumotlar bazasi va API kalitlari holatini ko‘ring.</p>}</section>
+ <div className="admin-menu-config-trigger"><button className="admin-primary" onClick={()=>setShowMenuEditor(v=>!v)}>{showMenuEditor?'Menyu sozlamalarini yopish':'Menyu sozlamalari'}</button></div>
+ {showMenuEditor&&<MenuEditor initData={initData}/>}
  {note&&<p className="admin-note">{note}</p>}
 {error&&<section className="admin-error"><strong>{error}</strong><p>Admin paneliga faqat administratorning Telegram akkaunti orqali kirish mumkin.</p><button onClick={()=>window.location.reload()}>Qayta ulanish</button></section>}
  {loading&&!data?<section className="admin-card admin-skeleton" aria-hidden="true"></section>:null}
