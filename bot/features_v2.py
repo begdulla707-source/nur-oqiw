@@ -671,6 +671,7 @@ def register(core,dp,bot,webapp_url):
  async def state(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u:return {'ok':False,'error':'not_authorized'}
+  if tid!=ADMIN and not await CORE.subscribed(tid):return {'ok':False,'error':'subscription_required'}
   if not t:return {'ok':False,'error':'test_not_found'}
   if not db.questions_for_test(t['test_id']):return {'ok':False,'error':'test_not_ready','test_name':t['name']}
   if u['test_id']!=t['test_id']:db.update_user(tid,test_id=t['test_id'],code_ok=1,state='ready');u=db.get_user(tid)
@@ -693,6 +694,7 @@ def register(core,dp,bot,webapp_url):
  async def questions(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t:return {'ok':False,'error':'not_authorized'}
+  if tid!=ADMIN and not await CORE.subscribed(tid):return {'ok':False,'error':'subscription_required'}
   if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if not u['full_name'] or u['test_id']!=t['test_id'] or not opened(t):return {'ok':False,'error':'test_not_started'}
   a=db.get_attempt(t['test_id'],tid)
@@ -703,6 +705,7 @@ def register(core,dp,bot,webapp_url):
  async def answer(p:dict, request: Request):
   raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t or not u['full_name']:return {'ok':False,'error':'not_authorized'}
+  if tid!=ADMIN and not await CORE.subscribed(tid):return {'ok':False,'error':'subscription_required'}
   if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if u['test_id']!=t['test_id']:return {'ok':False,'error':'test_not_started'}
   a=db.get_attempt(t['test_id'],tid)
@@ -733,6 +736,7 @@ def register(core,dp,bot,webapp_url):
  async def finish(p:dict, request: Request):
   raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t or not u['full_name']:return {'ok':False,'error':'not_authorized'}
+  if tid!=ADMIN and not await CORE.subscribed(tid):return {'ok':False,'error':'subscription_required'}
   if u['test_id']!=t['test_id']:return {'ok':False,'error':'test_not_started'}
   a=db.get_attempt(t['test_id'],tid)
   if not a or not a['started_at']:return {'ok':False,'error':'test_not_started'}
