@@ -1,0 +1,119 @@
+
+/* NUR OQIW ORAYI · Midnight / iOS-inspired Telegram Mini App
+   One coordinated layer placed AFTER legacy style.css to prevent theme conflicts.
+   No data, answer, auth or subscription logic is changed here. */
+:root{color-scheme:dark!important;--nur-bg:#070b14;--nur-panel:#151e30;--nur-panel-2:#18243a;--nur-stroke:rgba(142,165,199,.16);--nur-title:#f5f7fd;--nur-muted:#98a7bf;--nur-blue:#1985ff;--nur-green:#20b974;--nur-red:#ed6470}
+html,body{background:#070b14!important;color:#f5f7fd!important;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Arial,sans-serif!important}
+body{overscroll-behavior-y:contain}
+button,a,input,select,textarea{-webkit-tap-highlight-color:transparent!important}
+main :where(h1,h2,h3,h4,p,small,span,strong,label,button,a){text-shadow:none}
+main :where(button,a,[role="button"]){-webkit-user-select:none;user-select:none;touch-action:manipulation}
+main :where(h1,h2,h3,h4,p,small,span){-webkit-user-select:none;user-select:none}
+main :where(input,textarea,[contenteditable="true"]){-webkit-user-select:text!important;user-select:text!important}
+main button:focus:not(:focus-visible),main a:focus:not(:focus-visible){outline:0!important;box-shadow:none!important}
+main :is(button,a):focus-visible{outline:2px solid rgba(75,160,255,.65)!important;outline-offset:-3px!important}
+main button:active{filter:brightness(1.09)}
+main :where(input,textarea,select){background:#101827!important;color:#f5f7fd!important;-webkit-text-fill-color:#f5f7fd!important;border-color:rgba(140,165,203,.22)!important}
+main :where(input,textarea)::placeholder{color:#8d9bb2!important;-webkit-text-fill-color:#8d9bb2!important;opacity:1}
+
+/* Home: dark card and blue A+ insignia from the reference. */
+main.landing{background:radial-gradient(ellipse at 22% -10%,rgba(28,64,115,.17),transparent 40%),linear-gradient(180deg,#080d17,#080c15 82%)!important;color:#f5f7fd!important;padding-bottom:114px!important}
+.landing .landing-orb{display:none!important}
+.landing .landing-card{background:linear-gradient(155deg,rgba(23,33,53,.97),rgba(17,26,43,.98))!important;color:#f5f7fd!important;border:1px solid var(--nur-stroke)!important;box-shadow:0 20px 52px rgba(0,0,0,.22),inset 0 1px rgba(255,255,255,.035)!important;backdrop-filter:blur(20px)!important;-webkit-backdrop-filter:blur(20px)!important;animation:none!important}
+.landing .brand-mark{display:grid;place-items:center;width:54px;height:54px;margin-bottom:22px;border-radius:18px!important;background:linear-gradient(145deg,#0d294c,#0a1b32)!important;color:#1985ff!important;-webkit-text-fill-color:#1985ff!important;border:1px solid rgba(41,107,188,.25)!important;font-size:27px!important;letter-spacing:-2px;box-shadow:0 5px 22px rgba(0,0,0,.24)!important}
+.landing .brand-mark span{font-size:16px;vertical-align:super}
+.landing .landing-eyebrow{color:#98a7bf!important;-webkit-text-fill-color:#98a7bf!important;letter-spacing:.13em}
+.landing .landing-card h1{color:#f5f7fd!important;-webkit-text-fill-color:#f5f7fd!important;font-size:clamp(28px,7vw,36px)}
+.landing .landing-copy,.landing .landing-note{color:#a3b0c5!important;-webkit-text-fill-color:#a3b0c5!important}
+.landing .start-form label,.landing .ranking-code-form label{color:#d9e3f2!important;-webkit-text-fill-color:#d9e3f2!important}
+.landing .start-form input,.landing .ranking-code-form input{background:#0e1625!important;color:#fff!important;-webkit-text-fill-color:#fff!important;border:1px solid #334159!important;box-shadow:none!important}
+.landing .start-form input:focus,.landing .ranking-code-form input:focus{outline:0!important;border-color:#5b8fcd!important;box-shadow:inset 0 0 0 1px rgba(91,143,205,.35)!important}
+.landing .primary-link,.landing .ranking-code-form button{background:linear-gradient(160deg,#2495ff,#116be0)!important;color:#fff!important;-webkit-text-fill-color:#fff!important;border:1px solid rgba(83,159,255,.5)!important;box-shadow:0 8px 23px rgba(10,88,198,.22)!important}
+.landing .ranking-summary{background:#111b2d!important;color:#f3f7ff!important;border:1px solid var(--nur-stroke)!important}
+.landing .ranking-summary strong,.landing .ranking-person strong{color:#f4f7ff!important;-webkit-text-fill-color:#f4f7ff!important}
+.landing .ranking-summary small,.landing .ranking-person small{color:#a0afc4!important;-webkit-text-fill-color:#a0afc4!important}
+.landing .ranking-person{background:#151e30!important;color:#f4f7ff!important;border:1px solid var(--nur-stroke)!important}
+.landing .ranking-place{background:#0b1525;color:#cfe5ff}
+.landing .ranking-score{color:#65adff!important;-webkit-text-fill-color:#65adff!important}
+.landing .ranking-state{color:#a8b7ce!important}
+
+/* Flat, dark full-width bottom bar, with blue only for selected tab. */
+.bottom-glass-nav{left:0!important;right:0!important;bottom:0!important;transform:none!important;width:100%!important;max-width:none!important;padding:10px 8px max(12px,env(safe-area-inset-bottom))!important;border-radius:0!important;background:#0a101c!important;border:0!important;border-top:1px solid #2a3448!important;box-shadow:none!important;backdrop-filter:blur(16px)!important;-webkit-backdrop-filter:blur(16px)!important;gap:3px!important}
+.bottom-glass-nav .nav-item{min-height:57px;color:#8f9db2!important;-webkit-text-fill-color:#8f9db2!important;background:transparent!important;border:0!important;border-radius:12px!important;box-shadow:none!important}
+.bottom-glass-nav .nav-item.active,.bottom-glass-nav .nav-item.nav-tests.active,.bottom-glass-nav .nav-item.nav-profile.active,.bottom-glass-nav .nav-item.nav-ranking.active,.bottom-glass-nav .nav-item.nav-admin.active{background:rgba(21,111,227,.12)!important;color:#278cff!important;-webkit-text-fill-color:#278cff!important;border:0!important;box-shadow:none!important}
+.bottom-glass-nav .nav-item small{color:inherit!important;-webkit-text-fill-color:currentColor!important;font-size:12px!important}
+.bottom-glass-nav .nav-item svg{color:inherit!important;stroke:currentColor!important}
+
+/* Test: dark cards, pill-like answer keys, readable titles / counters. */
+main.test-page{background:#070b14!important;color:#f5f7fd!important;padding-bottom:38px!important}
+.test-page .test-topbar{background:#141f2e!important;border-color:#2a3447!important;box-shadow:0 4px 16px rgba(0,0,0,.12)!important}
+.test-page .test-topbar .top-brand strong{color:#f6f8ff!important;-webkit-text-fill-color:#f6f8ff!important;font-size:15px!important;opacity:1!important}
+.test-page .test-topbar .top-brand small{color:#a9b8cf!important;-webkit-text-fill-color:#a9b8cf!important;opacity:1!important}
+.test-page .test-topbar .top-progress{background:#151f32!important;border:1px solid #2a3b57!important;border-radius:12px!important;color:#f5f8ff!important}
+.test-page .test-topbar .top-progress b{color:#edf5ff!important;-webkit-text-fill-color:#edf5ff!important}
+.test-page .test-topbar .top-progress small{color:#99aac4!important;-webkit-text-fill-color:#99aac4!important}
+.test-page .test-meta{background:#121b2b!important;border:1px solid var(--nur-stroke)!important;color:#b3c1d4!important;border-radius:15px!important}
+.test-page .test-meta span{color:#a9bad0!important;-webkit-text-fill-color:#a9bad0!important;opacity:1!important}
+.test-page .test-introduction,.test-page .question-card{background:#151e30!important;border:1px solid #2a364a!important;color:#f4f7fd!important;border-radius:21px!important;box-shadow:0 7px 24px rgba(0,0,0,.12)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.test-page .test-introduction h1,.test-page .question-card .question-number,.test-page .question-card .question-text{color:#f4f7fd!important;-webkit-text-fill-color:#f4f7fd!important;opacity:1!important}
+.test-page .test-introduction p{color:#a8b5c9!important;-webkit-text-fill-color:#a8b5c9!important;opacity:1!important}
+.test-page .question-card{scroll-margin-top:78px!important}
+.test-page .question-heading{color:#f2f6ff!important}
+.test-page .question-card .question-number{color:#abbcd4!important;-webkit-text-fill-color:#abbcd4!important}
+.test-page .question-card .option-list{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:8px!important}
+.test-page .question-card .option-list .option-choice,
+.test-page .question-card .option-list .option-choice:hover,
+.test-page .question-card .option-list .option-choice:active,
+.test-page .question-card .option-list .option-choice.is-selected,
+.test-page .question-card .option-list .option-choice[aria-pressed="true"]{background:transparent!important;background-color:transparent!important;border:0!important;box-shadow:none!important;outline:0!important;transform:none!important;min-width:0!important;display:flex!important;align-items:center!important;flex-direction:column!important;gap:7px!important;padding:7px 2px!important}
+.test-page .question-card .option-list .option-choice .option-letter{width:48px!important;height:48px!important;background:#090e18!important;color:#f6f8ff!important;-webkit-text-fill-color:#f6f8ff!important;border:1px solid #354156!important;border-radius:15px!important;box-shadow:inset 0 1px 1px rgba(255,255,255,.045)!important;font-size:17px!important;font-weight:850!important}
+.test-page .question-card .option-list .option-choice.is-selected .option-letter,
+.test-page .question-card .option-list .option-choice[aria-pressed="true"] .option-letter{background:#126cda!important;border:1px solid #3097ff!important;color:#fff!important;-webkit-text-fill-color:#fff!important;box-shadow:inset 0 1px rgba(255,255,255,.12)!important}
+.test-page .question-card .option-list .option-choice .option-label{color:#b6c4db!important;-webkit-text-fill-color:#b6c4db!important;opacity:1!important;padding:0!important;font-size:12px!important;white-space:pre-wrap!important;overflow-wrap:anywhere!important}
+.test-page .question-card .option-list .option-choice.is-selected .option-label{color:#d3e6ff!important;-webkit-text-fill-color:#d3e6ff!important}
+.test-page .written-keyboard{background:#0e1627!important;border:1px solid #28394f!important;border-radius:17px!important}
+.test-page .written-input-wrap .answer-input{background:#121b2d!important;border:1px solid #334156!important;border-radius:15px!important;color:#f5f8ff!important;-webkit-text-fill-color:#f5f8ff!important;box-shadow:none!important}
+.test-page .written-input-wrap .answer-input:focus{border-color:#d8ab53!important;box-shadow:inset 0 0 0 2px rgba(216,171,83,.42)!important;outline:0!important}
+.test-page .written-keyboard .keyboard-tabs button,.test-page .written-keyboard .keyboard-keys button{background:#202c44!important;color:#eaf1ff!important;-webkit-text-fill-color:#eaf1ff!important;border:1px solid #31425e!important;border-radius:10px!important;box-shadow:none!important}
+.test-page .written-keyboard .keyboard-tabs button.active{background:#1767b8!important;color:#fff!important;-webkit-text-fill-color:#fff!important}
+.test-page .clear-answer{background:#27344b!important;color:#d8e6f9!important;-webkit-text-fill-color:#d8e6f9!important;border:1px solid #3c4e69!important}
+.test-page .test-finish-panel{background:rgba(16,25,41,.97)!important;border:1px solid #2a3951!important;color:#f0f6ff!important;border-radius:19px!important;box-shadow:0 -8px 22px rgba(0,0,0,.24)!important}
+.test-page .test-finish-panel strong{color:#f4f8ff!important;-webkit-text-fill-color:#f4f8ff!important}
+.test-page .test-finish-panel span{color:#b6c4da!important;-webkit-text-fill-color:#b6c4da!important}
+.test-page .test-finish-panel button{background:#157ef0!important;color:white!important;-webkit-text-fill-color:#fff!important;border:0!important;border-radius:13px!important}
+.test-page .test-alert{color:#e8f2ff!important;-webkit-text-fill-color:#e8f2ff!important;background:#1c2a42!important;border-color:#456082!important}
+
+/* Result, profile, ranking, admin: no mixed white-on-white text. */
+main.test-loading,main.test-result-page,main.profile-shell,main.ranking-shell,main.profile-error{background:#070b14!important;color:#f5f7fd!important}
+.test-result-page .result-card,.profile-shell .profile-card,.ranking-shell .ranking-card{background:#151e30!important;color:#f5f7fd!important;border:1px solid var(--nur-stroke)!important;box-shadow:0 10px 28px rgba(0,0,0,.12)!important}
+.test-result-page .result-card h1,.test-result-page .result-card p,
+.profile-shell .profile-hero h1,.profile-shell .profile-hero p,.profile-shell .history-main strong,
+.ranking-shell .ranking-card h1,.ranking-shell .ranking-main strong{color:#f5f7fd!important;-webkit-text-fill-color:#f5f7fd!important}
+.profile-shell .profile-muted,.profile-shell .profile-username,.profile-shell .history-row small,
+.ranking-shell .profile-muted,.ranking-shell .ranking-row small{color:#a0afc5!important;-webkit-text-fill-color:#a0afc5!important}
+.profile-shell .profile-avatar{background:#102b4d!important}
+.profile-shell .history-row,.ranking-shell .ranking-row{background:#121b2b!important;border-color:#2d3a50!important;color:#eaf2ff!important}
+.profile-shell .tariff-card,.ranking-shell .ranking-card{color:#ecf3ff!important}
+.profile-shell .profile-report-button,.test-result-page .result-link{background:#146fdb!important;color:white!important;-webkit-text-fill-color:#fff!important;border:1px solid #2b81e6!important}
+.profile-shell .profile-report-button.tariff-link{background:#17355a!important}
+.ranking-shell .ranking-row .history-score,.profile-shell .history-score{color:#62acff!important;-webkit-text-fill-color:#62acff!important}
+main.admin-shell{background:#070b14!important;color:#f5f7fd!important}
+.admin-shell .admin-header,.admin-shell .admin-card,.admin-shell .admin-stat,.admin-shell .admin-test-card,.admin-shell .menu-editor-item{background:#151e30!important;border-color:#2a364a!important;color:#f5f7fd!important;-webkit-text-fill-color:#f5f7fd!important;box-shadow:0 8px 26px rgba(0,0,0,.12)!important}
+.admin-shell .admin-header h1,.admin-shell .admin-section-title h2,.admin-shell .admin-test-top h3,.admin-shell .admin-stat strong,.admin-shell .admin-test-stats b,.admin-shell .menu-editor-top strong{color:#f5f7fd!important;-webkit-text-fill-color:#f5f7fd!important}
+.admin-shell .admin-header p,.admin-shell .admin-section-title p,.admin-shell .admin-test-top p,.admin-shell .admin-test-stats,.admin-shell .admin-muted{color:#9eafc6!important;-webkit-text-fill-color:#9eafc6!important}
+.admin-shell .admin-test-stats span,.admin-shell .admin-details,.admin-shell .admin-participant{background:#101929!important;border-color:#2e3c54!important;color:#d9e5f5!important;-webkit-text-fill-color:#d9e5f5!important}
+.admin-shell .admin-status.is-active{background:#143b30!important;color:#59e0a0!important;-webkit-text-fill-color:#59e0a0!important;border-color:#216f50!important}
+.admin-shell .admin-status.is-stopped{background:#442731!important;color:#ff969e!important;-webkit-text-fill-color:#ff969e!important;border-color:#9a4150!important}
+.admin-shell .admin-test-actions button:not(.admin-primary),.admin-shell .admin-rank-editor button,.admin-shell .menu-editor-actions button:not(.admin-primary){background:#192e4d!important;color:#d9eaff!important;-webkit-text-fill-color:#d9eaff!important;border-color:#31577f!important}
+.admin-shell .admin-primary,.admin-shell .admin-refresh{background:#1678e5!important;border-color:#358dea!important;color:#fff!important;-webkit-text-fill-color:#fff!important}
+.admin-shell .action-danger{background:#9d3645!important;border-color:#b34b59!important;color:#fff!important;-webkit-text-fill-color:#fff!important}
+.admin-shell .action-success{background:#156d48!important;border-color:#268c62!important;color:#fff!important;-webkit-text-fill-color:#fff!important}
+.admin-shell .menu-editor-tabs button{background:#111d32!important;color:#a7b9d2!important;-webkit-text-fill-color:#a7b9d2!important;border:1px solid #334560!important}
+.admin-shell .menu-editor-tabs button.selected{background:#1769c8!important;color:#fff!important;-webkit-text-fill-color:#fff!important}
+.admin-shell .menu-editor-fields label,.admin-shell .menu-editor-checkbox{color:#b4c5dd!important;-webkit-text-fill-color:#b4c5dd!important}
+
+/* No visible loading text or flashing bright screen while Telegram starts.
+   Keep a small spinner with accessible screenreader status. */
+.test-loading .loading-mark{font-size:0!important;color:transparent!important;-webkit-text-fill-color:transparent!important;width:30px;height:30px;display:block;border:3px solid #31415b;border-top-color:#278cff;border-radius:50%;animation:nur-spin .85s linear infinite}
+@keyframes nur-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.test-loading .loading-mark{animation:none;border-top-color:#278cff}}
