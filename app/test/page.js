@@ -1,5 +1,5 @@
 'use client';
-import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import {memo,useCallback,useEffect,useMemo,useRef,useState} from 'react';
 
 const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw-bot.mcweb.uz';
 
@@ -27,14 +27,14 @@ function Written({questionId,answer,onSave}){
   </div>
  </div>
 }
-function Question({q,number,answer,onChoose}){
+const Question=memo(function Question({q,number,answer,onChoose}){
  const opts=Array.isArray(q.options)&&q.options.length?q.options:['A','B','C','D'];
  return <article className="question-card" id={'question-'+q.id}>
   <div className="question-heading"><span className="question-number">{q.display_number||number}.</span><div className="question-text">{q.question||'Savol'}</div></div>
   {q.image_url&&<img src={q.image_url} alt="Savol rasmi" className="question-image" loading="lazy"/>}
   {q.kind==='written'?<Written questionId={q.id} answer={answer} onSave={onChoose}/>:<div className="option-list">{opts.map((option,i)=>{const letter=String.fromCharCode(65+i);const picked=answer===letter;return <button type="button" key={letter} aria-pressed={picked} className={'option-choice'+(picked?' is-selected':'')} onClick={()=>onChoose(q.id,letter)}><span className="option-letter">{letter}</span><span className="option-label">{String(option??letter)}</span></button>})}</div>}
  </article>
-}
+});
 export default function Test(){
  const answerQueue=useRef({});
  const [initData,setInitData]=useState('');
@@ -71,9 +71,10 @@ export default function Test(){
  useEffect(()=>{
   let cancelled=false;let attempts=0;let timer;
   const boot=()=>{if(cancelled)return;const tg=window.Telegram?.WebApp;const raw=tg?.initData||'';if(tg&&raw){try{tg.ready();tg.expand();tg.disableVerticalSwipes?.()}catch{}setInitData(raw);load(raw);return}attempts++;if(attempts<12){timer=setTimeout(boot,100);return}setStatus('blocked');setMessage('Mini Appni Telegram botidagi Testni boshlash tugmasi orqali oching.')};
-  boot();const clock=setInterval(()=>setNow(Date.now()),1000);
-  return()=>{cancelled=true;clearTimeout(timer);clearInterval(clock)}
+  boot();
+  return()=>{cancelled=true;clearTimeout(timer)}
  },[load]);
+ useEffect(()=>{if(!endsAt)return;const clock=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(clock)},[endsAt]);
  const choose=useCallback(async(id,value)=>{
   if(value===undefined||value===null)return;
   setAnswers(old=>({...old,[id]:value}));setSaving(old=>({...old,[id]:true}));setMessage('');
