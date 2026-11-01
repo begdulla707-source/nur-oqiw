@@ -226,8 +226,8 @@ async def registration_text(m:Message):
 async def active_tests(m:Message):
     tests=[t for t in all_tests() if int(t['active'])]
     if not tests:return await m.answer('Hozircha aktiv testlar mavjud emas.',reply_markup=user_menu())
-    rows=[[InlineKeyboardButton(text=str(t['name'])[:48],callback_data='active_test:'+str(t['test_id']))] for t in tests[:40]]
-    return await m.answer('AKTIV TESTLAR\\n\\nTestni tanlang:',reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    rows=[[InlineKeyboardButton(text=str(t['name'])[:48],callback_data='active_test:'+str(t['test_id']),style='success')] for t in tests[:40]]
+    return await m.answer('AKTIV TESTLAR\n\nTestni tanlang:',reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 @dp.callback_query(F.data.startswith('active_test:'))
 async def select_active_test(q:CallbackQuery):
