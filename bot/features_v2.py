@@ -13,7 +13,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.styles import ParagraphStyle
 from xml.sax.saxutils import escape
-from . import db
+from . import db, menu_settings as menu_config
 try:
  pdfmetrics.registerFont(TTFont('NurVera',os.path.join(os.path.dirname(reportlab.__file__),'fonts','Vera.ttf')))
  PDF_FONT='NurVera'
@@ -162,6 +162,51 @@ def register(core,dp,bot,webapp_url):
     if profile.get('username'):db.set_setting('telegram_username_'+str(tid),str(profile['username']).lstrip('@').lower())
    except Exception:pass
   return tid,db.get_user(tid) if tid else None
+ @core.app.get('/api/admin/menus')
+ async def admin_menus(req:Request):
+  tid,u=await auth(req)
+  if tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  return {'ok':True,'menus':{role:menu_config.items(db,role) for role in menu_config.DEFAULTS}}
+
+ @core.app.post('/api/admin/menus')
+ async def admin_menus_update(p:dict,req:Request):
+  tid,u=await auth(req)
+  if tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  role=str(p.get('role',''))
+  name=str(p.get('key',''))
+  if role not in menu_config.DEFAULTS:return {'ok':False,'error':'invalid_role'}
+  entries=menu_config.items(db,role)
+  current=next((x for x in entries if x['key']==name),None)
+  if not current:return {'ok':False,'error':'button_not_found'}
+  action=p.get('action','save')
+  stored=menu_config.load(db)
+  settings=stored.setdefault(role,{})
+  if action=='reset':
+   settings.pop(name,None)
+  elif action=='move':
+   distance=int(p.get('direction',0))
+   if distance not in (-1,1):return {'ok':False,'error':'invalid_direction'}
+   index=entries.index(current);target=index+distance
+   if target<0 or target>=len(entries):return {'ok':False,'error':'out_of_range'}
+   for i,item in enumerate(entries):settings.setdefault(item['key'],{})['order']=i
+   settings[name]['order']=target
+   settings[entries[target]['key']]['order']=index
+  elif action=='save':
+   label=str(p.get('label',current['label'])).strip()
+   color=str(p.get('style',current['style']))
+   emoji=str(p.get('emoji_id',current['emoji_id'])).strip()
+   visible=bool(p.get('visible',current['visible']))
+   if not 1<=len(label)<=55 or '\n' in label or label.startswith('/'):return {'ok':False,'error':'invalid_label'}
+   if color not in menu_config.COLORS:return {'ok':False,'error':'invalid_style'}
+   if emoji and (not emoji.isdecimal() or len(emoji)>30):return {'ok':False,'error':'invalid_emoji_id'}
+   if label in ('Admin paneliga o‘tish','Telegram ismim bilan davom etish'):return {'ok':False,'error':'reserved_label'}
+   if any(x['label']==label and (other!=role or x['key']!=name) for other in menu_config.DEFAULTS for x in menu_config.items(db,other)):
+    return {'ok':False,'error':'duplicate_label'}
+   if name in ('Menyu sozlamalari','Aktiv testlar'):visible=True
+   settings.setdefault(name,{}).update({'label':label,'style':color,'emoji_id':emoji,'visible':visible})
+  else:return {'ok':False,'error':'invalid_action'}
+  menu_config.save(db,stored)
+  return {'ok':True,'menus':{r:menu_config.items(db,r) for r in menu_config.DEFAULTS}}
  @core.app.get('/api/test/profile')
  async def profile_api(req:Request):
   tid,u=await auth(req)
