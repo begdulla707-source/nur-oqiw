@@ -21,7 +21,7 @@ _boot_t0=_time.monotonic()
 init();ensure_schema();seed()
 logger.info('Database schema ready in %.2fs',_time.monotonic()-_boot_t0)
 TOKEN=os.getenv('BOT_TOKEN','');ADMIN=int(os.getenv('ADMIN_CHAT_ID','8379731556'));TZ=ZoneInfo(os.getenv('TIMEZONE','Asia/Tashkent'));PORT=int(os.getenv('PORT','10000'))
-WEBAPP=os.getenv('WEBAPP_URL','https://nukuspro.uz');WEBHOOK_URL=os.getenv('WEBHOOK_URL','https://nur-oqiw.onrender.com/telegram/webhook');WEBHOOK_SECRET=os.getenv('WEBHOOK_SECRET','nur_oqiw_webhook')
+WEBAPP=os.getenv('WEBAPP_URL','https://nukuspro.uz');WEBHOOK_URL=os.getenv('WEBHOOK_URL','https://nur-oqiw.mcweb.uz/telegram/webhook');WEBHOOK_SECRET=os.getenv('WEBHOOK_SECRET','nur_oqiw_webhook')
 ORIGINS=[x.strip().rstrip('/') for x in os.getenv('WEBAPP_ORIGINS','https://nukuspro.uz,https://www.nukuspro.uz,https://nur-oqiw.uz,https://www.nur-oqiw.uz,https://nur-oqiw-santizz.vercel.app,https://nur-oqiw-three.vercel.app').split(',') if x.strip()]
 logging.basicConfig(level=logging.INFO);logger=logging.getLogger('nur-oqiw');RATE=defaultdict(deque);SUB_CACHE={}
 dp=Dispatcher();bot=Bot(TOKEN);app=FastAPI()
@@ -43,8 +43,17 @@ def sub_required():return str(get_setting('subscription_required',get_setting('s
 def sub_channels():
     raw=get_setting('subscription_channels','')
     try:
-        v=json.loads(raw);return [str(x).strip() for x in v if str(x).strip()] if isinstance(v,list) else [x.strip() for x in raw.splitlines() if x.strip()]
-    except:return [x.strip() for x in raw.splitlines() if x.strip()]
+        data=json.loads(raw)
+        if not isinstance(data,list):
+            data=[x.strip() for x in raw.splitlines() if x.strip()]
+    except Exception:
+        data=[x.strip() for x in raw.splitlines() if x.strip()]
+    channels=[]
+    for item in data:
+        channel=str(item.get('chat','') if isinstance(item,dict) else item).strip()
+        if channel:channels.append(channel)
+    return channels
+
 async def subscribed(tid):
     if not sub_required():return True
     now=asyncio.get_running_loop().time();cached=SUB_CACHE.get(int(tid))
@@ -67,7 +76,7 @@ def user_menu():
     return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Tariflar')],[KeyboardButton(text='Aktiv testlar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
 def phone_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telefon raqamingizni yuborish',request_contact=True)]],resize_keyboard=True,one_time_keyboard=True)
 def sub_kb():
-    rows=[[InlineKeyboardButton(text='KANALGA OBUNA BO‘LISH',url=(c if c.startswith('http') else 'https://t.me/'+c.lstrip('@')))] for c in sub_channels()];rows.append([InlineKeyboardButton(text='OBUNANI TEKSHIRISH',callback_data='check_sub')]);return InlineKeyboardMarkup(inline_keyboard=rows)
+    rows=[[InlineKeyboardButton(text='KANALGA OBUNA BO‘LISH',url=(c if c.startswith('http') else 'https://t.me/'+c.lstrip('@')))] for c in sub_channels() if c.startswith('http') or c.startswith('@')];rows.append([InlineKeyboardButton(text='OBUNANI TEKSHIRISH',callback_data='check_sub')]);return InlineKeyboardMarkup(inline_keyboard=rows)
 def admin_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test sozlamalari')],[KeyboardButton(text='Ishtirokchilar'),KeyboardButton(text='Statistika')],[KeyboardButton(text='Guruhlar holati'),KeyboardButton(text='Guruhga xabar yuborish')],[KeyboardButton(text='Bildirishnoma'),KeyboardButton(text='Ish vaqti jadvali')],[KeyboardButton(text='Majburiy obuna'),KeyboardButton(text='PDF natijalar')],[KeyboardButton(text='Tekshirish'),KeyboardButton(text='Mini App admini',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'))]],resize_keyboard=True)
 
 @app.get('/api/ping')
@@ -284,6 +293,17 @@ async def telegram_webhook(request:Request):
         asyncio.create_task(_process_telegram_update(update))
         return {'ok':True}
     except Exception as e:logger.exception('webhook: %s',e);return JSONResponse({'ok':False},status_code=400)
+
+@app.on_event('startup')
+async def register_mcweb_webhook():
+    if os.getenv('MCWEB_READY')=='1':
+        await bot.set_webhook(
+            WEBHOOK_URL,
+            secret_token=WEBHOOK_SECRET,
+            drop_pending_updates=False,
+            allowed_updates=dp.resolve_used_update_types()
+        )
+        logger.info('MCWeb Telegram webhook registered')
 
 from .features_v2 import register as register_features
 register_features(__import__(__name__,fromlist=['*']),dp,bot,WEBAPP)
