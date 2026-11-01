@@ -21,7 +21,7 @@ _boot_t0=_time.monotonic()
 init();ensure_schema();seed()
 logger.info('Database schema ready in %.2fs',_time.monotonic()-_boot_t0)
 TOKEN=os.getenv('BOT_TOKEN','');ADMIN=int(os.getenv('ADMIN_CHAT_ID','8379731556'));TZ=ZoneInfo(os.getenv('TIMEZONE','Asia/Tashkent'));PORT=int(os.getenv('PORT','10000'))
-WEBAPP=os.getenv('WEBAPP_URL','https://nukuspro.uz');WEBHOOK_URL=os.getenv('WEBHOOK_URL','https://nur-oqiw.mcweb.uz/telegram/webhook');WEBHOOK_SECRET=os.getenv('WEBHOOK_SECRET','nur_oqiw_webhook')
+WEBAPP=os.getenv('WEBAPP_URL','https://nukuspro.uz');WEBHOOK_URL=os.getenv('WEBHOOK_URL',('https://nur-oqiw.mcweb.uz/telegram/webhook' if os.getenv('MCWEB_READY')=='1' else 'https://nur-oqiw.onrender.com/telegram/webhook'));WEBHOOK_SECRET=os.getenv('WEBHOOK_SECRET','nur_oqiw_webhook')
 ORIGINS=[x.strip().rstrip('/') for x in os.getenv('WEBAPP_ORIGINS','https://nukuspro.uz,https://www.nukuspro.uz,https://nur-oqiw.uz,https://www.nur-oqiw.uz,https://nur-oqiw-santizz.vercel.app,https://nur-oqiw-three.vercel.app').split(',') if x.strip()]
 logging.basicConfig(level=logging.INFO);logger=logging.getLogger('nur-oqiw');RATE=defaultdict(deque);SUB_CACHE={}
 dp=Dispatcher();bot=Bot(TOKEN);app=FastAPI()
@@ -77,7 +77,7 @@ def user_menu():
 def phone_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telefon raqamingizni yuborish',request_contact=True)]],resize_keyboard=True,one_time_keyboard=True)
 def sub_kb():
     rows=[[InlineKeyboardButton(text='KANALGA OBUNA BO‘LISH',url=(c if c.startswith('http') else 'https://t.me/'+c.lstrip('@')))] for c in sub_channels() if c.startswith('http') or c.startswith('@')];rows.append([InlineKeyboardButton(text='OBUNANI TEKSHIRISH',callback_data='check_sub')]);return InlineKeyboardMarkup(inline_keyboard=rows)
-def admin_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test sozlamalari')],[KeyboardButton(text='Ishtirokchilar'),KeyboardButton(text='Statistika')],[KeyboardButton(text='Guruhlar holati'),KeyboardButton(text='Guruhga xabar yuborish')],[KeyboardButton(text='Bildirishnoma'),KeyboardButton(text='Ish vaqti jadvali')],[KeyboardButton(text='Majburiy obuna'),KeyboardButton(text='PDF natijalar')],[KeyboardButton(text='Tekshirish'),KeyboardButton(text='Mini App admini',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'))]],resize_keyboard=True)
+def admin_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test sozlamalari')],[KeyboardButton(text='Ishtirokchilar'),KeyboardButton(text='Statistika')],[KeyboardButton(text='Guruhlar holati'),KeyboardButton(text='Guruhga xabar yuborish')],[KeyboardButton(text='Bildirishnoma')],[KeyboardButton(text='Majburiy obuna'),KeyboardButton(text='PDF natijalar')],[KeyboardButton(text='Tekshirish'),KeyboardButton(text='Mini App admini',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'))]],resize_keyboard=True)
 
 @app.get('/api/ping')
 async def ping():return {'ok':True}
