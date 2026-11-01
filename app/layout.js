@@ -1,4 +1,5 @@
 import './style.css';
+import './navy.css';
 import Script from 'next/script';
 
 export const metadata={
