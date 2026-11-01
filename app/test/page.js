@@ -61,7 +61,7 @@ export default function Test(){
    const data=await response.json();
    if(!data.ok){
     setStatus(data.error==='already_submitted'?'done':'blocked');
-    setMessage(data.error==='test_stopped'?'Test administrator tomonidan to‘xtatildi.':data.error==='test_closed'?'Test hozir yopiq.':data.error==='test_not_found'?'Test kodi topilmadi.':data.error==='registration_required'?'Avval botda ro‘yxatdan o‘ting.':data.error==='already_submitted'?'Bu test avval yakunlangan.':'Test ma’lumotlarini olish imkoni bo‘lmadi.');
+    setMessage(data.error==='test_stopped'?'Test administrator tomonidan to‘xtatildi.':data.error==='test_closed'?'Test hozir yopiq.':data.error==='subscription_required'?'Davom etish uchun botdagi majburiy kanallarga obuna bo‘ling.':data.error==='test_not_found'?'Test kodi topilmadi.':data.error==='registration_required'?'Avval botda ro‘yxatdan o‘ting.':data.error==='already_submitted'?'Bu test avval yakunlangan.':'Test ma’lumotlarini olish imkoni bo‘lmadi.');
     setScore(data.score??null);setGrade(data.grade||'');setCorrectCount(data.correct_count??null);setTotalQuestions(data.total_questions??null);setName(data.full_name||'');setTestName(data.test_name||'');return;
    }
    if(!Array.isArray(data.questions))throw new Error('questions_missing');
