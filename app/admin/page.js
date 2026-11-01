@@ -1,6 +1,6 @@
 'use client';
 import {useCallback,useEffect,useState} from 'react';
-const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw.onrender.com';
+const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw-bot.mcweb.uz';
 export default function Admin(){
  const [initData,setInitData]=useState(''),[loading,setLoading]=useState(true),[data,setData]=useState(null),[error,setError]=useState(''),[note,setNote]=useState(''),[busy,setBusy]=useState('');
  const [schedule,setSchedule]=useState({date:'',start:'08:00',end:'22:00',timezone:'Asia/Tashkent'});
