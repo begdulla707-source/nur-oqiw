@@ -767,11 +767,18 @@ def register(core,dp,bot,webapp_url):
   with db.conn() as c:
    rows=c.execute("SELECT a.test_id,t.name,t.code,a.started_at,a.finished_at,a.score,a.grade,a.submitted FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id WHERE a.telegram_id=? ORDER BY COALESCE(a.finished_at,a.started_at) DESC",(m.from_user.id,)).fetchall()
   if not rows:return await m.answer("Hozircha test natijangiz yo‘q.",reply_markup=user_menu())
-  lines=["MENING NATIJALARIM",""]
+  lines=['MENING NATIJALARIM','']
   for i,row in enumerate(rows[:15],1):
-   state=(f"{float(row['score'] or 0):.2f} ball | {row['grade'] or '—'}" if row['submitted'] else "Yakunlanmagan")
-   lines.append(f"{i}. {row['name'] or 'Test'} ({row['code'] or 'kod yo‘q'}) — {state}")
-  await m.answer('\\n'.join(lines),reply_markup=user_menu())
+   name=str(row['name'] or 'Test')
+   code=str(row['code'] or 'kod yo‘q')
+   if row['submitted']:
+    status=f"Natija: {float(row['score'] or 0):.2f} ball"
+    mark=f"Baho: {row['grade'] or '—'}"
+   else:
+    status='Holat: Yakunlanmagan'
+    mark=None
+   lines.append(f"{i}. {name}\n   Kod: {code}\n   {status}"+(f"\n   {mark}" if mark else ''))
+  await m.answer('\n\n'.join(lines),reply_markup=user_menu())
  @r.message(F.text=='Pulli testlar')
  async def tariffs(m:Message):
   await m.answer('Pulli testlar bo‘yicha ma’lumot olish uchun administratorga murojaat qiling: @dd17x',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/dd17x')]]))
