@@ -1,4 +1,5 @@
 'use client';
+import TabIcon from '../ui-icons';
 import {useCallback,useEffect,useState} from 'react';
 const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw-bot.mcweb.uz';
 function MenuEditor({initData}){
@@ -147,6 +148,10 @@ export default function Admin(){
  {resultsTest===t.test_id&&<section className="admin-details"><div className="admin-section-title"><h3>To‘liq natijalar ({fullResults.length})</h3><button type="button" onClick={()=>setResultsTest("")}>Yopish</button></div>{fullResults.map((a,i)=><div className="admin-participant" key={a.telegram_id+"-"+i}><div><strong>{i+1}. {a.full_name}</strong><small>TG: {a.telegram_id} · {a.username?'@'+a.username+' · ':''}{a.submitted?"Yakunlangan":"Jarayonda"} · {a.finished_at||a.started_at||"—"}</small><small>Javoblar: {JSON.stringify(a.answers)}</small></div><b>{a.submitted?a.score.toFixed(2)+" ball":"—"}</b>{a.submitted&&<button type="button" onClick={()=>{setRankUsername(a.username||'');setRankPosition('1');setNote('Username maydoniga '+(a.username?'@'+a.username:'Telegram username kerak')+' kiritildi.');}}>{a.username?'@'+a.username:'Username yo‘q'}</button>}</div>)}</section>}
  <details className="admin-details"><summary>Ishtirokchilar va natijalar ({t.recent.length})</summary>{t.recent.length===0?<p className="admin-muted">Hali qatnashchilar yo‘q.</p>:<div className="admin-participants">{t.recent.map((a,i)=><div className="admin-participant" key={a.telegram_id+'-'+i}><div><strong>{a.full_name}</strong><small>Telegram ID: {a.telegram_id} · {a.submitted?'Yakunlangan':'Jarayonda'}</small></div><b>{a.submitted?a.score.toFixed(2)+' ball':'—'}</b></div>)}</div>}</details>
  {t.ranking.length>0&&<details className="admin-details"><summary>Top reyting ({t.ranking.length})</summary><div className="admin-participants">{t.ranking.map(a=><div className="admin-participant" key={a.rank}><div><strong>{a.rank}. {a.full_name}</strong><small>{a.grade||'Baho yo‘q'}</small></div><b>{a.score.toFixed(2)} ball</b></div>)}</div></details>}</section>)}</div></>}
- <nav className="bottom-glass-nav"><a className="nav-item nav-tests" href="/"><small>Test</small></a><a className="nav-item nav-ranking" href="/ranking"><small>Reyting</small></a><a className="nav-item active nav-admin" href="/admin"><small>Admin</small></a></nav>
+ <nav className="bottom-glass-nav" aria-label="Asosiy navigatsiya">
+ <a className="nav-item nav-tests" href="/"><TabIcon name="test"/><small>Test</small></a>
+ <a className="nav-item nav-ranking" href="/ranking"><TabIcon name="ranking"/><small>Reyting</small></a>
+ <a className="nav-item nav-admin active" href="/admin"><TabIcon name="admin"/><small>Admin</small></a>
+ </nav>
  </main>
 }
