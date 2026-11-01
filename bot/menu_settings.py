@@ -183,7 +183,7 @@ def install(dp,db,admin_id,webapp_url):
                 await q.message.edit_text(details(role,index),reply_markup=editor(role,index))
         await q.answer()
 
-    @dp.message(F.from_user.id==admin_id)
+    @dp.message(lambda m: m.from_user.id==admin_id and bool(db.get_user(admin_id)) and db.get_user(admin_id)['state']=='menu_edit')
     async def edited_value(m:Message):
         user=db.get_user(admin_id)
         if not user or user['state']!='menu_edit':return
