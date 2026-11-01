@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';
-const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw.onrender.com';
+const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw-bot.mcweb.uz';
 export default function ProfilePage(){
  const [data,setData]=useState(null),[error,setError]=useState(''),[publicProfile,setPublicProfile]=useState(false);
  useEffect(()=>{let cancelled=false,count=0;const boot=()=>{if(cancelled)return;const raw=window.Telegram?.WebApp?.initData||'';if(!raw){if(count++<20){setTimeout(boot,150);return;}setError('Profilni ko‘rish uchun Telegram bot ichidan oching.');return;}const target=new URLSearchParams(window.location.search).get('telegram_id')||'';setPublicProfile(Boolean(target));const endpoint=target?API+'/api/test/public-profile?telegram_id='+encodeURIComponent(target):API+'/api/test/profile';fetch(endpoint,{cache:'no-store',headers:{Authorization:'tma '+raw}}).then(r=>r.json()).then(j=>{if(cancelled)return;if(j.ok)setData(j);else setError('Profil ma’lumotlari olinmadi.');}).catch(()=>{if(!cancelled)setError('Internet aloqasini tekshiring.');});};boot();return()=>{cancelled=true};},[]);
