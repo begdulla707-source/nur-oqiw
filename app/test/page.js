@@ -2,7 +2,7 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {NUR_LOGO_DATA} from '../logo-data';
 
-const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw.onrender.com';
+const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw-bot.mcweb.uz';
 function Logo(){return <img src={NUR_LOGO_DATA} alt="Nur oqıw orayı" className="brand-logo-image"/>}
 
 function Written({questionId,answer,onSave}){
