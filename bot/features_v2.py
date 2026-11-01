@@ -35,7 +35,17 @@ def tests_kb():
 def test_kb(t):
  test=db.get_test(t);active=bool(test and int(test['active']))
  toggle=InlineKeyboardButton(text='TESTNI TO‘XTATISH' if active else 'QAYTA OCHISH',callback_data=f't_close:{t}' if active else f't_open:{t}',style='danger' if active else 'success')
- return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Savol qo‘shish',callback_data=f't_add:{t}')],[InlineKeyboardButton(text='Oddiy variant',callback_data=f't_choice:{t}'),InlineKeyboardButton(text='Yozma variant',callback_data=f't_written:{t}')],[InlineKeyboardButton(text='Savollar',callback_data=f't_q:{t}'),InlineKeyboardButton(text='Natijalar',callback_data=f't_results:{t}',style='primary')],[InlineKeyboardButton(text='PDF',callback_data=f't_pdf:{t}',style='primary'),InlineKeyboardButton(text='Mini App link',callback_data=f't_link:{t}',style='primary')],[InlineKeyboardButton(text='Guruhga yuborish',callback_data=f't_group:{t}')],[toggle],[InlineKeyboardButton(text='TEKSHIRISH',callback_data=f't_check:{t}')],[InlineKeyboardButton(text='O‘CHIRISH',callback_data=f't_delete:{t}',style='danger')],[InlineKeyboardButton(text='Orqaga',callback_data='t_list')]])
+ return InlineKeyboardMarkup(inline_keyboard=[
+  [InlineKeyboardButton(text='Savol qo‘shish',callback_data=f't_add:{t}')],
+  [InlineKeyboardButton(text='Oddiy variant',callback_data=f't_choice:{t}'),InlineKeyboardButton(text='Yozma variant',callback_data=f't_written:{t}')],
+  [InlineKeyboardButton(text='Savollar',callback_data=f't_q:{t}'),InlineKeyboardButton(text='Natijalar',callback_data=f't_results:{t}',style='primary')],
+  [InlineKeyboardButton(text='Mini App link',callback_data=f't_link:{t}',style='primary')],
+  [InlineKeyboardButton(text='Guruhga yuborish',callback_data=f't_group:{t}')],
+  [toggle],
+  [InlineKeyboardButton(text='O‘CHIRISH',callback_data=f't_delete:{t}',style='danger')],
+  [InlineKeyboardButton(text='Orqaga',callback_data='t_list')]
+ ])
+
 def type_kb(t):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ODDIY VARIANT',callback_data=f't_choice:{t}')],[InlineKeyboardButton(text='YOZMA VARIANT',callback_data=f't_written:{t}')]])
 def abcd(t,n):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_ans:{t}:{n}:{x}') for x in 'ABCD']])
 def new_answer_kb():return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_new_ans:{x}') for x in 'ABCD']])
@@ -717,9 +727,9 @@ def register(core,dp,bot,webapp_url):
    state=(f"{float(row['score'] or 0):.2f} ball | {row['grade'] or '—'}" if row['submitted'] else "Yakunlanmagan")
    lines.append(f"{i}. {row['name'] or 'Test'} ({row['code'] or 'kod yo‘q'}) — {state}")
   await m.answer('\\n'.join(lines),reply_markup=user_menu())
- @r.message(F.text=='Tariflar')
+ @r.message(F.text=='Pulli testlar')
  async def tariffs(m:Message):
-  await m.answer('Tariflar bo‘yicha ma’lumot olish uchun administratorga murojaat qiling: @up17v',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/up17v')]]))
+  await m.answer('Pulli testlar bo‘yicha ma’lumot olish uchun administratorga murojaat qiling: @up17v',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/up17v')]]))
  @r.message(F.text=='Yordam')
  async def help_user(m:Message):
   await m.answer('Savol yoki muammo bo‘lsa, administratorga yozing: @up17v',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/up17v')]]))
@@ -742,7 +752,7 @@ def register(core,dp,bot,webapp_url):
  @r.message(F.from_user.id==ADMIN)
  async def admin_text(m:Message):
   u=db.ensure_user(ADMIN);s=u['state'] or 'admin';txt=(m.text or '').strip()
-  if txt in {'Test sozlamalari','Ishtirokchilar','Statistika','Guruhlar holati','Guruhga xabar yuborish','Bildirishnoma','Ish vaqti jadvali','Majburiy obuna','PDF natijalar','Tekshirish','Tariflar'}:
+  if txt in {'Test sozlamalari','Ishtirokchilar','Statistika','Guruhlar holati','Guruhga xabar yuborish','Bildirishnoma','Ish vaqti jadvali','Majburiy obuna','Pulli testlar'}:
    ast('admin');u=db.ensure_user(ADMIN);s='admin'
   if s.startswith('check_written:'):
    try:
@@ -754,8 +764,20 @@ def register(core,dp,bot,webapp_url):
     return await check_prompt(tid,fake_id,index+1)
    except Exception:return await m.answer('Tekshirish javobi saqlanmadi. Tekshirishni qaytadan boshlang.')
   if txt in {'/statistika','Statistika'}:
-   users=db.all_registered_users();tests=db.all_tests();attempts=[a for t in tests for a in db.all_attempts_for_test(t['test_id'])];groups=json.loads(db.get_setting('known_groups','[]') or '[]')
-   return await m.answer(f"BOT STATISTIKASI\\n\\nFoydalanuvchilar: {len(users)}\\nTestlar: {len(tests)}\\nUrinishlar: {len(attempts)}\\nYakunlangan testlar: {sum(1 for a in attempts if a['submitted'])}\\nGuruhlar: {len(groups)}\\nVaqt zonasi: Asia/Tashkent",reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Test sozlamalari'),KeyboardButton(text='Ishtirokchilar')],[KeyboardButton(text='Statistika'),KeyboardButton(text='Guruhlar holati')],[KeyboardButton(text='Guruhga xabar yuborish'),KeyboardButton(text='Bildirishnoma')],[KeyboardButton(text='Majburiy obuna')],[KeyboardButton(text='PDF natijalar'),KeyboardButton(text='Tekshirish')],[KeyboardButton(text='Tariflar')]],resize_keyboard=True))
+   users=db.all_registered_users()
+   tests=db.all_tests()
+   attempts=[attempt for t in tests for attempt in db.all_attempts_for_test(t['test_id'])]
+   groups=json.loads(db.get_setting('known_groups','[]') or '[]')
+   lines=[
+    'BOT STATISTIKASI','',
+    f"Foydalanuvchilar: {len(users)}",
+    f"Testlar: {len(tests)}",
+    f"Urinishlar: {len(attempts)}",
+    f"Yakunlangan testlar: {sum(1 for attempt in attempts if attempt['submitted'])}",
+    f"Guruhlar: {len(groups)}",
+    'Vaqt zonasi: Asia/Tashkent'
+   ]
+   return await m.answer('\n'.join(lines),reply_markup=CORE.admin_kb())
   if txt=='Guruhlar holati':
    groups=json.loads(db.get_setting('known_groups','[]') or '[]')
    if not groups:return await m.answer("Guruhlar ro‘yxati bo‘sh. Botni guruhga qo‘shing va /group_status buyrug‘ini yuboring.")
@@ -779,9 +801,9 @@ def register(core,dp,bot,webapp_url):
    if not channels:return await m.answer("Kanal username yoki ID kiriting, yoki OFF yozing.")
    db.set_setting('subscription_channels',json.dumps(channels,ensure_ascii=False));db.set_setting('subscription_required','1');ast('admin')
    return await m.answer(f"Majburiy obuna saqlandi. Kanallar: {len(channels)}. Bot kanalga admin sifatida qo‘shilganini tekshiring.")
-  if txt=='Tariflar':
+  if txt=='Pulli testlar':
    ast('premium_user_id')
-   return await m.answer("Tarifini o‘zgartirmoqchi bo‘lgan foydalanuvchining Telegram ID raqamini kiriting.")
+   return await m.answer("Pulli testlarga kirish huquqini boshqarish uchun foydalanuvchining Telegram ID raqamini kiriting.")
   if s=='premium_user_id':
    try:target=int(txt)
    except:return await m.answer("Telegram ID faqat raqam bo‘lishi kerak.")
@@ -822,7 +844,7 @@ def register(core,dp,bot,webapp_url):
    if not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d',txt):return await m.answer("Format noto‘g‘ri. Masalan: 07:30-23:00")
    db.set_setting('awake_window',txt);ast('admin')
    return await m.answer(f"Jadval saqlandi: {txt} (Asia/Tashkent). Uyqudagi Render instansiyasini tashqaridan uyg‘otmaydi.")
-  if txt in {'Test sozlamalari','Ishtirokchilar','PDF natijalar','Tekshirish'}:return await m.answer('TESTLAR — saqlangan testlar',reply_markup=tests_kb())
+  if txt in {'Test sozlamalari','Ishtirokchilar'}:return await m.answer('TESTLAR — saqlangan testlar',reply_markup=tests_kb())
   if s=='new_code':
    if not txt or ' ' in txt:return await m.answer('Kodni bitta so‘z qilib kiriting. Masalan: MAT2026')
    if db.test_code_exists(txt):return await m.answer('Bu kod avval ishlatilgan. Boshqa kod tanlang.')
