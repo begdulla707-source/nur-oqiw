@@ -832,13 +832,14 @@ def register(core,dp,bot,webapp_url):
    d=draft();d['count']=n;d['items']=[];save_draft(d);ast('new_kind')
    return await m.answer(f'1/{n}-savol turini tanlang:',reply_markup=new_question_type_kb())
   if s=='new_multi_count':
-    try:n=int(txt);assert 2<=n<=20
-    except:return await m.answer('2 dan 20 gacha kichik savol sonini kiriting.')
-    d=draft();d['multi_total']=n;d['multi_items']=[];save_draft(d);ast('new_multi_kind');return await m.answer('1/'+str(n)+' kichik savol turini tanlang:',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='A/B/C/D',callback_data='t_multi_kind:choice')],[InlineKeyboardButton(text='Yozma',callback_data='t_multi_kind:written')]]))
-   if s=='new_multi_written':
-    if not txt.strip():return await m.answer('To‘g‘ri javobni kiriting:')
-    return await complete_multi_part(m,'written',txt)
-   if s=='new_written_answer':
+   try:n=int(txt);assert 2<=n<=20
+   except:return await m.answer('2 dan 20 gacha kichik savol sonini kiriting.')
+   d=draft();d['multi_total']=n;d['multi_items']=[];save_draft(d);ast('new_multi_kind')
+   return await m.answer('1/'+str(n)+' kichik savol turini tanlang:',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='A/B/C/D',callback_data='t_multi_kind:choice')],[InlineKeyboardButton(text='Yozma',callback_data='t_multi_kind:written')]]))
+  if s=='new_multi_written':
+   if not txt.strip():return await m.answer('To‘g‘ri javobni kiriting:')
+   return await complete_multi_part(m,'written',txt)
+  if s=='new_written_answer':
    if not txt:return await m.answer('Yozma javob bo‘sh bo‘lmasin. To‘g‘ri javobni kiriting:')
    d=draft();d.setdefault('items',[]).append({'kind':'written','answer':txt});save_draft(d);done=len(d['items']);total=int(d['count'])
    if done<total:
