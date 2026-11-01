@@ -294,16 +294,31 @@ async def telegram_webhook(request:Request):
         return {'ok':True}
     except Exception as e:logger.exception('webhook: %s',e);return JSONResponse({'ok':False},status_code=400)
 
+async def register_mcweb_webhook_with_retry():
+    for attempt in range(12):
+        try:
+            await bot.set_webhook(
+                WEBHOOK_URL,
+                secret_token=WEBHOOK_SECRET,
+                drop_pending_updates=False,
+                allowed_updates=dp.resolve_used_update_types(),
+                request_timeout=12
+            )
+            logger.info('Telegram webhook registered on MCWeb: %s', WEBHOOK_URL)
+            return
+        except Exception as exc:
+            logger.warning('Webhook registration attempt %d failed: %s',attempt+1,str(exc)[:180])
+            await asyncio.sleep(min(15+attempt*5,60))
+    logger.error('Webhook registration did not succeed; server remains available for retry')
+
 @app.on_event('startup')
 async def register_mcweb_webhook():
     if os.getenv('MCWEB_READY')=='1':
-        await bot.set_webhook(
-            WEBHOOK_URL,
-            secret_token=WEBHOOK_SECRET,
-            drop_pending_updates=False,
-            allowed_updates=dp.resolve_used_update_types()
-        )
-        logger.info('MCWeb Telegram webhook registered')
+        asyncio.create_task(register_mcweb_webhook_with_retry())
+
+@app.on_event('shutdown')
+async def close_telegram_client():
+    await bot.session.close()
 
 from .features_v2 import register as register_features
 register_features(__import__(__name__,fromlist=['*']),dp,bot,WEBAPP)
