@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';
-const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw.onrender.com';
+const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw-bot.mcweb.uz';
 function Avatar({src,name}){return src?<img src={src} alt={name}/>:<img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='32' fill='%23e7eaf0'/%3E%3Ccircle cx='32' cy='24' r='11' fill='%239ba4b1'/%3E%3Cpath d='M10 60c2-14 10-21 22-21s20 7 22 21' fill='%239ba4b1'/%3E%3C/svg%3E" alt={name}/>}
 export default function RankingPage(){
  const [data,setData]=useState(null),[error,setError]=useState('');
