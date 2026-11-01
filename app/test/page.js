@@ -26,6 +26,7 @@ const Written=memo(function Written({questionId,answer,onSave}){
  const [value,setValue]=useState(String(answer??''));
  const [tab,setTab]=useState('number');
  const [nativeKeyboard,setNativeKeyboard]=useState(false);
+ const nativeKeyboardRef=useRef(false);
  const [keyboardOpen,setKeyboardOpen]=useState(false);
  const rootRef=useRef(null);
  const [,setHistoryVersion]=useState(0);
@@ -101,9 +102,9 @@ const Written=memo(function Written({questionId,answer,onSave}){
    <input ref={inputRef} value={value} inputMode={nativeKeyboard?'text':'none'} spellCheck={false} autoComplete="off"
      onChange={e=>{selection.current={start:e.target.selectionStart??e.target.value.length,end:e.target.selectionEnd??e.target.value.length};applyValue(e.target.value)}}
      onSelect={e=>{selection.current={start:e.currentTarget.selectionStart??valueRef.current.length,end:e.currentTarget.selectionEnd??valueRef.current.length}}}
-     onFocus={()=>setKeyboardOpen(true)} onBlur={flush} className="answer-input" placeholder="Javobıńızdı kiritiń..." aria-label="Yozma javob"/>
+     onFocus={()=>{if(!nativeKeyboardRef.current)setKeyboardOpen(true)}} onBlur={flush} className="answer-input" placeholder="Javobıńızdı kiritiń..." aria-label="Yozma javob"/>
    <button type="button" className="keyboard-switch" aria-label={nativeKeyboard?'Maxsus matematik klaviatura':'Telefon klaviaturasini yoqish'}
-    onClick={()=>{setKeyboardOpen(true);setNativeKeyboard(v=>!v);inputRef.current?.focus()}}><MathIcon name="keyboard"/></button>
+    onClick={()=>{const native=!nativeKeyboardRef.current;nativeKeyboardRef.current=native;setNativeKeyboard(native);setKeyboardOpen(!native);if(native)requestAnimationFrame(()=>inputRef.current?.focus())}}><MathIcon name="keyboard"/></button>
    <button type="button" className="clear-answer" aria-label="Javobni tozalash" onClick={()=>{selection.current={start:0,end:0};applyValue('')}} disabled={!value}><MathIcon name="delete"/></button>
   </div>
   {keyboardOpen&&<div className="written-keyboard" aria-label="Matematik klaviatura">
