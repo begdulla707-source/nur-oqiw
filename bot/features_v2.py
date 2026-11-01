@@ -843,16 +843,39 @@ def register(core,dp,bot,webapp_url):
    return await m.answer('\\n'.join(lines)[:3900])
   if txt=='Majburiy obuna':
    ast('subscription_channels')
-   current=json.loads(db.get_setting('subscription_channels','[]') or '[]') if db.get_setting('subscription_channels','') else []
-   return await m.answer("Majburiy obuna kanallarini @username yoki -100... ID ko‘rinishida, har birini yangi qatordan yuboring. O‘chirish uchun OFF yozing.\\n\\nHozirgi kanallar: "+(', '.join(str(x) for x in current) if current else 'o‘chirilgan'))
+   channels=CORE.sub_channels()
+   enabled=CORE.sub_required()
+   lines=['MAJBURIY OBUNA','', 'Holat: '+('YOQILGAN' if enabled else 'O‘CHIRILGAN'), 'Kanallar:']
+   lines+=channels if channels else ['Hali kanal qo‘shilmagan']
+   lines+=['','Har bir kanalni yangi qatorda yuboring: @username yoki -100... ID','ON — mavjud kanallar bilan yoqish','OFF — vaqtincha o‘chirish (kanallar saqlanadi)','CLEAR — kanallarni o‘chirish']
+   return await m.answer('\n'.join(lines))
   if s=='subscription_channels':
-   if txt.strip().upper()=='OFF':
-    db.set_setting('subscription_required','0');db.set_setting('subscription_channels','[]');ast('admin')
-    return await m.answer("Majburiy obuna o‘chirildi.")
-   channels=[x.strip() for x in txt.replace(',','\\n').splitlines() if x.strip()]
-   if not channels:return await m.answer("Kanal username yoki ID kiriting, yoki OFF yozing.")
-   db.set_setting('subscription_channels',json.dumps(channels,ensure_ascii=False));db.set_setting('subscription_required','1');ast('admin')
-   return await m.answer(f"Majburiy obuna saqlandi. Kanallar: {len(channels)}. Bot kanalga admin sifatida qo‘shilganini tekshiring.")
+   command=txt.strip().upper()
+   if command=='OFF':
+    db.set_setting('subscription_required','0');CORE.SUB_CACHE.clear();ast('admin')
+    return await m.answer('Majburiy obuna vaqtincha o‘chirildi. Kanal ro‘yxati saqlanib qoldi.')
+   if command=='CLEAR':
+    db.set_setting('subscription_channels','[]');db.set_setting('subscription_required','0');CORE.SUB_CACHE.clear();ast('admin')
+    return await m.answer('Kanallar tozalandi. Majburiy obuna o‘chirildi.')
+   if command=='ON':
+    channels=CORE.sub_channels()
+    if not channels:return await m.answer('Avval kamida bitta kanal kiriting.')
+   else:
+    import re
+    channels=list(dict.fromkeys(part.strip() for part in re.split(r'[,\n]+',txt) if part.strip()))
+    invalid=[ch for ch in channels if not re.fullmatch(r'@[A-Za-z0-9_]{5,32}|-100\d{8,16}',ch)]
+    if invalid:return await m.answer('Noto‘g‘ri kanal: '+', '.join(invalid[:5])+'\nMasalan: @kanalnomi yoki -1001234567890')
+   failed=[]
+   for ch in channels:
+    try:
+     info=await BOT.get_chat(ch)
+     member=await BOT.get_chat_member(info.id,BOT.id)
+     if member.status not in ('administrator','creator'):failed.append(ch+' — bot administrator emas')
+    except Exception:failed.append(ch+' — kanal topilmadi yoki bot huquqi yo‘q')
+   if failed:return await m.answer('Obuna yoqilmadi. Botni kanallarga admin qilib qo‘shing:\n'+'\n'.join(failed[:10]))
+   db.set_setting('subscription_channels',json.dumps(channels,ensure_ascii=False))
+   db.set_setting('subscription_required','1');CORE.SUB_CACHE.clear();ast('admin')
+   return await m.answer('Majburiy obuna YOQILDI. Kanallar:\n'+'\n'.join(channels))
   if txt=='Pulli testlar':
    ast('premium_user_id')
    return await m.answer("Pulli testlarga kirish huquqini boshqarish uchun foydalanuvchining Telegram ID raqamini kiriting.")
