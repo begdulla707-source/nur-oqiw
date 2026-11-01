@@ -336,8 +336,11 @@ async def enter_admin_panel(m:Message):
 async def main():
     cleanup=asyncio.create_task(cleanup_loop());server=uvicorn.Server(uvicorn.Config(app,host='0.0.0.0',port=PORT,log_level='info'));task=asyncio.create_task(server.serve())
     try:
-        await bot.set_webhook(WEBHOOK_URL,secret_token=WEBHOOK_SECRET,drop_pending_updates=False,allowed_updates=dp.resolve_used_update_types())
-        logger.info('Telegram webhook registered; background database maintenance scheduled')
+        if os.getenv('MCWEB_READY')=='1':
+            await bot.set_webhook(WEBHOOK_URL,secret_token=WEBHOOK_SECRET,drop_pending_updates=False,allowed_updates=dp.resolve_used_update_types())
+            logger.info('Telegram webhook registered; background database maintenance scheduled')
+        else:
+            logger.info('Legacy runtime: webhook registration disabled to preserve MCWeb ownership')
         asyncio.create_task(asyncio.to_thread(startup_maintenance))
         await task
     finally:cleanup.cancel();task.cancel();await asyncio.gather(cleanup,task,return_exceptions=True);await bot.session.close()
