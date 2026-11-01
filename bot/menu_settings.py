@@ -47,7 +47,7 @@ def items(db, role):
         if style not in COLORS: style = default_style
         label = str(cfg.get('label',name)).strip()[:55] or name
         icon_id = str(cfg.get('emoji_id','')).strip()
-        visible = bool(cfg.get('visible',True)) or name == 'Menyu sozlamalari'
+        visible = bool(cfg.get('visible',True)) or name in ('Menyu sozlamalari','Aktiv testlar')
         order = int(cfg.get('order',len(result))) if str(cfg.get('order',len(result))).lstrip('-').isdigit() else len(result)
         result.append({'key':name,'label':label,'style':style,'emoji_id':icon_id,'visible':visible,'order':order})
     return sorted(result,key=lambda item:item['order'])
@@ -113,13 +113,14 @@ def install(dp,db,admin_id,webapp_url):
             [InlineKeyboardButton(text='Rangsiz',callback_data=f'menub:color:default:{role}:{index}')],
             [InlineKeyboardButton(text='Yuqoriga',callback_data=f'menub:move:up:{role}:{index}'),
              InlineKeyboardButton(text='Pastga',callback_data=f'menub:move:down:{role}:{index}')],
+            [InlineKeyboardButton(text='Ko‘rsatish / yashirish',callback_data=f'menub:toggle:{role}:{index}')],
             [InlineKeyboardButton(text='Tiklash',callback_data=f'menub:reset:{role}:{index}',style='danger')],
             [InlineKeyboardButton(text='Orqaga',callback_data=f'menub:list:{role}')],
         ])
 
     def details(role,index):
         x=items(db,role)[index]
-        return f"MENYU TUGMASI\n\nBo‘lim: {'Admin' if role=='admin' else 'Foydalanuvchi'}\nAsl vazifa: {x['key']}\nKo‘rinadigan nom: {x['label']}\nRang: {COLORS_UZ[x['style']]}\nPremium emoji: {'Ulangan' if x['emoji_id'] else 'Yo‘q'}\n\nNomini o‘zgartirish tugmaning asl vazifasini o‘zgartirmaydi."
+        return f"MENYU TUGMASI\n\nBo‘lim: {'Admin' if role=='admin' else 'Foydalanuvchi'}\nAsl vazifa: {x['key']}\nKo‘rinadigan nom: {x['label']}\nRang: {COLORS_UZ[x['style']]}\nPremium emoji: {'Ulangan' if x['emoji_id'] else 'Yo‘q'}\nHolat: {'Ko‘rinadi' if x['visible'] else 'Yashirilgan'}\n\nNomini o‘zgartirish tugmaning asl vazifasini o‘zgartirmaydi."
 
     def mutate(role,index,fields=None,*,reset=False):
         name=items(db,role)[index]['key']
@@ -163,6 +164,12 @@ def install(dp,db,admin_id,webapp_url):
                 style=args[2]
                 if style not in COLORS:return await q.answer('Rang noto‘g‘ri',show_alert=True)
                 mutate(role,index,{'style':style})
+                await q.message.edit_text(details(role,index),reply_markup=editor(role,index))
+            elif action=='toggle':
+                x=items(db,role)[index]
+                if x['key'] in ('Menyu sozlamalari','Aktiv testlar'):
+                    return await q.answer('Bu tugma doim mavjud bo‘lishi kerak.',show_alert=True)
+                mutate(role,index,{'visible':not x['visible']})
                 await q.message.edit_text(details(role,index),reply_markup=editor(role,index))
             elif action=='reset':
                 mutate(role,index,reset=True)
