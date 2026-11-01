@@ -800,11 +800,13 @@ def register(core,dp,bot,webapp_url):
    return await BOT.copy_message(chat_id=m.chat.id,from_chat_id=m.chat.id,message_id=m.message_id,reply_markup=keyboard)
   if txt=='Ishtirokchilar':
    users=db.all_registered_users()
-   if not users:return await m.answer("Hozircha foydalanuvchilar yo‘q.")
-   lines=["FOYDALANUVCHILAR RO‘YXATI",""]
+   if not users:return await m.answer('Hozircha foydalanuvchilar yo‘q.')
+   lines=['FOYDALANUVCHILAR RO‘YXATI','']
    for i,user in enumerate(users[:35],1):
-    lines.append(f"{i}. {user['full_name'] or 'Ismsiz'}\n   ID: {user['telegram_id']}\n   Tarif: {user['tier'] or 'default'}\n")
-   return await m.answer('\\n'.join(lines)[:3900])
+    name=str(user['full_name'] or '').strip() or 'Ismsiz'
+    tier=str(user['tier'] or 'default')
+    lines.append(f"{i}. {name}\n   ID: {user['telegram_id']} | Tarif: {tier}")
+   return await m.answer('\n\n'.join(lines)[:3900])
   if txt=='Guruhga xabar yuborish':
    ast('broadcast_message')
    return await m.answer("Guruhlarga yuboriladigan xabar matnini yuboring. Keyin yuborishdan oldin tasdiqlash so‘raladi.")
