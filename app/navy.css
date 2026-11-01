@@ -117,3 +117,16 @@ main.admin-shell{background:#070b14!important;color:#f5f7fd!important}
 .test-loading .loading-mark{font-size:0!important;color:transparent!important;-webkit-text-fill-color:transparent!important;width:30px;height:30px;display:block;border:3px solid #31415b;border-top-color:#278cff;border-radius:50%;animation:nur-spin .85s linear infinite}
 @keyframes nur-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.test-loading .loading-mark{animation:none;border-top-color:#278cff}}
+
+/* Reference-style contiguous answer sheet rather than isolated white cards. */
+.test-page .question-stack{gap:0!important;background:#151e30!important;border:1px solid #2a364a!important;border-radius:24px!important;overflow:hidden!important;box-shadow:0 8px 26px rgba(0,0,0,.12)!important}
+.test-page .question-stack .question-card{background:transparent!important;border:0!important;border-bottom:1px solid #2a364a!important;border-radius:0!important;box-shadow:none!important;padding:14px 16px!important;margin:0!important}
+.test-page .question-stack .question-card:last-child{border-bottom:0!important}
+.test-page .question-stack .question-card:has(.option-list){min-height:105px!important}
+.test-page .question-stack .question-heading{margin-bottom:9px!important}
+.test-page .question-stack .question-text{font-size:14px!important;line-height:1.45!important}
+.test-page .question-stack .option-choice:focus-visible{outline:0!important;box-shadow:none!important}
+.test-page .question-stack .option-choice:focus-visible .option-letter{border-color:#5195ee!important}
+.admin-shell .admin-brand{background:linear-gradient(145deg,#0d294c,#0a1b32)!important;color:#258eff!important;-webkit-text-fill-color:#258eff!important;border:1px solid #203b62!important;box-shadow:none!important;font-size:21px!important;letter-spacing:-1px!important}
+.loading-dots{width:26px;height:26px;margin:18px auto;border:3px solid #31415b;border-top-color:#258eff;border-radius:50%;animation:nur-spin .85s linear infinite}
+@media(prefers-reduced-motion:reduce){.loading-dots{animation:none}}
