@@ -794,8 +794,10 @@ def register(core,dp,bot,webapp_url):
    return await m.answer("Barcha bot foydalanuvchilariga yuboriladigan xabarni kiriting. Yuborishdan oldin tasdiqlash chiqadi.")
   if s=='notification_message':
    if not txt:return await m.answer("Xabar matni bo‘sh bo‘lmasin.")
-   db.set_setting('pending_notification',json.dumps({'text':txt},ensure_ascii=False));ast('notification_confirm')
-   return await m.answer(f"XABAR NAMUNASI\\n\\n{txt[:2500]}\\n\\nBarcha ro‘yxatdan o‘tgan foydalanuvchilarga yuborilsinmi?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='YUBORISH',callback_data='notification_send'),InlineKeyboardButton(text='BEKOR QILISH',callback_data='notification_cancel')]]))
+   db.set_setting('pending_notification',json.dumps({'text':txt,'source_chat_id':m.chat.id,'source_message_id':m.message_id},ensure_ascii=False));ast('notification_confirm')
+   keyboard=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='YUBORISH',callback_data='notification_send'),InlineKeyboardButton(text='BEKOR QILISH',callback_data='notification_cancel')]])
+   await m.answer('XABAR NAMUNASI — premium emoji va format saqlanadi. Yuborishni quyidagi xabardan tasdiqlang:')
+   return await BOT.copy_message(chat_id=m.chat.id,from_chat_id=m.chat.id,message_id=m.message_id,reply_markup=keyboard)
   if txt=='Ishtirokchilar':
    users=db.all_registered_users()
    if not users:return await m.answer("Hozircha foydalanuvchilar yo‘q.")
@@ -1044,16 +1046,21 @@ def register(core,dp,bot,webapp_url):
  @r.callback_query(F.data=='notification_send')
  async def notification_send(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
-  pending=json.loads(db.get_setting('pending_notification','{}') or '{}');message=str(pending.get('text','')).strip()
-  if not message:return await q.answer('Yuboriladigan xabar topilmadi.',show_alert=True)
+  pending=json.loads(db.get_setting('pending_notification','{}') or '{}')
+  try:
+   source_chat_id=int(pending['source_chat_id']);source_message_id=int(pending['source_message_id'])
+  except (KeyError,TypeError,ValueError):
+   return await q.answer('Eski xabarda premium emoji saqlanmagan. Bildirishnomani qayta yuboring.',show_alert=True)
   users=db.all_registered_users();sent=0;failed=0
   for user in users:
    uid=int(user['telegram_id'])
    if uid<=0 or uid==ADMIN:continue
    try:
-    await BOT.send_message(uid,message);sent+=1
-   except Exception:failed+=1
-   if sent%25==0:await asyncio.sleep(.1)
+    await BOT.copy_message(chat_id=uid,from_chat_id=source_chat_id,message_id=source_message_id)
+    sent+=1
+   except Exception:
+    failed+=1
+   if (sent+failed)%25==0:await asyncio.sleep(.2)
   db.set_setting('pending_notification','{}');db.update_user(ADMIN,state='admin')
   await q.message.answer(f"BILDIRISHNOMA YAKUNLANDI\\nYuborildi: {sent}\\nYuborilmadi: {failed}")
   await q.answer('Yakunlandi')
