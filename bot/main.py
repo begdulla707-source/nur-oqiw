@@ -72,19 +72,19 @@ async def subscribed(tid):
     checks=await asyncio.gather(*(check_channel(ch) for ch in channels),return_exceptions=True)
     result=all(x is True for x in checks);SUB_CACHE[int(tid)]=(now,result);return result
 
+from . import menu_settings as menus
+
 def user_menu():
-    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Pulli testlar')],[KeyboardButton(text='Aktiv testlar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Yordam')]],resize_keyboard=True,is_persistent=True)
+    return menus.keyboard(__import__('bot.db',fromlist=['get_setting']),'user',WEBAPP)
+
+def admin_user_menu():
+    return menus.keyboard(__import__('bot.db',fromlist=['get_setting']),'user',WEBAPP,admin_entry=True)
+
 def phone_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telefon raqamingizni yuborish',request_contact=True)]],resize_keyboard=True,one_time_keyboard=True)
 def sub_kb():
     rows=[[InlineKeyboardButton(text='KANALGA OBUNA BO‘LISH',url=(c if c.startswith('http') else 'https://t.me/'+c.lstrip('@')))] for c in sub_channels() if c.startswith('http') or c.startswith('@')];rows.append([InlineKeyboardButton(text='OBUNANI TEKSHIRISH',callback_data='check_sub',style='success')]);return InlineKeyboardMarkup(inline_keyboard=rows)
 def admin_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text='Test sozlamalari'),KeyboardButton(text='Pulli testlar')],
-        [KeyboardButton(text='Ishtirokchilar'),KeyboardButton(text='Statistika')],
-        [KeyboardButton(text='Guruhlar holati'),KeyboardButton(text='Guruhga xabar yuborish')],
-        [KeyboardButton(text='Bildirishnoma'),KeyboardButton(text='Majburiy obuna')],
-        [KeyboardButton(text='Mini App admini',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'))],
-    ],resize_keyboard=True)
+    return menus.keyboard(__import__('bot.db',fromlist=['get_setting']),'admin',WEBAPP)
 
 @app.get('/api/ping')
 async def ping():return {'ok':True}
@@ -98,7 +98,7 @@ async def start(m:Message):
         name=' '.join(x for x in [m.from_user.first_name,m.from_user.last_name] if x).strip()
         if name and not u['full_name']:upsert_user(ADMIN,name)
         update_user(ADMIN,state='code')
-        return await m.answer('NUR O‘QIW ORAYI\n\nFoydalanuvchi bo‘limiga xush kelibsiz. Admin paneli alohida tugmada bo‘ladi.',reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Profilim'),KeyboardButton(text='Pulli testlar')],[KeyboardButton(text='Testni boshlash'),KeyboardButton(text='Test kodini kiritish')],[KeyboardButton(text='Mening natijam'),KeyboardButton(text='Yordam')],[KeyboardButton(text='Admin paneliga o‘tish')]],resize_keyboard=True,is_persistent=True))
+        return await m.answer('NUR O‘QIW ORAYI\n\nFoydalanuvchi bo‘limiga xush kelibsiz. Admin paneli alohida tugmada bo‘ladi.',reply_markup=admin_user_menu())
     if not await subscribed(m.from_user.id):update_user(m.from_user.id,state='subscribe',code_ok=0);await m.answer('Testga kirishdan oldin majburiy kanallarga obuna bo‘ling.',reply_markup=sub_kb());return
     if u['full_name']:
         update_user(m.from_user.id,state='ready' if u['code_ok'] else 'code')
@@ -329,6 +329,7 @@ async def close_telegram_client():
 
 from .features_v2 import register as register_features
 register_features(__import__(__name__,fromlist=['*']),dp,bot,WEBAPP)
+menus.install(dp,__import__('bot.db',fromlist=['get_setting']),ADMIN,WEBAPP)
 
 @dp.message(F.text=='Admin paneliga o‘tish')
 async def enter_admin_panel(m:Message):
