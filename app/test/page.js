@@ -26,7 +26,9 @@ const Written=memo(function Written({questionId,answer,onSave}){
  const [value,setValue]=useState(String(answer??''));
  const [tab,setTab]=useState('number');
  const [nativeKeyboard,setNativeKeyboard]=useState(false);
- const [historyVersion,setHistoryVersion]=useState(0);
+ const [keyboardOpen,setKeyboardOpen]=useState(false);
+ const rootRef=useRef(null);
+ const [,setHistoryVersion]=useState(0);
  const valueRef=useRef(String(answer??''));
  const timer=useRef(null);
  const inputRef=useRef(null);
@@ -41,6 +43,12 @@ const Written=memo(function Written({questionId,answer,onSave}){
   lastSent.current=next;
   onSave(questionId,next);
  },[questionId,onSave]);
+ useEffect(()=>{
+  if(!keyboardOpen)return;
+  const closeOutside=event=>{if(rootRef.current&&!rootRef.current.contains(event.target))setKeyboardOpen(false)};
+  document.addEventListener('pointerdown',closeOutside,{passive:true});
+  return()=>document.removeEventListener('pointerdown',closeOutside);
+ },[keyboardOpen]);
  useEffect(()=>{
   const callback=()=>flush();
   window.addEventListener('nur-flush-test-answers',callback);
@@ -88,24 +96,24 @@ const Written=memo(function Written({questionId,answer,onSave}){
   selection.current={start:next.length,end:next.length};
   applyValue(next,false);
  };
- return <div className="written-answer">
+ return <div className="written-answer" ref={rootRef}>
   <div className="written-input-wrap">
    <input ref={inputRef} value={value} inputMode={nativeKeyboard?'text':'none'} spellCheck={false} autoComplete="off"
      onChange={e=>{selection.current={start:e.target.selectionStart??e.target.value.length,end:e.target.selectionEnd??e.target.value.length};applyValue(e.target.value)}}
      onSelect={e=>{selection.current={start:e.currentTarget.selectionStart??valueRef.current.length,end:e.currentTarget.selectionEnd??valueRef.current.length}}}
-     onBlur={flush} className="answer-input" placeholder="Javobıńızdı kiritiń..." aria-label="Yozma javob"/>
+     onFocus={()=>setKeyboardOpen(true)} onBlur={flush} className="answer-input" placeholder="Javobıńızdı kiritiń..." aria-label="Yozma javob"/>
    <button type="button" className="keyboard-switch" aria-label={nativeKeyboard?'Maxsus matematik klaviatura':'Telefon klaviaturasini yoqish'}
-    onClick={()=>{setNativeKeyboard(v=>!v);if(!nativeKeyboard)inputRef.current?.focus()}}><MathIcon name="keyboard"/></button>
+    onClick={()=>{setKeyboardOpen(true);setNativeKeyboard(v=>!v);inputRef.current?.focus()}}><MathIcon name="keyboard"/></button>
    <button type="button" className="clear-answer" aria-label="Javobni tozalash" onClick={()=>{selection.current={start:0,end:0};applyValue('')}} disabled={!value}><MathIcon name="delete"/></button>
   </div>
-  <div className="written-keyboard" aria-label="Matematik klaviatura">
+  {keyboardOpen&&<div className="written-keyboard" aria-label="Matematik klaviatura">
    <div className="keyboard-toolbar">
     <div className="keyboard-tabs" role="tablist" aria-label="Belgilar turi">{MATH_TABS.map(t=><button type="button" key={t.key} role="tab" aria-selected={tab===t.key} className={tab===t.key?'active':''} onClick={()=>setTab(t.key)}>{t.title}</button>)}</div>
     <div className="keyboard-history"><button type="button" onClick={undo} disabled={!history.current.past.length} aria-label="Ortga qaytarish"><MathIcon name="undo"/></button><button type="button" onClick={redo} disabled={!history.current.future.length} aria-label="Qayta tiklash"><MathIcon name="redo"/></button></div>
    </div>
    <div className={'keyboard-keys keyset-'+tab}>{MATH_KEYS[tab].map((token,index)=><button type="button" key={tab+'-'+index} onClick={()=>insert(token)}>{token}</button>)}</div>
-   <div className="keyboard-footer"><span>{tab==='symbols'?'Trigonometrik va matematik belgilar':tab==='greek'?'Yunon harflari':tab==='letters'?'Lotin harflari':'Sonlar va amallar'}</span><button type="button" onClick={removeLast} disabled={!value} aria-label="Oxirgi belgini o‘chirish"><MathIcon name="delete"/></button></div>
-  </div>
+   <div className="keyboard-footer"><span>{tab==='symbols'?'Trigonometrik va matematik belgilar':tab==='greek'?'Yunon harflari':tab==='letters'?'Lotin harflari':'Sonlar va amallar'}</span><div className="keyboard-footer-actions"><button type="button" onClick={removeLast} disabled={!value} aria-label="Oxirgi belgini o‘chirish"><MathIcon name="delete"/></button><button type="button" onClick={()=>{flush();setKeyboardOpen(false);inputRef.current?.blur()}} aria-label="Klaviaturani yopish"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div></div>
+  </div>}
  </div>;
 });
 const Question=memo(function Question({q,number,answer,onChoose}){
@@ -115,7 +123,7 @@ const Question=memo(function Question({q,number,answer,onChoose}){
  const placeholder=/^\s*(?:\d+\s*[-.]?\s*)?(?:savol|савол|question)\s*$/iu.test(String(q.question??'').trim());
  const compact=q.kind!=='written'&&isPlain&&placeholder;
  return <article className={'question-card'+(compact?' compact-choice':'')+(q.kind==='written'?' written-question':'')+(options.length>4?' many-options':'')} id={'question-'+q.id}>
-  <div className="question-heading"><span className="question-number">{q.display_number||number}.</span><div className={'question-text'+(compact?' sr-only':'')}>{q.question||'Savol'}</div></div>
+  <div className="question-heading"><span className="question-number">{/^[0-9]+$/.test(String(q.display_number||number))?String(q.display_number||number)+'.':String(q.display_number||number)}</span><div className={'question-text'+(compact?' sr-only':'')}>{q.question||'Savol'}</div></div>
   {q.image_url&&<img src={q.image_url} alt="Savol rasmi" className="question-image" loading="lazy"/>}
   {q.kind==='written'?<Written questionId={q.id} answer={answer} onSave={onChoose}/>:<div className={'option-list'+(!isPlain?' with-descriptions':'')}>{options.map(({letter,label})=>{const picked=answer===letter;return <button type="button" key={letter} aria-label={label===letter?letter:letter+': '+label} aria-pressed={picked} className={'option-choice'+(picked?' is-selected':'')} onClick={()=>onChoose(q.id,letter)}><span className="option-letter">{letter}</span>{label.toUpperCase()!==letter&&<span className="option-label">{label}</span>}</button>})}</div>}
  </article>;
