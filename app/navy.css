@@ -189,3 +189,41 @@ main.admin-shell{background:#070b14!important;color:#f5f7fd!important}
 .test-page .written-keyboard .keyboard-footer span{color:#8097b7!important;-webkit-text-fill-color:#8097b7!important;font-size:10px!important;font-weight:600!important}
 .test-page .written-keyboard .keyboard-footer button{min-height:31px!important;height:31px!important}
 @media(max-width:360px){.test-page .written-keyboard{padding:7px!important}.test-page .written-keyboard .keyboard-tabs button{font-size:12px!important}.test-page .written-keyboard .keyboard-history button{width:31px!important}.test-page .written-keyboard .keyboard-keys button{min-height:40px!important;height:40px!important}}
+
+/* Higher specificity than the old 2026 selectors; actual 38px square buttons. */
+.test-page .question-stack .question-card .option-list .option-choice,
+.test-page .question-stack .question-card .option-list .option-choice.is-selected,
+.test-page .question-stack .question-card .option-list .option-choice[aria-pressed="true"]{
+ flex:0 0 38px!important;width:38px!important;min-width:38px!important;min-height:40px!important;height:40px!important;
+ padding:0!important;margin:0!important;gap:0!important;align-items:center!important;justify-content:center!important;
+ background:transparent!important;border:0!important;border-radius:12px!important;box-shadow:none!important;outline:0!important;transform:none!important;
+}
+.test-page .question-stack .question-card .option-list .option-choice .option-letter{
+ display:grid!important;place-items:center!important;
+ flex:0 0 38px!important;width:38px!important;min-width:38px!important;height:40px!important;min-height:40px!important;
+ border-radius:12px!important;border:1px solid #33435c!important;background:#090e18!important;
+ color:#f5f8ff!important;-webkit-text-fill-color:#f5f8ff!important;font-size:17px!important;font-weight:750!important;
+ box-shadow:inset 0 1px 1px rgba(255,255,255,.05)!important;
+}
+.test-page .question-stack .question-card .option-list .option-choice.is-selected .option-letter,
+.test-page .question-stack .question-card .option-list .option-choice[aria-pressed="true"] .option-letter{
+ background:#166fdb!important;border-color:#449cfa!important;color:#fff!important;-webkit-text-fill-color:#fff!important;
+ box-shadow:inset 0 0 0 1px rgba(255,255,255,.13)!important;
+}
+.test-page .question-stack .question-card .option-list.with-descriptions .option-choice{
+ width:100%!important;min-width:0!important;flex:auto!important;height:auto!important;min-height:58px!important;
+ display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;
+ gap:9px!important;padding:7px!important;border:1px solid #30435d!important;border-radius:13px!important;background:#101929!important;
+}
+.test-page .question-stack .question-card .option-list.with-descriptions .option-choice .option-letter{flex:0 0 38px!important}
+.test-page .question-stack .question-card .option-list.with-descriptions .option-choice .option-label{
+ display:block!important;flex:1 1 auto!important;min-width:0!important;padding:0!important;white-space:pre-wrap!important;
+ color:#d6e2f5!important;-webkit-text-fill-color:#d6e2f5!important;line-height:1.35!important;text-align:left!important;
+}
+.test-page .question-stack .question-card .option-list.with-descriptions .option-choice.is-selected{background:#173050!important;border-color:#338bdf!important}
+.test-page .question-stack .question-card.many-options.compact-choice .option-list .option-choice{flex:0 0 38px!important;min-width:38px!important;width:38px!important}
+.test-page .written-keyboard .keyboard-footer-actions{display:flex;gap:5px;align-items:center}
+@media(max-width:360px){
+ .test-page .question-stack .question-card.many-options.compact-choice .option-list .option-choice{flex-basis:35px!important;min-width:35px!important;width:35px!important}
+ .test-page .question-stack .question-card.many-options.compact-choice .option-list .option-choice .option-letter{flex-basis:35px!important;min-width:35px!important;width:35px!important}
+}
