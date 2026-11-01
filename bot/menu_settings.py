@@ -54,7 +54,6 @@ def items(db, role):
 
 def button(info, *, webapp_url=None):
     kwargs={'text':info['label']}
-    if info['style']!='default':kwargs['style']=info['style']
     if info['emoji_id']:kwargs['icon_custom_emoji_id']=info['emoji_id']
     if webapp_url and info['key']=='Mini App admini':
         kwargs['web_app']=WebAppInfo(url=webapp_url.rstrip('/')+'/admin')
@@ -66,7 +65,7 @@ def keyboard(db, role, webapp_url, *, admin_entry=False):
     for n in range(0,len(entries),2):
         rows.append([button(x,webapp_url=webapp_url) for x in entries[n:n+2]])
     if admin_entry:
-        rows.append([KeyboardButton(text='Admin paneliga o‘tish',style='primary')])
+        rows.append([KeyboardButton(text='Admin paneliga o‘tish')])
     return ReplyKeyboardMarkup(keyboard=rows,resize_keyboard=True,is_persistent=True)
 
 def canonical(db, text, role):
