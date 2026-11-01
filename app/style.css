@@ -693,3 +693,51 @@ input::placeholder,textarea::placeholder{color:#718198!important;-webkit-text-fi
 .admin-card,.admin-header{background:#fff!important;border-color:#d5dfeb!important}
 .admin-muted,.admin-section-title p,.admin-header p{color:#4c6079!important;-webkit-text-fill-color:#4c6079!important}
 .admin-shell button:focus-visible,.test-shell button:focus-visible,.bottom-glass-nav .nav-item:focus-visible{outline:3px solid #558be0!important;outline-offset:2px}
+
+/* Semantic liquid-glass buttons: blue action, green open, red close/danger. */
+:root{--action-blue:#1765d1;--action-green:#147b47;--action-red:#bf3036}
+.admin-shell .admin-primary,.admin-shell .admin-test-actions button,.admin-shell .admin-test-actions a,
+.admin-shell .admin-rank-editor button,.admin-shell .admin-refresh,
+.start-form .primary-link,.ranking-code-form button,.test-finish-panel button,
+.result-link,.admin-shell .admin-test-card button{
+  border-radius:15px!important;font-weight:750!important;transition:background .16s ease,box-shadow .16s ease,transform .16s ease!important;
+}
+.admin-shell .admin-primary,.admin-shell .admin-refresh,
+.admin-shell .admin-test-actions a,.start-form .primary-link,
+.ranking-code-form button,.result-link,.test-finish-panel button{
+  background:linear-gradient(155deg,#3281ed,#165abc)!important;
+  color:white!important;-webkit-text-fill-color:white!important;
+  border:1px solid rgba(255,255,255,.28)!important;
+  box-shadow:0 5px 17px rgba(31,104,205,.18),inset 0 1px rgba(255,255,255,.24)!important;
+}
+.admin-shell .admin-primary.action-danger,
+.admin-shell .action-danger{
+  background:linear-gradient(155deg,#e75a60,#ac2532)!important;
+  color:white!important;-webkit-text-fill-color:white!important;
+  border:1px solid rgba(255,255,255,.25)!important;
+  box-shadow:0 5px 16px rgba(170,42,56,.17)!important;
+}
+.admin-shell .admin-primary.action-success,
+.admin-shell .action-success{
+  background:linear-gradient(155deg,#2dbb78,#107246)!important;
+  color:white!important;-webkit-text-fill-color:white!important;
+  border:1px solid rgba(255,255,255,.25)!important;
+  box-shadow:0 5px 16px rgba(19,115,71,.18)!important;
+}
+.admin-shell .admin-test-actions button:not(.admin-primary),
+.admin-shell .admin-rank-editor button{
+ background:linear-gradient(155deg,#e5f0ff,#d5e7ff)!important;
+ border:1px solid #adc9f1!important;color:#174b8e!important;-webkit-text-fill-color:#174b8e!important;
+}
+.admin-shell .admin-status.is-active{background:#d7f7e6!important;border:1px solid #84d6a8!important;color:#096d39!important;-webkit-text-fill-color:#096d39!important}
+.admin-shell .admin-status.is-stopped{background:#ffe4e5!important;border:1px solid #efa0a5!important;color:#a31e2a!important;-webkit-text-fill-color:#a31e2a!important}
+.admin-shell .admin-test-card{border-left:4px solid #bfd0e4!important}
+.admin-shell .admin-test-card:has(.admin-status.is-active){border-left-color:#26a66a!important}
+.admin-shell .admin-test-card:has(.admin-status.is-stopped){border-left-color:#d44854!important}
+.bottom-glass-nav .nav-item{border:1px solid transparent!important}
+.bottom-glass-nav .nav-item.nav-tests.active{background:#dbeafe!important;color:#1355ad!important;border-color:#b4d1fb!important}
+.bottom-glass-nav .nav-item.nav-ranking.active{background:#daf6e6!important;color:#12663c!important;border-color:#a7ddbe!important}
+.bottom-glass-nav .nav-item.nav-admin.active{background:#e5ebff!important;color:#294da8!important;border-color:#b8c9fa!important}
+.bottom-glass-nav .nav-item.nav-profile{color:#35627f!important}
+.admin-shell button:disabled,.test-finish-panel button:disabled,.start-form button:disabled{opacity:.6!important;cursor:not-allowed!important;box-shadow:none!important}
+.admin-shell button:not(:disabled):active,.test-finish-panel button:not(:disabled):active,.bottom-glass-nav .nav-item:active{transform:scale(.97)}
