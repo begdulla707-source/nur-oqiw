@@ -27,15 +27,15 @@ def tests_kb():
  r=[]
  for t in db.all_tests():
   state='OCHIQ' if int(t['active']) else 'YOPIQ'
-  r.append([InlineKeyboardButton(text=f"{state} | {t['name'][:20]} | {t['code']}",callback_data=f't_pick:{t["test_id"]}')])
- r.append([InlineKeyboardButton(text='YANGI TEST',callback_data='t_new')])
+  r.append([InlineKeyboardButton(text=f"{state} | {t['name'][:20]} | {t['code']}",callback_data=f't_pick:{t["test_id"]}',style="success" if int(t["active"]) else "danger")])
+ r.append([InlineKeyboardButton(text='YANGI TEST',callback_data='t_new',style='success')])
  r.append([InlineKeyboardButton(text='UMUMIY REYTING ARXIVI',callback_data='t_archive_results')])
  r.append([InlineKeyboardButton(text='TEKSHIRISH',callback_data='t_check_list')])
  return InlineKeyboardMarkup(inline_keyboard=r)
 def test_kb(t):
  test=db.get_test(t);active=bool(test and int(test['active']))
- toggle=InlineKeyboardButton(text='TESTNI TO‘XTATISH' if active else 'QAYTA OCHISH',callback_data=f't_close:{t}' if active else f't_open:{t}')
- return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Savol qo‘shish',callback_data=f't_add:{t}')],[InlineKeyboardButton(text='Oddiy variant',callback_data=f't_choice:{t}'),InlineKeyboardButton(text='Yozma variant',callback_data=f't_written:{t}')],[InlineKeyboardButton(text='Savollar',callback_data=f't_q:{t}'),InlineKeyboardButton(text='Natijalar',callback_data=f't_results:{t}')],[InlineKeyboardButton(text='PDF',callback_data=f't_pdf:{t}'),InlineKeyboardButton(text='Mini App link',callback_data=f't_link:{t}')],[InlineKeyboardButton(text='Guruhga yuborish',callback_data=f't_group:{t}')],[toggle],[InlineKeyboardButton(text='TEKSHIRISH',callback_data=f't_check:{t}')],[InlineKeyboardButton(text='O‘CHIRISH',callback_data=f't_delete:{t}')],[InlineKeyboardButton(text='Orqaga',callback_data='t_list')]])
+ toggle=InlineKeyboardButton(text='TESTNI TO‘XTATISH' if active else 'QAYTA OCHISH',callback_data=f't_close:{t}' if active else f't_open:{t}',style='danger' if active else 'success')
+ return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Savol qo‘shish',callback_data=f't_add:{t}')],[InlineKeyboardButton(text='Oddiy variant',callback_data=f't_choice:{t}'),InlineKeyboardButton(text='Yozma variant',callback_data=f't_written:{t}')],[InlineKeyboardButton(text='Savollar',callback_data=f't_q:{t}'),InlineKeyboardButton(text='Natijalar',callback_data=f't_results:{t}',style='primary')],[InlineKeyboardButton(text='PDF',callback_data=f't_pdf:{t}',style='primary'),InlineKeyboardButton(text='Mini App link',callback_data=f't_link:{t}',style='primary')],[InlineKeyboardButton(text='Guruhga yuborish',callback_data=f't_group:{t}')],[toggle],[InlineKeyboardButton(text='TEKSHIRISH',callback_data=f't_check:{t}')],[InlineKeyboardButton(text='O‘CHIRISH',callback_data=f't_delete:{t}',style='danger')],[InlineKeyboardButton(text='Orqaga',callback_data='t_list')]])
 def type_kb(t):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ODDIY VARIANT',callback_data=f't_choice:{t}')],[InlineKeyboardButton(text='YOZMA VARIANT',callback_data=f't_written:{t}')]])
 def abcd(t,n):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_ans:{t}:{n}:{x}') for x in 'ABCD']])
 def new_answer_kb():return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_new_ans:{x}') for x in 'ABCD']])
@@ -795,7 +795,7 @@ def register(core,dp,bot,webapp_url):
   if s=='notification_message':
    if not txt:return await m.answer("Xabar matni bo‘sh bo‘lmasin.")
    db.set_setting('pending_notification',json.dumps({'text':txt,'source_chat_id':m.chat.id,'source_message_id':m.message_id},ensure_ascii=False));ast('notification_confirm')
-   keyboard=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='YUBORISH',callback_data='notification_send'),InlineKeyboardButton(text='BEKOR QILISH',callback_data='notification_cancel')]])
+   keyboard=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='YUBORISH',callback_data='notification_send',style='success'),InlineKeyboardButton(text='BEKOR QILISH',callback_data='notification_cancel',style='danger')]])
    await m.answer('XABAR NAMUNASI — premium emoji va format saqlanadi. Yuborishni quyidagi xabardan tasdiqlang:')
    return await BOT.copy_message(chat_id=m.chat.id,from_chat_id=m.chat.id,message_id=m.message_id,reply_markup=keyboard)
   if txt=='Ishtirokchilar':
