@@ -391,3 +391,71 @@ main.test-page{padding-bottom:clamp(112px,16vh,148px)!important}
 }
 .test-result-page .result-card .result-retake:disabled{opacity:.7!important;cursor:wait!important}
 .test-result-page .result-card .result-link:not(.result-retake){display:inline-flex!important;min-height:46px!important;align-items:center!important;justify-content:center!important}
+
+/* Compact test controls only — mobile keyboard and header, no other sections. */
+.test-page .test-topbar{
+ min-height:0!important;height:auto!important;
+ padding:7px max(13px,calc((100% - 780px)/2))!important;
+ gap:10px!important;box-sizing:border-box!important;
+}
+.test-page .test-topbar .top-brand,
+.test-page .test-topbar .top-brand>div{min-height:0!important;gap:1px!important}
+.test-page .test-topbar .top-brand strong{
+ font-size:15px!important;line-height:1.22!important;margin:0!important
+}
+.test-page .test-topbar .top-brand small{
+ font-size:11px!important;line-height:1.25!important;margin:1px 0!important
+}
+.test-page .test-topbar .top-brand .top-test-meta{
+ font-size:10px!important;line-height:1.25!important;margin:0!important
+}
+.test-page .test-topbar .top-progress{
+ width:57px!important;min-width:57px!important;max-width:57px!important;
+ flex:0 0 57px!important;height:53px!important;min-height:53px!important;
+ padding:4px!important;border-radius:13px!important;gap:1px!important
+}
+.test-page .test-topbar .top-progress b{font-size:17px!important;line-height:1.15!important}
+.test-page .test-topbar .top-progress small{font-size:10px!important;line-height:1.15!important}
+
+.test-page .question-card .written-keyboard{
+ padding:7px!important;margin-top:7px!important;
+ border-radius:14px!important;max-height:min(235px,40dvh)!important;
+ overflow-y:auto!important;overscroll-behavior-y:auto!important;
+ touch-action:pan-y!important;-webkit-overflow-scrolling:touch
+}
+.test-page .written-keyboard .keyboard-toolbar{
+ gap:5px!important;margin-bottom:5px!important;align-items:center!important
+}
+.test-page .written-keyboard .keyboard-tabs{
+ display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;
+ gap:4px!important;overflow:visible!important
+}
+.test-page .written-keyboard .keyboard-tabs button{
+ min-width:0!important;min-height:32px!important;height:32px!important;
+ font-size:12px!important;padding:2px!important;border-radius:9px!important
+}
+.test-page .written-keyboard .keyboard-history{gap:4px!important}
+.test-page .written-keyboard .keyboard-history button{
+ width:31px!important;min-width:31px!important;min-height:32px!important;
+ height:32px!important;border-radius:9px!important
+}
+.test-page .written-keyboard .keyboard-history button svg{
+ width:17px!important;height:17px!important
+}
+.test-page .written-keyboard .keyboard-keys{
+ display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;
+ gap:4px!important;max-height:min(160px,30dvh)!important;
+ overflow-y:auto!important;overscroll-behavior-y:auto!important;
+ touch-action:pan-y!important;-webkit-overflow-scrolling:touch
+}
+.test-page .written-keyboard .keyboard-keys button{
+ min-height:34px!important;height:34px!important;max-height:34px!important;
+ padding:2px 1px!important;border-radius:8px!important;font-size:13px!important
+}
+.test-page .written-keyboard .keyboard-footer{display:none!important}
+@media(max-width:375px){
+ .test-page .test-topbar{padding:6px 11px!important;gap:8px!important}
+ .test-page .written-keyboard .keyboard-keys{gap:3px!important}
+ .test-page .written-keyboard .keyboard-keys button{height:33px!important;min-height:33px!important;font-size:12px!important}
+ .test-page .written-keyboard .keyboard-tabs button{font-size:11px!important}
+}
