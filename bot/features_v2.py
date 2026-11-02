@@ -625,13 +625,10 @@ def register(core,dp,bot,webapp_url):
   test_id=str(p.get('test_id','')).strip();t=db.get_test(test_id)
   if not t:return {'ok':False,'error':'test_not_found'}
   if int(t['active']):
-   qs=db.questions_for_test(test_id);closed=0
-   for a in db.all_attempts_for_test(test_id):
-    if a['submitted'] or not a['started_at']:continue
-    state,_,_,_,_=finish_attempt_atomically(test_id,int(a['telegram_id']),qs,datetime.now(TZ).isoformat())
-    if state=='ok':closed+=1
+   # Closing pauses, rather than forcibly submitting, in-progress answers.
+   # Reopening therefore lets learners resume their existing attempt.
    db.set_test_active(test_id,0)
-   return {'ok':True,'active':False,'finalized':closed,'message':'Test to‘xtatildi; javoblar bo‘yicha ball hisoblandi.'}
+   return {'ok':True,'active':False,'finalized':0,'message':'Test vaqtincha yopildi. Yakunlanmagan urinishlar va javoblar saqlandi; qayta ochilganda davom ettirish mumkin.'}
   db.set_test_active(test_id,1)
   return {'ok':True,'active':True,'finalized':0,'message':'Test qayta ochildi.'}
  @core.app.post('/api/admin/jarvis/action')
@@ -1252,13 +1249,11 @@ def register(core,dp,bot,webapp_url):
  @r.callback_query(F.data.startswith('t_close:'))
  async def tx(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
-  tid=q.data.split(':',1)[1];t=db.get_test(tid);qs=db.questions_for_test(tid);closed_count=0
-  for a in db.all_attempts_for_test(tid):
-   if a['submitted'] or not a['started_at']:continue
-   status,_,_,_,_=finish_attempt_atomically(tid,int(a['telegram_id']),qs,datetime.now(TZ).isoformat())
-   if status=='ok':closed_count+=1
+  tid=q.data.split(':',1)[1];t=db.get_test(tid)
+  if not t:return await q.answer('Test topilmadi.',show_alert=True)
   db.set_test_active(tid,0)
-  await q.message.edit_text(f"TEST TO‘XTATILDI\n\n{t['name']}\nKod: {t['code']}\nYakunlanmagan urinishlarga javoblari bo‘yicha ball hisoblandi: {closed_count} ta.",reply_markup=test_kb(tid));await q.answer('Test to‘xtatildi; ballar hisoblandi')
+  await q.message.edit_text(f"TEST VAQTINCHA YOPILDI\n\n{t['name']}\nKod: {t['code']}\nYakunlanmagan urinishlar va javoblar saqlandi. Qayta ochilganda davom ettirish mumkin.",reply_markup=test_kb(tid))
+  await q.answer('Test yopildi; javoblar saqlandi')
  @r.callback_query(F.data.startswith('t_delete:'))
  async def td(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
