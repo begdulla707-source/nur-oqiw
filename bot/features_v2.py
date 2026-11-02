@@ -1133,6 +1133,38 @@ def register(core,dp,bot,webapp_url):
    return await BOT.send_message(ADMIN,head+"\nTo‘g‘ri yozma javobni kiriting (simulyatsiya):")
   kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=z,callback_data=f"t_check_ans:{tid}:{fake_id}:{index}:{z}") for z in 'ABCD']])
   return await BOT.send_message(ADMIN,head+"\nVariantni tanlang:",reply_markup=kb)
+ @r.message(F.from_user.id==ADMIN,F.users_shared)
+ async def paid_user_shared(m:Message):
+  """Telegram-native selected users, never trust a request_id from an old menu."""
+  u=db.get_user(ADMIN)
+  state=str((u['state'] if u else '') or '')
+  if not state.startswith('paid_select:'):
+   return await m.answer('Foydalanuvchini tanlash sessiyasi yo‘q.',reply_markup=ReplyKeyboardRemove())
+  try:
+   _,tid,expected=state.split(':',2)
+   if not db.is_paid_test(tid) or int(m.users_shared.request_id)!=int(expected):
+    raise ValueError('old picker')
+   selected=m.users_shared.users
+   user_id=int(selected[0].user_id) if selected else int(m.users_shared.user_ids[0])
+   if user_id<=0:raise ValueError('invalid user')
+  except (ValueError,IndexError,TypeError,AttributeError):
+   ast('admin')
+   return await m.answer('Tanlash muddati tugagan. Pulli testlar bo‘limidan qayta tanlang.',reply_markup=ReplyKeyboardRemove())
+  person=db.get_user(user_id)
+  if not person:
+   await m.answer('Tanlash oynasi yopildi.',reply_markup=ReplyKeyboardRemove())
+   return await m.answer('Tanlangan odam hali botga /start bosmagan. U ro‘yxatdan o‘tgach qayta tanlang.')
+  ast('paid_confirm:'+tid+':'+str(user_id))
+  keyboard=InlineKeyboardMarkup(inline_keyboard=[
+   [InlineKeyboardButton(text='HA, TESTGA QO‘SHISH',callback_data='paid_ok:'+tid+':'+str(user_id),style='success')],
+   [InlineKeyboardButton(text='BEKOR QILISH',callback_data='paid_cancel:'+tid)]])
+  await m.answer('Foydalanuvchi tanlandi.',reply_markup=ReplyKeyboardRemove())
+  await m.answer(
+   '<b>QATNASHCHINI TASDIQLASH</b>\n\n'
+   +escape(str(person['full_name'] or 'Ismsiz'))+'\nID: <code>'+str(user_id)+'</code>\n'
+   'Bu odamga pulli testga kirish huquqini berasizmi?',
+   parse_mode='HTML',reply_markup=keyboard)
+
  @r.message(F.from_user.id==ADMIN)
  async def admin_text(m:Message):
   u=db.ensure_user(ADMIN);s=u['state'] or 'admin';txt=(m.text or '').strip()
@@ -1198,25 +1230,38 @@ def register(core,dp,bot,webapp_url):
    db.set_setting('subscription_channels',json.dumps(channels,ensure_ascii=False))
    db.set_setting('subscription_required','1');CORE.SUB_CACHE.clear();ast('admin')
    return await m.answer(subscription_admin_text(),reply_markup=subscription_admin_kb())
-  if txt=='Pulli testlar':
-   ast('premium_user_id')
-   return await m.answer("Pulli testlarga kirish huquqini boshqarish uchun foydalanuvchining Telegram ID raqamini kiriting.")
-  if s.startswith('paid_grant:'):
-   if txt=='/cancel':
-    ast('admin');return await m.answer('Bekor qilindi.',reply_markup=CORE.admin_kb())
-   test_id=s.split(':',1)[1]
-   if not db.is_paid_test(test_id):ast('admin');return await m.answer('Pulli test topilmadi.')
+  if s.startswith('paid_select:'):
+   if txt=='BEKOR QILISH' or txt=='/cancel':
+    ast('admin')
+    return await m.answer('Qatnashchi tanlash bekor qilindi.',reply_markup=ReplyKeyboardRemove())
+   if txt=='CHAT ID NI QO‘LDA KIRITISH':
+    tid=s.split(':')[1]
+    ast('paid_manual:'+tid)
+    await m.answer('Tanlash oynasi yopildi.',reply_markup=ReplyKeyboardRemove())
+    return await m.answer('Telegram chat ID raqamini yuboring. Bekor qilish: /cancel.')
+   return await m.answer('«FOYDALANUVCHINI TANLASH» tugmasidan foydalaning yoki CHAT ID NI QO‘LDA KIRITISH ni tanlang.')
+  if s.startswith('paid_manual:'):
+   if txt=='/cancel' or txt=='BEKOR QILISH':
+    ast('admin')
+    return await m.answer('Bekor qilindi.',reply_markup=CORE.admin_kb())
+   tid=s.split(':',1)[1]
+   if not db.is_paid_test(tid):
+    ast('admin');return await m.answer('Pulli test topilmadi.')
    try:target=int(txt)
-   except (ValueError,TypeError):return await m.answer('Chat ID faqat raqamlardan iborat bo‘lsin.')
-   if target<=0:return await m.answer('Musbat Telegram ID kiriting.')
+   except (TypeError,ValueError):
+    return await m.answer('Chat ID faqat raqam bo‘lishi kerak.')
+   if target<=0:return await m.answer('Musbat Telegram chat ID yuboring.')
    user=db.get_user(target)
-   if not user:return await m.answer('Foydalanuvchi botga /start bosmagan. Avval botga kirsin.')
-   db.paid_grant(test_id,target,ADMIN);ast('admin')
-   paid=db.get_test(test_id)
-   try:
-    await BOT.send_message(target,f"Sizga «{paid['name']}» pulli testiga ruxsat berildi. «Pulli testlar» menyusidan ochishingiz mumkin.",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='PULLI TESTNI OCHISH',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/test?code='+str(paid['code'])),style='success')]]))
-   except Exception:pass
-   return await m.answer(f"Ruxsat berildi: {user['full_name'] or 'Ismsiz'} (ID: {target})\nTest: {paid['name']}\nKod: {paid['code']}",reply_markup=CORE.admin_kb())
+   if not user:return await m.answer('Bu foydalanuvchi botda /start bosmagan. Avval ro‘yxatdan o‘tsin.')
+   ast('paid_confirm:'+tid+':'+str(target))
+   buttons=InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text='HA, TESTGA QO‘SHISH',callback_data='paid_ok:'+tid+':'+str(target),style='success')],
+    [InlineKeyboardButton(text='BEKOR QILISH',callback_data='paid_cancel:'+tid)]])
+   return await m.answer('<b>QATNASHCHINI TASDIQLASH</b>\n\n'
+      +escape(str(user['full_name'] or 'Ismsiz'))
+      +'\nID: <code>'+str(target)+'</code>\n\n'
+      'Ushbu odamga pulli test ruxsati berilsinmi?',
+      parse_mode='HTML',reply_markup=buttons)
   if s=='premium_user_id':
    try:target=int(txt)
    except:return await m.answer("Telegram ID faqat raqam bo‘lishi kerak.")
@@ -1268,7 +1313,8 @@ def register(core,dp,bot,webapp_url):
   if s=='new_code':
    if not txt or ' ' in txt:return await m.answer('Kodni bitta so‘z qilib kiriting. Masalan: MAT2026')
    if db.test_code_exists(txt):return await m.answer('Bu kod avval ishlatilgan. Boshqa kod tanlang.')
-   save_draft({'code':txt});ast('new_name');return await m.answer('Test nomini kiriting:')
+   old_d=draft();save_draft({'code':txt,'paid':bool(old_d.get('paid'))});ast('new_name')
+   return await m.answer('Test nomini kiriting:')
   if s=='new_name':
    if not txt:return await m.answer('Test nomini kiriting:')
    d=draft();d['name']=txt;save_draft(d);ast('new_count');return await m.answer('Testda jami nechta savol bo‘ladi? (1–200)')
@@ -1292,7 +1338,7 @@ def register(core,dp,bot,webapp_url):
     ast('new_kind');return await m.answer(f'{done+1}/{total}-savol turini tanlang:',reply_markup=new_question_type_kb())
    try:
     if len(d['items'])!=total:return await m.answer('Savollar to‘liq emas. Test hali saqlanmadi.')
-    t=db.create_test_with_questions(d['name'],d['code'],d['items']);clear_draft();ast('admin')
+    t=db.create_test_with_questions(d['name'],d['code'],d['items'],paid=bool(d.get('paid')));clear_draft();ast('admin')
     return await m.answer(f"TEST SAQLANDI\n\n{t['name']}\nKod: {t['code']}\nSavollar: {total}\nHolat: DOIMO OCHIQ",reply_markup=test_kb(t['test_id']))
    except Exception as e:return await m.answer(f'Test saqlanmadi: {e}')
   if s.startswith('choice_num:'):
@@ -1355,7 +1401,7 @@ def register(core,dp,bot,webapp_url):
   try:
    if db.test_code_exists(d['code']):return await q.answer('Bu kod avval ishlatilgan. Boshqa kod tanlang.',show_alert=True)
    if len(d['items'])!=total:return await q.answer('Barcha savollar tugallanmagan. Test saqlanmadi.',show_alert=True)
-   t=db.create_test_with_questions(d['name'],d['code'],d['items'])
+   t=db.create_test_with_questions(d['name'],d['code'],d['items'],paid=bool(d.get('paid')))
    clear_draft();ast('admin')
    await q.message.answer(f"TEST SAQLANDI\n\n{t['name']}\nKod: {t['code']}\nSavollar: {total}\nHolat: DOIMO OCHIQ",reply_markup=test_kb(t['test_id']))
    await q.answer('Test saqlandi')
