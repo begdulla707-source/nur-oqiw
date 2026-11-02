@@ -257,8 +257,13 @@ def register(core,dp,bot,webapp_url):
   tid,u=await auth(req)
   if not tid or not u:return {'ok':False,'error':'not_authorized'}
   with db.conn() as c:
-   rows=c.execute("SELECT a.test_id,t.name,t.code,a.started_at,a.finished_at,a.score,a.grade,a.submitted FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id WHERE a.telegram_id=? ORDER BY COALESCE(a.finished_at,a.started_at) DESC",(tid,)).fetchall()
-  history=[{'test_id':x['test_id'],'test_name':x['name'] or 'Test','code':x['code'] or '', 'started_at':x['started_at'],'finished_at':x['finished_at'],'score':float(x['score'] or 0),'grade':x['grade'] or '', 'submitted':bool(x['submitted'])} for x in rows if db.can_access_test(x['test_id'],tid,ADMIN)]
+   rows=c.execute("""SELECT a.test_id,t.name,t.code,a.started_at,a.finished_at,a.score,a.grade,a.submitted
+    FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id
+    WHERE a.telegram_id=? AND
+    (?=? OR NOT EXISTS(SELECT 1 FROM paid_tests p WHERE p.test_id=a.test_id)
+      OR EXISTS(SELECT 1 FROM paid_test_access g WHERE g.test_id=a.test_id AND g.telegram_id=?))
+    ORDER BY COALESCE(a.finished_at,a.started_at) DESC""",(tid,tid,ADMIN,tid)).fetchall()
+  history=[{'test_id':x['test_id'],'test_name':x['name'] or 'Test','code':x['code'] or '', 'started_at':x['started_at'],'finished_at':x['finished_at'],'score':float(x['score'] or 0),'grade':x['grade'] or '', 'submitted':bool(x['submitted'])} for x in rows]
   return {'ok':True,'full_name':u['full_name'] or '','photo_url':u['telegram_photo'] or '','tier':u['tier'] or 'default','tests':history}
  @core.app.get('/api/test/public-profile')
  async def public_profile_api(req:Request):
@@ -270,8 +275,13 @@ def register(core,dp,bot,webapp_url):
   target_user=db.get_user(target)
   if not target_user:return {'ok':False,'error':'user_not_found'}
   with db.conn() as c:
-   rows=c.execute("SELECT a.test_id,t.name,t.code,a.started_at,a.finished_at,a.score,a.grade,a.submitted FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id WHERE a.telegram_id=? AND a.submitted=1 ORDER BY COALESCE(a.finished_at,a.started_at) DESC",(target,)).fetchall()
-  history=[{'test_id':x['test_id'],'test_name':x['name'] or 'Test','code':x['code'] or '', 'started_at':x['started_at'],'finished_at':x['finished_at'],'score':float(x['score'] or 0),'grade':x['grade'] or '', 'submitted':bool(x['submitted'])} for x in rows if db.can_access_test(x['test_id'],tid,ADMIN)]
+   rows=c.execute("""SELECT a.test_id,t.name,t.code,a.started_at,a.finished_at,a.score,a.grade,a.submitted
+    FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id
+    WHERE a.telegram_id=? AND a.submitted=1 AND
+    (?=? OR NOT EXISTS(SELECT 1 FROM paid_tests p WHERE p.test_id=a.test_id)
+      OR EXISTS(SELECT 1 FROM paid_test_access g WHERE g.test_id=a.test_id AND g.telegram_id=?))
+    ORDER BY COALESCE(a.finished_at,a.started_at) DESC""",(target,tid,ADMIN,tid)).fetchall()
+  history=[{'test_id':x['test_id'],'test_name':x['name'] or 'Test','code':x['code'] or '', 'started_at':x['started_at'],'finished_at':x['finished_at'],'score':float(x['score'] or 0),'grade':x['grade'] or '', 'submitted':bool(x['submitted'])} for x in rows]
   return {'ok':True,'telegram_id':target,'username':db.get_setting('telegram_username_'+str(target),'') or '', 'full_name':target_user['full_name'] or 'Foydalanuvchi','photo_url':target_user['telegram_photo'] or '', 'tests':history}
  @core.app.get('/api/test/ranking')
  async def ranking_api(req:Request):
@@ -723,7 +733,9 @@ def register(core,dp,bot,webapp_url):
   items=[]
   for t in db.paid_tests_for_user(tid,ADMIN):
    if not int(t['active']):continue
-   items.append({'test_id':str(t['test_id']),'name':str(t['name']),'code':str(t['code']),'questions':len(db.questions_for_test(t['test_id']))})
+   questions=db.questions_for_test(t['test_id'])
+   if not questions:continue
+   items.append({'test_id':str(t['test_id']),'name':str(t['name']),'code':str(t['code']),'questions':len(questions)})
   return {'ok':True,'tests':items,'contact':'https://t.me/dd17x'}
 
  @core.app.get('/api/admin/paid/access')
