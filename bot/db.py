@@ -63,6 +63,19 @@ def init():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_permanent_results_test ON permanent_results(test_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_permanent_results_user ON permanent_results(telegram_id)")
+        c.execute("""CREATE TABLE IF NOT EXISTS paid_tests (
+            test_id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS paid_test_access (
+            test_id TEXT NOT NULL,
+            telegram_id BIGINT NOT NULL,
+            granted_by BIGINT NOT NULL,
+            granted_at TEXT NOT NULL,
+            PRIMARY KEY (test_id,telegram_id)
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_paid_access_user ON paid_test_access(telegram_id)")
+
     # Large migration and result backfill run after webhook setup, not during cold start.
 
 def startup_maintenance():
@@ -151,6 +164,62 @@ def public_users():
     with conn() as c:return c.execute("SELECT telegram_id,full_name,tier FROM users WHERE code_ok=1 ORDER BY registered_at ASC").fetchall()
 def set_tier(t,tier,admin_id=None):update_user(t,tier="premium" if str(tier).lower()=="premium" else "default",premium_since=datetime.now(timezone.utc).isoformat() if str(tier).lower()=="premium" else None,premium_granted_by=(int(admin_id) if admin_id and str(tier).lower()=="premium" else None))
 def is_premium(t):u=get_user(t);return bool(u and str(u["tier"] or "default").lower()=="premium")
+
+def is_paid_test(test_id):
+    with conn() as c:
+        return bool(c.execute("SELECT 1 FROM paid_tests WHERE test_id=? LIMIT 1",(str(test_id),)).fetchone())
+
+def can_access_test(test_id,telegram_id,admin_id):
+    if not is_paid_test(test_id):
+        return True
+    if int(telegram_id or 0)==int(admin_id):
+        return True
+    with conn() as c:
+        return bool(c.execute("SELECT 1 FROM paid_test_access WHERE test_id=? AND telegram_id=? LIMIT 1",(str(test_id),int(telegram_id or 0))).fetchone())
+
+def create_paid_test(name,code):
+    tid=secrets.token_hex(8)
+    now=datetime.now(timezone.utc).isoformat()
+    with conn() as c:
+        c.execute("INSERT INTO tests(test_id,code,name,start_time,end_time,mode,active,created_at) VALUES(?,?,?,?,?,?,1,?)",
+                  (tid,str(code).strip(),str(name).strip(),"00:00","23:59","open",now))
+        c.execute("INSERT INTO paid_tests(test_id,created_at) VALUES(?,?)",(tid,now))
+    return get_test(tid)
+
+def paid_access_list(test_id):
+    with conn() as c:
+        return c.execute("SELECT a.telegram_id,a.granted_at,u.full_name FROM paid_test_access a LEFT JOIN users u ON u.telegram_id=a.telegram_id WHERE a.test_id=? ORDER BY a.granted_at DESC",(str(test_id),)).fetchall()
+
+def paid_grant(test_id,telegram_id,admin_id):
+    if not is_paid_test(test_id):
+        return False
+    with conn() as c:
+        c.execute("INSERT INTO paid_test_access(test_id,telegram_id,granted_by,granted_at) VALUES(?,?,?,?) ON CONFLICT(test_id,telegram_id) DO NOTHING",
+                  (str(test_id),int(telegram_id),int(admin_id),datetime.now(timezone.utc).isoformat()))
+    return True
+
+def paid_revoke(test_id,telegram_id):
+    with conn() as c:
+        return c.execute("DELETE FROM paid_test_access WHERE test_id=? AND telegram_id=?",(str(test_id),int(telegram_id))).rowcount>0
+
+def paid_tests_for_user(telegram_id,admin_id,active_only=False):
+    rows=all_tests()
+    result=[]
+    for t in rows:
+        if not is_paid_test(t['test_id']):continue
+        if active_only and not int(t['active']):continue
+        if can_access_test(t['test_id'],telegram_id,admin_id):result.append(t)
+    return result
+
+def get_test_by_code_or_name(code):
+    # Exact code is always preferred; a unique exact name is a user-friendly fallback.
+    t=get_test_by_code(code)
+    if t:return t
+    key=str(code or '').strip()
+    if not key:return None
+    with conn() as c:
+        matches=c.execute("SELECT * FROM tests WHERE lower(name)=lower(?) LIMIT 2",(key,)).fetchall()
+    return matches[0] if len(matches)==1 else None
 
 def create_test(name,code,start_time="00:00",end_time="23:59",mode="open"):
     tid=secrets.token_hex(8)
