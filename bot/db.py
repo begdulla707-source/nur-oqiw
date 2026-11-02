@@ -240,13 +240,17 @@ def create_test_with_questions(name,code,items,paid=False):
             if subkind=='choice':
                 answer=answer.upper()
                 if answer not in ('A','B','C','D'):raise ValueError('Variant A/B/C/D bo‘lishi kerak.')
-                options=['A','B','C','D']
+                choices=part.get('options',['A','B','C','D'])
+                if not isinstance(choices,list) or len(choices)!=4 or any(not str(x).strip() for x in choices):
+                    raise ValueError('To‘rtta A/B/C/D variant matni kiritilsin.')
+                options=[str(x).strip()[:400] for x in choices]
             elif subkind=='written':
                 if not answer:raise ValueError('Yozma javob bo‘sh bo‘lmasin.')
                 options=[]
             else:raise ValueError('Savol turi noto‘g‘ri.')
             label=str(number)+(chr(97+index) if kind=='multi' else '')
-            normalized.append((label,subkind,answer,options))
+            question=str(part.get('question') or item.get('question') or (label+'-savol')).strip()[:1500]
+            normalized.append((label,subkind,answer,options,question))
     if not normalized:raise ValueError('Kamida bitta savol bo‘lishi kerak.')
     tid=secrets.token_hex(8)
     with conn() as c:
@@ -257,8 +261,8 @@ def create_test_with_questions(name,code,items,paid=False):
             c.execute("INSERT INTO paid_tests(test_id,created_at) VALUES(?,?)",
                       (tid,datetime.now(timezone.utc).isoformat()))
         next_id=int(c.execute('SELECT COALESCE(MAX(id),0)+1 AS n FROM questions').fetchone()['n'])
-        for offset,(label,kind,answer,options) in enumerate(normalized):
-            c.execute('INSERT INTO questions(id,question,options_json,answer,kind,group_id,active,image_url,test_id,number) VALUES(?,?,?,?,?,?,1,?,?,?)',(next_id+offset,label+'-savol',json.dumps(options,ensure_ascii=False),answer,kind,'','',tid,offset+1))
+        for offset,(label,kind,answer,options,question) in enumerate(normalized):
+            c.execute('INSERT INTO questions(id,question,options_json,answer,kind,group_id,active,image_url,test_id,number) VALUES(?,?,?,?,?,?,1,?,?,?)',(next_id+offset,question,json.dumps(options,ensure_ascii=False),answer,kind,'','',tid,offset+1))
             c.execute('UPDATE questions SET group_id=? WHERE id=?',(label,next_id+offset))
     return get_test(tid)
 
