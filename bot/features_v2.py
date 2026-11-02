@@ -251,7 +251,7 @@ def register(core,dp,bot,webapp_url):
   if not tid or not u:return {'ok':False,'error':'not_authorized'}
   with db.conn() as c:
    rows=c.execute("SELECT a.test_id,t.name,t.code,a.started_at,a.finished_at,a.score,a.grade,a.submitted FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id WHERE a.telegram_id=? ORDER BY COALESCE(a.finished_at,a.started_at) DESC",(tid,)).fetchall()
-  history=[{'test_id':x['test_id'],'test_name':x['name'] or 'Test','code':x['code'] or '', 'started_at':x['started_at'],'finished_at':x['finished_at'],'score':float(x['score'] or 0),'grade':x['grade'] or '', 'submitted':bool(x['submitted'])} for x in rows]
+  history=[{'test_id':x['test_id'],'test_name':x['name'] or 'Test','code':x['code'] or '', 'started_at':x['started_at'],'finished_at':x['finished_at'],'score':float(x['score'] or 0),'grade':x['grade'] or '', 'submitted':bool(x['submitted'])} for x in rows if db.can_access_test(x['test_id'],tid,ADMIN)]
   return {'ok':True,'full_name':u['full_name'] or '','photo_url':u['telegram_photo'] or '','tier':u['tier'] or 'default','tests':history}
  @core.app.get('/api/test/public-profile')
  async def public_profile_api(req:Request):
@@ -264,14 +264,14 @@ def register(core,dp,bot,webapp_url):
   if not target_user:return {'ok':False,'error':'user_not_found'}
   with db.conn() as c:
    rows=c.execute("SELECT a.test_id,t.name,t.code,a.started_at,a.finished_at,a.score,a.grade,a.submitted FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id WHERE a.telegram_id=? AND a.submitted=1 ORDER BY COALESCE(a.finished_at,a.started_at) DESC",(target,)).fetchall()
-  history=[{'test_id':x['test_id'],'test_name':x['name'] or 'Test','code':x['code'] or '', 'started_at':x['started_at'],'finished_at':x['finished_at'],'score':float(x['score'] or 0),'grade':x['grade'] or '', 'submitted':bool(x['submitted'])} for x in rows]
+  history=[{'test_id':x['test_id'],'test_name':x['name'] or 'Test','code':x['code'] or '', 'started_at':x['started_at'],'finished_at':x['finished_at'],'score':float(x['score'] or 0),'grade':x['grade'] or '', 'submitted':bool(x['submitted'])} for x in rows if db.can_access_test(x['test_id'],tid,ADMIN)]
   return {'ok':True,'telegram_id':target,'username':db.get_setting('telegram_username_'+str(target),'') or '', 'full_name':target_user['full_name'] or 'Foydalanuvchi','photo_url':target_user['telegram_photo'] or '', 'tests':history}
  @core.app.get('/api/test/ranking')
  async def ranking_api(req:Request):
   tid,u=await auth(req);code=req.query_params.get('code','').strip()
   if not tid or not u:return {'ok':False,'error':'not_authorized'}
-  t=db.get_test_by_code(code) if code else (db.get_test(u['test_id']) if u and u['test_id'] else None)
-  if not t:return {'ok':False,'error':'test_not_found'}
+  t=db.get_test_by_code_or_name(code) if code else (db.get_test(u['test_id']) if u and u['test_id'] else None)
+  if not t or not db.can_access_test(t['test_id'],tid,ADMIN):return {'ok':False,'error':'test_not_found'}
   rows=[x for x in db.all_attempts_for_test(t['test_id']) if x['submitted']]
   rows.sort(key=lambda x:(-float(x['score'] or 0),str(x['finished_at'] or '9999')))
   # Apply only positions explicitly overridden by an admin. All other places remain score-sorted automatically.
@@ -510,7 +510,7 @@ def register(core,dp,bot,webapp_url):
    done=[a for a in attempts if a['submitted']]
    ranked=sorted(done,key=lambda a:(-float(a['score'] or 0),str(a['finished_at'] or '9999')))
    participants=[{'full_name':a['full_name'] or 'Ismsiz','telegram_id':int(a['telegram_id']),'score':float(a['score'] or 0),'grade':a['grade'] or '', 'submitted':bool(a['submitted']),'started_at':a['started_at'],'finished_at':a['finished_at']} for a in sorted(attempts,key=lambda a:str(a['started_at'] or ''),reverse=True)]
-   tests.append({'test_id':str(t['test_id']),'name':t['name'],'code':t['code'],'active':bool(int(t['active'])),'questions':len(db.questions_for_test(t['test_id'])),'participants':len(attempts),'completed':len(done),'ranking':participants and [{'rank':i+1,'full_name':a['full_name'] or 'Ismsiz','score':float(a['score'] or 0),'grade':a['grade'] or ''} for i,a in enumerate(ranked[:10])] or [],'recent':participants[:50]})
+   tests.append({'test_id':str(t['test_id']),'name':t['name'],'code':t['code'],'active':bool(int(t['active'])),'paid':db.is_paid_test(t['test_id']),'questions':len(db.questions_for_test(t['test_id'])),'participants':len(attempts),'completed':len(done),'ranking':participants and [{'rank':i+1,'full_name':a['full_name'] or 'Ismsiz','score':float(a['score'] or 0),'grade':a['grade'] or ''} for i,a in enumerate(ranked[:10])] or [],'recent':participants[:50]})
    all_rows.extend(participants)
   registered=db.all_registered_users()
   user_count=len(registered)
@@ -528,8 +528,8 @@ def register(core,dp,bot,webapp_url):
   if not name or not re.fullmatch(r'[A-Za-z0-9_-]{3,40}',code):return {'ok':False,'error':'invalid_test'}
   if db.test_code_exists(code):return {'ok':False,'error':'code_exists'}
   try:
-   test=db.create_test(name,code)
-   return {'ok':True,'test':{'test_id':str(test['test_id']),'name':test['name'],'code':test['code'],'active':bool(test['active'])},'message':'Test yaratildi. Savollarni botdagi “Test sozlamalari” bo‘limidan qo‘shing.'}
+   test=db.create_paid_test(name,code) if p.get('paid') is True else db.create_test(name,code)
+   return {'ok':True,'test':{'test_id':str(test['test_id']),'name':test['name'],'code':test['code'],'active':bool(test['active']),'paid':db.is_paid_test(test['test_id'])},'message':'Test yaratildi. Savollarni shu Mini App admin panelida yoki botda qo‘shing.'}
   except Exception:
    logging.getLogger('nur-oqiw.admin').exception('Could not create test')
    return {'ok':False,'error':'create_failed'}
@@ -709,6 +709,41 @@ def register(core,dp,bot,webapp_url):
    db.set_setting('awake_schedule',json.dumps({'date':'','start':start,'end':end,'timezone':'Asia/Tashkent'},ensure_ascii=False))
    return {'ok':True,'message':f'Jadval saqlandi: {start}-{end}. Bu Render serverining uyqu rejimini bekor qilmaydi.'}
   return {'ok':False,'error':'action_not_allowed'}
+ @core.app.get('/api/test/paid')
+ async def paid_tests_api(req:Request):
+  tid,u=await auth(req)
+  if not tid or not u:return {'ok':False,'error':'not_authorized'}
+  items=[]
+  for t in db.paid_tests_for_user(tid,ADMIN):
+   if not int(t['active']):continue
+   items.append({'test_id':str(t['test_id']),'name':str(t['name']),'code':str(t['code']),'questions':len(db.questions_for_test(t['test_id']))})
+  return {'ok':True,'tests':items,'contact':'https://t.me/dd17x'}
+
+ @core.app.get('/api/admin/paid/access')
+ async def admin_paid_access(req:Request):
+  tid,u=await auth(req)
+  if tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  test_id=str(req.query_params.get('test_id',''))
+  if not db.is_paid_test(test_id):return {'ok':False,'error':'paid_test_not_found'}
+  users=[{'telegram_id':int(x['telegram_id']),'full_name':x['full_name'] or 'Ismsiz','granted_at':x['granted_at']} for x in db.paid_access_list(test_id)]
+  return {'ok':True,'users':users}
+
+ @core.app.post('/api/admin/paid/access')
+ async def admin_paid_access_update(req:Request,p:dict):
+  tid,u=await auth(req)
+  if tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  test_id=str(p.get('test_id',''))
+  if not db.is_paid_test(test_id):return {'ok':False,'error':'paid_test_not_found'}
+  try:target=int(p.get('telegram_id','0'))
+  except (TypeError,ValueError):return {'ok':False,'error':'invalid_user_id'}
+  if target<=0:return {'ok':False,'error':'invalid_user_id'}
+  if not db.get_user(target):return {'ok':False,'error':'user_not_registered'}
+  if str(p.get('action','grant'))=='revoke':
+   db.paid_revoke(test_id,target)
+  else:
+   db.paid_grant(test_id,target,ADMIN)
+  return {'ok':True,'users':[{'telegram_id':int(x['telegram_id']),'full_name':x['full_name'] or 'Ismsiz','granted_at':x['granted_at']} for x in db.paid_access_list(test_id)]}
+
  @core.app.get('/api/test/active')
  async def active_tests_api(req:Request):
   tid,u=await auth(req)
@@ -716,7 +751,7 @@ def register(core,dp,bot,webapp_url):
   if tid!=ADMIN and not await CORE.subscribed(tid):return {'ok':False,'error':'subscription_required'}
   tests=[]
   for t in db.all_tests():
-   if not int(t['active']):continue
+   if not int(t['active']) or db.is_paid_test(t['test_id']):continue
    qs=db.questions_for_test(t['test_id'])
    if not qs:continue
    tests.append({'test_id':str(t['test_id']),'name':str(t['name']),'code':str(t['code']),'questions':len(qs)})
@@ -724,10 +759,10 @@ def register(core,dp,bot,webapp_url):
 
  @core.app.get('/api/test/state')
  async def state(req: Request):
-  tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
+  tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code_or_name(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u:return {'ok':False,'error':'not_authorized'}
   if tid!=ADMIN and not await CORE.subscribed(tid):return {'ok':False,'error':'subscription_required'}
-  if not t:return {'ok':False,'error':'test_not_found'}
+  if not t or not db.can_access_test(t['test_id'],tid,ADMIN):return {'ok':False,'error':'test_not_found'}
   if not db.questions_for_test(t['test_id']):return {'ok':False,'error':'test_not_ready','test_name':t['name']}
   if u['test_id']!=t['test_id']:db.update_user(tid,test_id=t['test_id'],code_ok=1,state='ready');u=db.get_user(tid)
   if not u['full_name']:return {'ok':False,'error':'registration_required','test_name':t['name']}
@@ -747,8 +782,9 @@ def register(core,dp,bot,webapp_url):
   return {'ok':True,'full_name':u['full_name'],'answers':answers,'results':results,'ends_at':None,'test_name':t['name'],'test_code':t['code'],'total_questions':len(qs),'questions':[{'id':by_number[n]['number'],'display_number':by_number[n]['group_id'] or str(i+1),'question':by_number[n]['question'] or '', 'options':(json.loads(by_number[n]['options_json'] or '[]') if by_number[n]['options_json'] else []) or ['A','B','C','D'], 'kind':by_number[n]['kind'],'image_url':by_number[n]['image_url'] or ''} for i,n in enumerate(order)]}
  @core.app.get('/api/test/questions')
  async def questions(req: Request):
-  tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
+  tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code_or_name(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t:return {'ok':False,'error':'not_authorized'}
+  if not db.can_access_test(t['test_id'],tid,ADMIN):return {'ok':False,'error':'test_not_found'}
   if tid!=ADMIN and not await CORE.subscribed(tid):return {'ok':False,'error':'subscription_required'}
   if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if not u['full_name'] or u['test_id']!=t['test_id'] or not opened(t):return {'ok':False,'error':'test_not_started'}
@@ -758,8 +794,9 @@ def register(core,dp,bot,webapp_url):
   return {'ok':True,'questions':[{'id':by_number[n]['number'],'display_number':i+1,'question':by_number[n]['question'] or '', 'options':(json.loads(by_number[n]['options_json'] or '[]') if by_number[n]['options_json'] else []) or ['A','B','C','D'], 'kind':by_number[n]['kind'],'image_url':by_number[n]['image_url'] or ''} for i,n in enumerate(order)]}
  @core.app.post('/api/test/answer')
  async def answer(p:dict, request: Request):
-  raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
+  raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code_or_name(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t or not u['full_name']:return {'ok':False,'error':'not_authorized'}
+  if not db.can_access_test(t['test_id'],tid,ADMIN):return {'ok':False,'error':'test_not_found'}
   if tid!=ADMIN and not await CORE.subscribed(tid):return {'ok':False,'error':'subscription_required'}
   if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if u['test_id']!=t['test_id']:return {'ok':False,'error':'test_not_started'}
@@ -789,8 +826,9 @@ def register(core,dp,bot,webapp_url):
   return {'ok':True,'number':q['number'],'correct': (db.normalize(v)==db.normalize(q['answer'])) if q['kind']!='written' else None}
  @core.app.post('/api/test/finish')
  async def finish(p:dict, request: Request):
-  raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
+  raw=request.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or p.get('initData','');tid=CORE.telegram_user(raw);u=db.get_user(tid) if tid else None;c=str(p.get('code','')).strip();t=db.get_test_by_code_or_name(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
   if not tid or not u or not t or not u['full_name']:return {'ok':False,'error':'not_authorized'}
+  if not db.can_access_test(t['test_id'],tid,ADMIN):return {'ok':False,'error':'test_not_found'}
   if tid!=ADMIN and not await CORE.subscribed(tid):return {'ok':False,'error':'subscription_required'}
   if u['test_id']!=t['test_id']:return {'ok':False,'error':'test_not_started'}
   a=db.get_attempt(t['test_id'],tid)
@@ -808,8 +846,8 @@ def register(core,dp,bot,webapp_url):
   return {'ok':True,'score':sc,'grade':gr,'correct_count':correct,'total_questions':total,'wrong_count':max(0,total-correct),'full_name':u['full_name'],'test_name':t['name']}
  @r.message(CommandStart(deep_link=True))
  async def deep(m:Message,command):
-  t=db.get_test_by_code((command.args or '').strip())
-  if not t:return await m.answer('Bu test kodi topilmadi.')
+  t=db.get_test_by_code_or_name((command.args or '').strip())
+  if not t or not db.can_access_test(t['test_id'],m.from_user.id,ADMIN):return await m.answer('Test topilmadi yoki pulli testga ruxsatingiz yo‘q.')
   u=db.ensure_user(m.from_user.id);db.update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready' if u['full_name'] else 'name');db.ensure_attempt(t['test_id'],m.from_user.id);u=db.get_user(m.from_user.id)
   if not u['full_name']:
    return await m.answer(f"{t['name']}\n\nIsm-familiyangizni yozing yoki Telegram ismingiz bilan davom eting:",reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telegram ismim bilan davom etish')]],resize_keyboard=True,one_time_keyboard=True))
