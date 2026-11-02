@@ -252,9 +252,15 @@ async def select_active_test(q:CallbackQuery):
             await q.answer('Avval ro‘yxatdan o‘ting.',show_alert=True)
             return
         update_user(q.from_user.id,test_id=t['test_id'],code_ok=1,state='ready')
-        ensure_attempt(t['test_id'],q.from_user.id)
+        attempt=ensure_attempt(t['test_id'],q.from_user.id)
+        restarted=False
+        if attempt and int(attempt['submitted'] or 0):
+            outcome=restart_completed_attempt(t['test_id'],q.from_user.id)
+            if outcome not in ('restarted','already_active'):
+                return await q.answer('Yangi urinishni boshlash imkoni bo‘lmadi.',show_alert=True)
+            restarted=outcome=='restarted'
         url=f"{WEBAPP.rstrip('/')}/test?code={t['code']}"
-        await q.message.answer(str(t['name'])+'\n\nMini Appni oching:',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MINI APPNI OCHISH',web_app=WebAppInfo(url=url),style='primary')]]))
+        await q.message.answer(str(t['name'])+'\n\n'+('Eski natijangiz arxivga saqlandi. Yangi urinish tayyor.\n' if restarted else '')+'Mini Appni oching:',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MINI APPNI OCHISH',web_app=WebAppInfo(url=url),style='primary')]]))
         await q.answer()
     except Exception:
         logger.exception('active_test callback failed')
@@ -278,10 +284,16 @@ async def start_test(m:Message):
         return await m.answer('Bu pulli testga ruxsat yo‘q. «Pulli testlar» bo‘limidan adminga murojaat qiling.')
     if not int(t.get('active') or 0):
         return await m.answer('Bu test hozir administrator tomonidan yopilgan.')
-    ensure_attempt(t['test_id'],m.from_user.id)
+    attempt=ensure_attempt(t['test_id'],m.from_user.id)
+    restarted=False
+    if attempt and int(attempt['submitted'] or 0):
+        outcome=restart_completed_attempt(t['test_id'],m.from_user.id)
+        if outcome not in ('restarted','already_active'):
+            return await m.answer('Yangi urinishni boshlashda xatolik. Qayta urinib ko‘ring.')
+        restarted=outcome=='restarted'
     url=f"{WEBAPP.rstrip('/')}/test?code={t['code']}"
     kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='TESTNI BOSHLASH',web_app=WebAppInfo(url=url),style='primary')]])
-    return await m.answer(f"{t['name']}\n\nTest tayyor. Quyidagi tugmani bosing — Mini App ochiladi.",reply_markup=kb)
+    return await m.answer(f"{t['name']}\n\n"+('Oldingi natijangiz saqlandi. Yangi urinish ochildi.\n' if restarted else '')+"Test tayyor. Quyidagi tugmani bosing — Mini App ochiladi.",reply_markup=kb)
 
 async def cleanup_loop():
     # Attempts remain active until a user submits or an admin closes the test.
