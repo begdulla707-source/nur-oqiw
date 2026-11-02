@@ -4,7 +4,7 @@ import json,secrets,os,tempfile,reportlab,urllib.request,urllib.error,urllib.par
 from datetime import datetime,time,timedelta
 from aiogram import Router,F
 from aiogram.filters import CommandStart
-from aiogram.types import Message,CallbackQuery,InlineKeyboardMarkup,InlineKeyboardButton,WebAppInfo,FSInputFile,ReplyKeyboardMarkup,KeyboardButton
+from aiogram.types import Message,CallbackQuery,InlineKeyboardMarkup,InlineKeyboardButton,WebAppInfo,FSInputFile,ReplyKeyboardMarkup,ReplyKeyboardRemove,KeyboardButton,KeyboardButtonRequestUsers
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4,landscape
 from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer
@@ -70,7 +70,34 @@ def tests_kb():
  r.append([InlineKeyboardButton(text='UMUMIY REYTING ARXIVI',callback_data='t_archive_results')])
  r.append([InlineKeyboardButton(text='TEKSHIRISH',callback_data='t_check_list')])
  return InlineKeyboardMarkup(inline_keyboard=r)
+def paid_menu_kb():
+ tests=db.paid_tests_for_user(ADMIN,ADMIN)
+ rows=[]
+ for t in tests[:50]:
+  label=('● ' if int(t['active']) else '○ ')+str(t['name'])[:32]+'  ·  '+str(t['code'])[:12]
+  rows.append([InlineKeyboardButton(text=label,callback_data='paid_admin:'+str(t['test_id']),
+    style='success' if int(t['active']) else 'default')])
+ rows.append([InlineKeyboardButton(text='+ YANGI PULLI TEST',callback_data='paid_new',style='primary')])
+ return InlineKeyboardMarkup(inline_keyboard=rows)
+
+def paid_test_kb(test_id):
+ t=db.get_test(test_id)
+ if not t or not db.is_paid_test(test_id):return paid_menu_kb()
+ active=bool(int(t['active']))
+ return InlineKeyboardMarkup(inline_keyboard=[
+  [InlineKeyboardButton(text='SAVOL QO‘SHISH',callback_data='t_add:'+str(test_id),style='primary'),
+   InlineKeyboardButton(text='SAVOLLARNI KO‘RISH',callback_data='t_q:'+str(test_id))],
+  [InlineKeyboardButton(text='QATNASHCHI QO‘SHISH',callback_data='paid_grant:'+str(test_id),style='success')],
+  [InlineKeyboardButton(text='RUXSATLARNI KO‘RISH / O‘CHIRISH',callback_data='paid_members:'+str(test_id))],
+  [InlineKeyboardButton(text='NATIJALAR',callback_data='t_results:'+str(test_id))],
+  [InlineKeyboardButton(text='TESTNI YOPISH' if active else 'TESTNI OCHISH',
+    callback_data=('t_close:' if active else 't_open:')+str(test_id),
+    style='danger' if active else 'success')],
+  [InlineKeyboardButton(text='PULLI TESTLAR RO‘YXATI',callback_data='paid_list')]
+ ])
+
 def test_kb(t):
+ if db.is_paid_test(t):return paid_test_kb(t)
  test=db.get_test(t);active=bool(test and int(test['active']))
  toggle=InlineKeyboardButton(text='TESTNI TO‘XTATISH' if active else 'QAYTA OCHISH',callback_data=f't_close:{t}' if active else f't_open:{t}',style='danger' if active else 'success')
  return InlineKeyboardMarkup(inline_keyboard=[
@@ -916,29 +943,71 @@ def register(core,dp,bot,webapp_url):
  @r.message(F.text=='Pulli testlar')
  async def paid_tests_menu(m:Message):
   if m.from_user.id==ADMIN:
+   ast('admin')
    tests=db.paid_tests_for_user(ADMIN,ADMIN)
-   rows=[[InlineKeyboardButton(text=(('OCHIQ ' if int(t['active']) else 'YOPIQ ')+str(t['name']))[:55],callback_data='paid_admin:'+str(t['test_id']),style='success' if int(t['active']) else 'danger')] for t in tests[:45]]
-   rows.append([InlineKeyboardButton(text='PULLI TEST YARATISH / SAVOLLAR',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'),style='primary')])
-   return await m.answer('PULLI TESTLAR — ADMIN\n\nTestni tanlang va Telegram chat ID orqali kirish huquqini bering. Yangi pulli test va savollarni Mini App admin bo‘limida yarating.',reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+   return await m.answer(
+    '<b>PULLI TESTLAR · ADMIN</b>\n\n'
+    f'Testlar: <b>{len(tests)}</b> ta\n'
+    'Test yarating, savollar va javoblarni botda sozlang. '
+    'Foydalanuvchilarga kirishni Telegram chat ID orqali bering.\n'
+    'O‘quvchilar testni Mini App orqali yechadi.',
+    parse_mode='HTML',reply_markup=paid_menu_kb())
   allowed=db.paid_tests_for_user(m.from_user.id,ADMIN)
-  rows=[[InlineKeyboardButton(text=(str(t['name'])+' · '+str(t['code']))[:55],web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/test?code='+str(t['code'])),style='success')] for t in allowed if int(t['active']) and db.questions_for_test(t['test_id'])]
-  rows.append([InlineKeyboardButton(text='MINI APP — PULLI TESTLAR',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/paid'),style='primary')])
-  rows.append([InlineKeyboardButton(text='SOTIB OLISH — @dd17x',url='https://t.me/dd17x')])
-  return await m.answer('PULLI TESTLAR\n\n'+('Sizga ruxsat berilgan testlar quyida.' if allowed else 'Hozircha sizga pulli testga kirish berilmagan. Sotib olish uchun @dd17x ga yozing. Admin tasdiqlaganidan keyin test chiqadi.'),reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+  rows=[]
+  for t in allowed:
+   if not int(t['active']) or not db.questions_for_test(t['test_id']):continue
+   rows.append([InlineKeyboardButton(
+    text=(str(t['name'])+' · '+str(t['code']))[:55],
+    web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/test?code='+str(t['code'])),style='primary')])
+  rows.append([InlineKeyboardButton(text='SOTIB OLISH / ADMIN @dd17x',url='https://t.me/dd17x')])
+  return await m.answer(
+   '<b>PULLI TESTLAR</b>\n\n'
+   +('Siz uchun ochilgan testni tanlang.' if rows.__len__()>1
+     else 'Hozircha sizga ruxsatli test yo‘q. Sotib olish uchun adminga yozing. '
+          'Tasdiqlangach test shu menyuda ochiladi.'),
+   parse_mode='HTML',reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+ @r.callback_query(F.data=='paid_list')
+ async def paid_list(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q.',show_alert=True)
+  tests=db.paid_tests_for_user(ADMIN,ADMIN)
+  await q.message.edit_text(
+   '<b>PULLI TESTLAR · ADMIN</b>\n\n'
+   f'Saqlangan testlar: <b>{len(tests)}</b> ta\n'
+   'Testni tanlang yoki yangi test yarating.',
+   parse_mode='HTML',reply_markup=paid_menu_kb())
+  await q.answer()
+
+ @r.callback_query(F.data=='paid_new')
+ async def paid_new(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q.',show_alert=True)
+  clear_draft()
+  save_draft({'paid':True})
+  ast('new_code')
+  await q.message.answer(
+   '<b>YANGI PULLI TEST · 1/3</b>\n\n'
+   'Test uchun noyob <b>kirish kodi</b>ni yuboring.\n'
+   'Masalan: PREMIUM2026\n\n'
+   'Keyingi bosqichlarda nom, savollar soni va to‘g‘ri javoblar kiritiladi.',
+   parse_mode='HTML')
+  await q.answer()
 
  @r.callback_query(F.data.startswith('paid_admin:'))
  async def paid_admin_actions(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q.',show_alert=True)
   test_id=q.data.split(':',1)[1]
   t=db.get_test(test_id)
-  if not t or not db.is_paid_test(test_id):return await q.answer('Pulli test topilmadi.',show_alert=True)
+  if not t or not db.is_paid_test(test_id):
+   return await q.answer('Pulli test topilmadi.',show_alert=True)
   holders=db.paid_access_list(test_id)
-  keyboard=InlineKeyboardMarkup(inline_keyboard=[
-   [InlineKeyboardButton(text='CHAT ID ORQALI O‘QUVCHI QO‘SHISH',callback_data='paid_grant:'+test_id,style='success')],
-   [InlineKeyboardButton(text='RUXSATLARNI BOSHQARISH',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'),style='primary')],
-   [InlineKeyboardButton(text='TEST SAVOLLARI',callback_data='t_pick:'+test_id,style='primary')]
-  ])
-  await q.message.answer(f"PULLI TEST: {t['name']}\nKod: {t['code']}\nQatnashish ruxsati: {len(holders)} foydalanuvchi\n\nYangi odam qo‘shish uchun chat ID tugmasini bosing.",reply_markup=keyboard)
+  questions=db.questions_for_test(test_id)
+  text=('<b>'+escape(str(t['name']))+'</b>\n'
+   'Kod: <code>'+escape(str(t['code']))+'</code>\n'
+   'Savollar: <b>'+str(len(questions))+'</b>\n'
+   'Qatnashish ruxsati: <b>'+str(len(holders))+'</b>\n'
+   'Holat: <b>'+('Ochiq' if int(t['active']) else 'Yopiq')+'</b>\n\n'
+   'Barcha boshqaruv tugmalari quyida.')
+  await q.message.edit_text(text,parse_mode='HTML',reply_markup=paid_test_kb(test_id))
   await q.answer()
 
  @r.callback_query(F.data.startswith('paid_grant:'))
@@ -946,8 +1015,103 @@ def register(core,dp,bot,webapp_url):
   if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q.',show_alert=True)
   test_id=q.data.split(':',1)[1]
   if not db.is_paid_test(test_id):return await q.answer('Pulli test topilmadi.',show_alert=True)
-  db.update_user(ADMIN,state='paid_grant:'+test_id)
-  await q.message.answer('Telegram chat ID ni kiriting (masalan: 123456789). Foydalanuvchi avval botga /start bosgan bo‘lishi kerak. Bekor qilish: /cancel.')
+  # Telegram's native user selection works ONLY on a reply keyboard.
+  # A callback button opens this short-lived reply keyboard, not a Web App.
+  request_id=secrets.randbelow(2**30-1)+1
+  ast('paid_select:'+test_id+':'+str(request_id))
+  chooser=ReplyKeyboardMarkup(keyboard=[
+   [KeyboardButton(text='FOYDALANUVCHINI TANLASH',request_users=KeyboardButtonRequestUsers(
+    request_id=request_id,user_is_bot=False,max_quantity=1,request_name=True,request_username=True))],
+   [KeyboardButton(text='CHAT ID NI QO‘LDA KIRITISH')],
+   [KeyboardButton(text='BEKOR QILISH')]
+  ],resize_keyboard=True,one_time_keyboard=True)
+  await q.message.answer(
+   '<b>QATNASHCHI QO‘SHISH</b>\n\n'
+   'Telegram kontaktlaridan foydalanuvchini tanlang yoki chat ID ni kiriting.\n'
+   'Foydalanuvchi oldin botda <code>/start</code> bosgan bo‘lishi shart.',
+   parse_mode='HTML',reply_markup=chooser)
+  await q.answer()
+
+ @r.callback_query(F.data.startswith('paid_members:'))
+ async def paid_members(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q.',show_alert=True)
+  tid=q.data.split(':',1)[1]
+  if not db.is_paid_test(tid):return await q.answer('Test topilmadi.',show_alert=True)
+  users=db.paid_access_list(tid)
+  kb=[]
+  for u in users[:40]:
+   uid=int(u['telegram_id'])
+   kb.append([InlineKeyboardButton(text=('OLIB TASHLASH · '+str(u['full_name'] or uid))[:56],
+     callback_data=f'paid_rm:{tid}:{uid}',style='danger')])
+  kb.append([InlineKeyboardButton(text='YANGI QATNASHCHI',callback_data='paid_grant:'+tid,style='success')])
+  kb.append([InlineKeyboardButton(text='ORQAGA',callback_data='paid_admin:'+tid)])
+  await q.message.edit_text(
+   '<b>TEST QATNASHCHILARI</b>\n\n'
+   'Kirishi tasdiqlanganlar: <b>'+str(len(users))+'</b> ta.\n'
+   'Olib tashlash uchun kerakli foydalanuvchini tanlang.',
+   parse_mode='HTML',reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+  await q.answer()
+
+ @r.callback_query(F.data.startswith('paid_rm:'))
+ async def paid_revoke_confirm(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q.',show_alert=True)
+  _,tid,uid=q.data.split(':',2)
+  if not db.is_paid_test(tid):return await q.answer('Test topilmadi.',show_alert=True)
+  name=db.get_user(int(uid))
+  buttons=InlineKeyboardMarkup(inline_keyboard=[
+   [InlineKeyboardButton(text='HA, RUXSATNI OLIB TASHLASH',callback_data=f'paid_yesrm:{tid}:{uid}',style='danger')],
+   [InlineKeyboardButton(text='BEKOR QILISH',callback_data='paid_members:'+tid)]])
+  await q.message.edit_text(
+   '<b>RUXSATNI OLIB TASHLASH</b>\n\n'
+   +escape(str(name['full_name'] if name else uid))+' · <code>'+uid+'</code>\n'
+   'Ushbu odam endi pulli testni ocha olmaydi. Tasdiqlaysizmi?',
+   parse_mode='HTML',reply_markup=buttons)
+  await q.answer()
+
+ @r.callback_query(F.data.startswith('paid_yesrm:'))
+ async def paid_revoke_do(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q.',show_alert=True)
+  _,tid,uid=q.data.split(':',2)
+  if not db.is_paid_test(tid):return await q.answer('Test topilmadi.',show_alert=True)
+  db.paid_revoke(tid,int(uid))
+  await q.message.edit_text('Ruxsat olib tashlandi.',reply_markup=InlineKeyboardMarkup(
+   inline_keyboard=[[InlineKeyboardButton(text='QATNASHCHILAR',callback_data='paid_members:'+tid,style='primary')]]))
+  await q.answer('Ruxsat olib tashlandi')
+
+ @r.callback_query(F.data.startswith('paid_ok:'))
+ async def paid_grant_confirm(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q.',show_alert=True)
+  _,tid,uid=q.data.split(':',2)
+  current=db.get_user(ADMIN)
+  if not current or str(current['state'])!='paid_confirm:'+tid+':'+uid:
+   return await q.answer('Tasdiqlash sessiyasi eskirgan.',show_alert=True)
+  if not db.is_paid_test(tid):return await q.answer('Test topilmadi.',show_alert=True)
+  person=db.get_user(int(uid))
+  if not person:return await q.answer('Foydalanuvchi botga /start bosmagan.',show_alert=True)
+  db.paid_grant(tid,int(uid),ADMIN)
+  ast('admin')
+  test=db.get_test(tid)
+  try:
+   await BOT.send_message(int(uid),
+     'Sizga «'+test['name']+'» pulli testiga ruxsat berildi. Testni botdagi «Pulli testlar» orqali yeching.',
+     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+      [InlineKeyboardButton(text='TESTNI OCHISH',web_app=WebAppInfo(url=WEBAPP.rstrip()+'/test?code='+str(test['code'])),style='success')]]))
+  except Exception:pass
+  await q.message.edit_text(
+   '<b>RUXSAT BERILDI</b>\n\n'
+   +escape(str(person['full_name'] or 'Ismsiz'))+' · <code>'+uid+'</code>\n'
+   'Test: <b>'+escape(str(test['name']))+'</b>',
+   parse_mode='HTML',reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text='TESTGA QAYTISH',callback_data='paid_admin:'+tid,style='primary')]]))
+  await q.answer('Ruxsat saqlandi')
+
+ @r.callback_query(F.data.startswith('paid_cancel:'))
+ async def paid_grant_cancel(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q.',show_alert=True)
+  tid=q.data.split(':',1)[1]
+  ast('admin')
+  await q.message.edit_text('Qatnashchi qo‘shish bekor qilindi.',reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+   [InlineKeyboardButton(text='TESTGA QAYTISH',callback_data='paid_admin:'+tid)]]))
   await q.answer()
 
  @r.message(F.text=='Yordam')
