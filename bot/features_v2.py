@@ -788,7 +788,7 @@ def register(core,dp,bot,webapp_url):
   a=db.ensure_attempt(t['test_id'],tid)
   if a['submitted']:
    answers=json.loads(a['answers_json'] or '{}');correct,total,unanswered=result_counts(answers,db.questions_for_test(t['test_id']))
-   return {'ok':False,'error':'already_submitted','score':a['score'],'grade':a['grade'],'correct_count':correct,'total_questions':total,'unanswered_count':unanswered,'test_name':t['name'],'full_name':u['full_name']}
+   return {'ok':False,'error':'already_submitted','score':a['score'],'grade':a['grade'],'correct_count':correct,'total_questions':total,'unanswered_count':unanswered,'test_name':t['name'],'test_code':t['code'],'full_name':u['full_name'],'can_retry':bool(int(t['active'])) and bool(opened(t))}
   if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if not a['started_at']:
    if not opened(t):return {'ok':False,'error':'test_closed','test_name':t['name']}
@@ -799,6 +799,31 @@ def register(core,dp,bot,webapp_url):
   answers=json.loads(a['answers_json'] or '{}');answers.pop('_question_order',None)
   results={str(q['number']):('correct' if db.normalize(answers.get(str(q['number']),''))==db.normalize(q['answer']) else 'wrong') for q in qs if str(q['number']) in answers and q['kind']!='written'}
   return {'ok':True,'full_name':u['full_name'],'answers':answers,'results':results,'ends_at':None,'test_name':t['name'],'test_code':t['code'],'total_questions':len(qs),'questions':[{'id':by_number[n]['number'],'display_number':by_number[n]['group_id'] or str(i+1),'question':by_number[n]['question'] or '', 'options':(json.loads(by_number[n]['options_json'] or '[]') if by_number[n]['options_json'] else []) or ['A','B','C','D'], 'kind':by_number[n]['kind'],'image_url':by_number[n]['image_url'] or ''} for i,n in enumerate(order)]}
+ @core.app.post('/api/test/retry')
+ async def retry_completed_test(p:dict,req:Request):
+  """Explicitly start a new attempt; previous score is retained in archives."""
+  tid,u=await auth(req)
+  if not tid or not u or not u['full_name']:
+   return {'ok':False,'error':'not_authorized'}
+  if tid!=ADMIN and not await CORE.subscribed(tid):
+   return {'ok':False,'error':'subscription_required'}
+  code=str(p.get('code','')).strip()
+  t=db.get_test_by_code_or_name(code) if code else None
+  if not t or not db.can_access_test(t['test_id'],tid,ADMIN):
+   return {'ok':False,'error':'test_not_found'}
+  if not int(t['active']) or not opened(t):
+   return {'ok':False,'error':'test_closed'}
+  if not db.questions_for_test(t['test_id']):
+   return {'ok':False,'error':'test_not_ready'}
+  # Safe re-submission is allowed only after explicit user confirmation.
+  result=db.restart_completed_attempt(t['test_id'],tid)
+  if result=='restarted':
+   db.update_user(tid,test_id=t['test_id'],code_ok=1,state='ready')
+   return {'ok':True,'restarted':True,'test_code':t['code'],'message':'Yangi urinish boshlandi. Eski natija arxivda saqlandi.'}
+  if result=='already_active':
+   return {'ok':True,'restarted':False,'test_code':t['code'],'message':'Urinish allaqachon ochiq.'}
+  return {'ok':False,'error':result}
+
  @core.app.get('/api/test/questions')
  async def questions(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code_or_name(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
