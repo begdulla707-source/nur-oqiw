@@ -105,6 +105,7 @@ async def health():return {'ok':True,'service':'nur-oqiw','storage':'postgres' i
 @dp.message(CommandStart(deep_link=False))
 async def start(m:Message):
     u=ensure_user(m.from_user.id)
+    if m.from_user.username:set_setting('telegram_username_'+str(m.from_user.id),m.from_user.username.lstrip('@').lower())
     if m.from_user.id==ADMIN:
         name=' '.join(x for x in [m.from_user.first_name,m.from_user.last_name] if x).strip()
         if name and not u['full_name']:upsert_user(ADMIN,name)
@@ -124,6 +125,7 @@ async def start(m:Message):
 @dp.message(CommandStart(deep_link=True))
 async def start_deep_link(m:Message):
     u=ensure_user(m.from_user.id)
+    if m.from_user.username:set_setting('telegram_username_'+str(m.from_user.id),m.from_user.username.lstrip('@').lower())
     if m.from_user.id==ADMIN:
         update_user(ADMIN,state='admin');return await m.answer('NUR O‘QIW ORAYI\n\nAdmin boshqaruv paneli.',reply_markup=admin_kb())
     parts=(m.text or '').split(maxsplit=1)
