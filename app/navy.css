@@ -459,3 +459,80 @@ main.test-page{padding-bottom:clamp(112px,16vh,148px)!important}
  .test-page .written-keyboard .keyboard-keys button{height:33px!important;min-height:33px!important;font-size:12px!important}
  .test-page .written-keyboard .keyboard-tabs button{font-size:11px!important}
 }
+
+/* Admin readability: only the participant directory and test-management labels. */
+.admin-shell .admin-user-directory{
+ width:100%!important;max-width:100%!important;box-sizing:border-box!important;
+ margin:18px 0 20px!important;padding:16px!important;
+ border:1px solid #334359!important;border-radius:19px!important;
+ background:#151e30!important;color:#eaf2ff!important;-webkit-text-fill-color:#eaf2ff!important;
+ box-shadow:0 8px 25px rgba(0,0,0,.12)!important;overflow:hidden!important
+}
+.admin-shell .admin-user-directory>summary{
+ display:list-item!important;padding:2px 0 12px!important;
+ font-size:14px!important;line-height:1.45!important;font-weight:800!important;
+ color:#e9f3ff!important;-webkit-text-fill-color:#e9f3ff!important;cursor:pointer
+}
+.admin-shell .admin-user-directory .admin-muted{
+ color:#a9bbd5!important;-webkit-text-fill-color:#a9bbd5!important;
+ font-size:12px!important;line-height:1.5!important;margin:0 0 11px!important
+}
+.admin-shell .admin-user-directory .admin-participants{
+ display:grid!important;gap:7px!important;min-width:0!important;max-width:100%!important
+}
+.admin-shell .admin-user-directory .admin-participant{
+ display:flex!important;align-items:center!important;min-width:0!important;
+ padding:11px 12px!important;border:1px solid #2b3d58!important;
+ border-radius:12px!important;margin:0!important;box-sizing:border-box!important;
+ background:#101a2b!important;color:#edf4ff!important;-webkit-text-fill-color:#edf4ff!important
+}
+.admin-shell .admin-user-directory .admin-participant>div{min-width:0!important;max-width:100%!important}
+.admin-shell .admin-user-directory .admin-participant a,
+.admin-shell .admin-user-directory .admin-participant strong{
+ display:inline-block!important;max-width:100%!important;
+ color:#76b8ff!important;-webkit-text-fill-color:#76b8ff!important;
+ font-size:14px!important;line-height:1.35!important;
+ white-space:normal!important;overflow-wrap:anywhere!important;text-decoration:none!important
+}
+.admin-shell .admin-user-directory .admin-participant small{
+ display:block!important;margin-top:4px!important;
+ color:#a3b6d2!important;-webkit-text-fill-color:#a3b6d2!important;
+ font-size:11px!important;line-height:1.4!important;overflow-wrap:anywhere!important
+}
+.admin-shell .admin-test-card .admin-details{
+ border:1px solid #2c3c55!important;border-radius:13px!important;
+ background:#111b2c!important;color:#dae7f8!important;-webkit-text-fill-color:#dae7f8!important;
+ padding:12px!important;margin-top:12px!important;overflow:hidden!important
+}
+.admin-shell .admin-test-card .admin-details>summary{
+ color:#bfdbff!important;-webkit-text-fill-color:#bfdbff!important;
+ font-size:13px!important;font-weight:750!important;line-height:1.4!important;
+ cursor:pointer!important
+}
+.admin-shell .admin-test-card .admin-details .admin-participant strong,
+.admin-shell .admin-test-card .admin-details .admin-participant b{
+ color:#e9f3ff!important;-webkit-text-fill-color:#e9f3ff!important
+}
+.admin-shell .admin-test-card .admin-details .admin-participant small{
+ color:#a6bbd6!important;-webkit-text-fill-color:#a6bbd6!important
+}
+.admin-shell .admin-test-card .admin-rank-form,
+.admin-shell .admin-test-card form{min-width:0!important}
+.admin-shell .admin-test-card label,
+.admin-shell .admin-test-card .admin-details p,
+.admin-shell .admin-test-card .admin-details small{
+ color:#bfd0e7!important;-webkit-text-fill-color:#bfd0e7!important
+}
+.admin-shell .admin-stat>span,
+.admin-shell .admin-test-top p,
+.admin-shell .admin-test-stats span{
+ color:#adbed7!important;-webkit-text-fill-color:#adbed7!important
+}
+.admin-shell .admin-test-card input,
+.admin-shell .admin-test-card select{
+ color:#172638!important;-webkit-text-fill-color:#172638!important
+}
+@media(max-width:420px){
+ .admin-shell .admin-user-directory{padding:12px!important}
+ .admin-shell .admin-user-directory .admin-participant{padding:10px!important}
+}
