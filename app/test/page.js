@@ -148,6 +148,8 @@ export default function Test(){
  const [correctCount,setCorrectCount]=useState(null);
  const [totalQuestions,setTotalQuestions]=useState(null);
  const [finishBusy,setFinishBusy]=useState(false);
+ const [canRetry,setCanRetry]=useState(false);
+ const [retryBusy,setRetryBusy]=useState(false);
  const codeFromUrl=useMemo(()=>{try{return new URLSearchParams(window.location.search).get('code')||''}catch{return ''}},[]);
  const load=useCallback(async(raw)=>{
   if(!raw){setStatus('blocked');setMessage('Telegram boti ichidan oching.');return}
@@ -157,12 +159,13 @@ export default function Test(){
    const response=await fetch(API+'/api/test/state?code='+encodeURIComponent(codeFromUrl),{cache:'no-store',signal:controller.signal,headers:{Authorization:'tma '+raw}});
    const data=await response.json();
    if(!data.ok){
+    setCanRetry(data.error==='already_submitted'&&Boolean(data.can_retry));
     setStatus(data.error==='already_submitted'?'done':'blocked');
     setMessage(data.error==='test_stopped'?'Test administrator tomonidan to‘xtatildi.':data.error==='test_closed'?'Test hozir yopiq.':data.error==='subscription_required'?'Davom etish uchun botdagi majburiy kanallarga obuna bo‘ling.':data.error==='test_not_found'?'Test topilmadi. Kirish kodi yoki test nomini tekshiring.':data.error==='test_not_ready'?'Savollar hali kiritilmagan. Admin testni tayyorlashi kerak.':data.error==='registration_required'?'Avval botda ro‘yxatdan o‘ting.':data.error==='already_submitted'?'Bu test avval yakunlangan.':'Test ma’lumotlarini olish imkoni bo‘lmadi.');
     setScore(data.score??null);setGrade(data.grade||'');setCorrectCount(data.correct_count??null);setTotalQuestions(data.total_questions??null);setName(data.full_name||'');setTestName(data.test_name||'');return;
    }
    if(!Array.isArray(data.questions))throw new Error('questions_missing');
-   setQuestions(data.questions);setAnswers(data.answers||{});setName(data.full_name||'');setTestName(data.test_name||'');setCode(data.test_code||codeFromUrl);setEndsAt(data.ends_at||null);setStatus('test');
+   setQuestions(data.questions);setAnswers(data.answers||{});setName(data.full_name||'');setTestName(data.test_name||'');setCode(data.test_code||codeFromUrl);setEndsAt(data.ends_at||null);setCanRetry(false);setStatus('test');
   }catch(e){setStatus('blocked');setMessage(e?.name==='AbortError'?'Server 9 soniyada javob bermadi. Qayta urining.':'Ulanishda xatolik. Qayta urining.')}
   finally{clearTimeout(timer)}
  },[codeFromUrl]);
@@ -186,6 +189,28 @@ export default function Test(){
    if(answerQueue.current[id]===task)delete answerQueue.current[id];
   }
  },[initData,code,codeFromUrl]);
+ const retryTest=useCallback(async()=>{
+  if(retryBusy||!initData)return;
+  if(!window.confirm('Testni qayta topshirasizmi? Oldingi natijangiz arxivda saqlanadi, yangi urinish 0 dan boshlanadi.'))return;
+  setRetryBusy(true);
+  try{
+   const response=await fetch(API+'/api/test/retry',{
+    method:'POST',cache:'no-store',
+    headers:{'Content-Type':'application/json',Authorization:'tma '+initData},
+    body:JSON.stringify({code:code||codeFromUrl})
+   });
+   const data=await response.json();
+   if(!data.ok){
+    setMessage(data.error==='test_closed'?'Test hozir yopiq.':data.error==='subscription_required'?'Avval majburiy kanallarga obuna bo‘ling.':'Qayta boshlanmadi. Qayta urinib ko‘ring.');
+    return;
+   }
+   answerQueue.current={};
+   setAnswers({});setQuestions([]);setScore(null);setGrade('');setCorrectCount(null);setTotalQuestions(null);
+   setMessage('');setCanRetry(false);setStatus('loading');
+   await load(initData);
+  }catch{setMessage('Ulanish xatosi. Internetni tekshirib qayta urinib ko‘ring.')}
+  finally{setRetryBusy(false)}
+ },[retryBusy,initData,code,codeFromUrl,load]);
  const finish=useCallback(async()=>{
   if(status!=='test'||finishBusy)return;
   setFinishBusy(true);
@@ -195,7 +220,7 @@ export default function Test(){
    await Promise.all(Object.values(answerQueue.current).map(p=>p.catch(()=>{})));
    const response=await fetch(API+'/api/test/finish',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'tma '+initData},body:JSON.stringify({initData,code:code||codeFromUrl})});
    const data=await response.json();
-   if(data.ok||data.error==='already_submitted'){setScore(data.score??null);setGrade(data.grade||'');setCorrectCount(data.correct_count??null);setTotalQuestions(data.total_questions??questions.length);setStatus('done');setMessage('Test yakunlandi. Natijangiz saqlandi.')}
+   if(data.ok||data.error==='already_submitted'){setScore(data.score??null);setGrade(data.grade||'');setCorrectCount(data.correct_count??null);setTotalQuestions(data.total_questions??questions.length);setStatus('done');setCanRetry(true);setMessage('Test yakunlandi. Natijangiz saqlandi.')}
    else setMessage(data.error==='test_stopped'?'Test administrator tomonidan to‘xtatildi.':'Testni yakunlab bo‘lmadi. Qayta urinib ko‘ring.');
   }catch{setMessage('Natijani saqlashda xatolik. Qayta urinib ko‘ring.')}finally{setFinishBusy(false)}
  },[status,finishBusy,initData,code,codeFromUrl,questions.length]);
@@ -204,7 +229,7 @@ export default function Test(){
  const answered=Object.keys(answers).filter(k=>String(answers[k]??'').trim()).length;
  const orderedQuestions=useMemo(()=>questions.map((q,i)=>({...q,_originalIndex:i})).sort((a,b)=>(a.kind==='written'?1:0)-(b.kind==='written'?1:0)||a._originalIndex-b._originalIndex),[questions]);
  if(status==='loading')return <main className="test-loading" aria-label="Test"><div className="loading-mark" role="status" aria-label="Test yuklanmoqda"></div><p>Test ochilmoqda…</p></main>;
- if(status!=='test')return <main className="test-result-page"><section className="result-card"><h1>{status==='done'?'Test yakunlandi':'Test ochilmadi'}</h1>{testName&&<p className="result-subtitle">{testName}</p>}{name&&<p className="result-subtitle">{name}</p>}<p>{message}</p>{score!==null&&<div className="result-score">{Number(score).toFixed(2)} <small>ball</small></div>}{grade&&<p>Baho: <b>{grade}</b></p>}{correctCount!==null&&totalQuestions!==null&&<p>To‘g‘ri javoblar: {correctCount}/{totalQuestions}</p>}{status==='blocked'&&initData&&<button type="button" className="result-link result-retry" onClick={()=>{setStatus('loading');setMessage('');load(initData)}}>Qayta tekshirish</button>}<a className="result-link" href="/">Asosiy sahifa</a></section></main>;
+ if(status!=='test')return <main className="test-result-page"><section className="result-card"><h1>{status==='done'?'Test yakunlandi':'Test ochilmadi'}</h1>{testName&&<p className="result-subtitle">{testName}</p>}{name&&<p className="result-subtitle">{name}</p>}<p>{message}</p>{score!==null&&<div className="result-score">{Number(score).toFixed(2)} <small>ball</small></div>}{grade&&<p>Baho: <b>{grade}</b></p>}{correctCount!==null&&totalQuestions!==null&&<p>To‘g‘ri javoblar: {correctCount}/{totalQuestions}</p>}{status==='done'&&canRetry&&<button type="button" className="result-link result-retake" onClick={retryTest} disabled={retryBusy}>{retryBusy?'Tayyorlanmoqda…':'Testni qayta topshirish'}</button>}{status==='blocked'&&initData&&<button type="button" className="result-link result-retry" onClick={()=>{setStatus('loading');setMessage('');load(initData)}}>Qayta tekshirish</button>}<a className="result-link" href="/">Asosiy sahifa</a></section></main>;
  return <main className="test-page">
   <header className="test-topbar"><div className="top-brand"><div><strong>Nur oqıw orayı</strong><small>{testName||'Milliy sertifikat testi'}</small><span className="top-test-meta">{questions.length} savol · {seconds===null?'Vaqt cheklanmagan':String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0')}</span></div></div><div className="top-progress"><b>{answered}/{questions.length}</b><small>javob</small></div></header>
   {message&&<p className="test-alert" role="status">{message}</p>}
