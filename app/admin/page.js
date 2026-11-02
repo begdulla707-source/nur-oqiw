@@ -2,6 +2,12 @@
 import TabIcon from '../ui-icons';
 import {useCallback,useEffect,useState} from 'react';
 const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw-bot.mcweb.uz';
+function telegramProfileUrl(user){
+ const name=String(user?.username||'').replace(/^@/,'');
+ if(/^[A-Za-z0-9_]{5,32}$/.test(name))return 'https://t.me/'+name;
+ const id=Number(user?.telegram_id);
+ return Number.isSafeInteger(id)&&id>0?'tg://user?id='+id:null;
+}
 function MenuEditor({initData}){
  const [role,setRole]=useState('user');
  const [menus,setMenus]=useState(null);
@@ -137,7 +143,7 @@ export default function Admin(){
  {note&&<p className="admin-note">{note}</p>}
 {error&&<section className="admin-error"><strong>{error}</strong><p>Admin paneliga faqat administratorning Telegram akkaunti orqali kirish mumkin.</p><button onClick={()=>window.location.reload()}>Qayta ulanish</button></section>}
  {loading&&!data?<section className="admin-card admin-skeleton" aria-hidden="true"></section>:null}
- {data&&<><section className="admin-stats">{[['Foydalanuvchilar',data.stats.users],['Testlar',data.stats.tests],['Urinishlar',data.stats.participants],['Yakunlangan',data.stats.completed]].map(([label,value])=><div className="admin-stat" key={label}><span>{label}</span><strong>{value}</strong></div>)}</section>
+ {data&&<><section className="admin-stats">{[['Foydalanuvchilar',data.stats.users],['Testlar',data.stats.tests],['Urinishlar',data.stats.participants],['Yakunlangan',data.stats.completed]].map(([label,value])=><div className="admin-stat" key={label}><span>{label}</span><strong>{value}</strong></div>)}</section><details className="admin-details admin-user-directory"><summary>Ishtirokchilar — Telegram profilini ochish ({data.users?.length||0})</summary><p className="admin-muted">Faqat admin ko‘radi. Ism ustiga bosib foydalanuvchining Telegram profilini oching.</p><div className="admin-participants">{(data.users||[]).map(u=><div className="admin-participant" key={u.telegram_id}><div>{telegramProfileUrl(u)?<a className="admin-profile-link" href={telegramProfileUrl(u)} rel="noopener noreferrer">{u.full_name||'Ismsiz'}</a>:<strong>{u.full_name||'Ismsiz'}</strong>}<small>ID: {u.telegram_id}{u.username?' · @'+u.username:''}</small></div></div>)}</div></details>
  <section className="admin-card admin-create-test"><div className="admin-section-title"><div><h2>Yangi test yaratish</h2><p>Test nomi va noyob kirish kodini kiriting. Savollarni Telegram botidagi “Test sozlamalari”dan qo‘shasiz.</p></div></div><form className="admin-create-form" onSubmit={createTest}><label>Test nomi<input value={newTestName} onChange={e=>setNewTestName(e.target.value)} placeholder="Masalan: Matematika — 1-variant" maxLength={120} required /></label><label>Kirish kodi<input value={newTestCode} onChange={e=>setNewTestCode(e.target.value.replace(/[^a-zA-Z0-9_-]/g,''))} placeholder="MAT2026" minLength={3} maxLength={40} required /></label><button className="admin-primary" type="submit" disabled={newTestBusy||!initData}>{newTestBusy?'Yaratilmoqda…':'Test yaratish'}</button></form></section>
  <div className="admin-section-title"><div><h2>Testlarni boshqarish</h2><p>Testni ochish/yopish, qatnashchilar va reyting.</p></div><span>{data.tests.length} ta</span></div>
  {data.tests.length===0&&<section className="admin-card">Hozircha test yo‘q. Yangi test yaratish uchun Telegram botidagi admin menyusidan foydalaning.</section>}
