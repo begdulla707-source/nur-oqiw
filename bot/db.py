@@ -226,7 +226,7 @@ def create_test(name,code,start_time="00:00",end_time="23:59",mode="open"):
     with conn() as c:c.execute("INSERT INTO tests(test_id,code,name,start_time,end_time,mode,active,created_at) VALUES(?,?,?,?,?,?,1,?)",(tid,str(code).strip(),str(name).strip(),start_time,end_time,mode,datetime.now(timezone.utc).isoformat()))
     return get_test(tid)
 
-def create_test_with_questions(name,code,items):
+def create_test_with_questions(name,code,items,paid=False):
     """Create a complete answer key, including multi-part questions, atomically."""
     normalized=[]
     for number,item in enumerate(items,1):
@@ -253,6 +253,9 @@ def create_test_with_questions(name,code,items):
         if c.execute('SELECT 1 FROM tests WHERE lower(code)=lower(?) LIMIT 1',(str(code).strip(),)).fetchone():
             raise ValueError('Bu test kodi avval ishlatilgan.')
         c.execute('INSERT INTO tests(test_id,code,name,start_time,end_time,mode,active,created_at) VALUES(?,?,?,?,?,?,1,?)',(tid,str(code).strip(),str(name).strip(),'00:00','23:59','open',datetime.now(timezone.utc).isoformat()))
+        if paid:
+            c.execute("INSERT INTO paid_tests(test_id,created_at) VALUES(?,?)",
+                      (tid,datetime.now(timezone.utc).isoformat()))
         next_id=int(c.execute('SELECT COALESCE(MAX(id),0)+1 AS n FROM questions').fetchone()['n'])
         for offset,(label,kind,answer,options) in enumerate(normalized):
             c.execute('INSERT INTO questions(id,question,options_json,answer,kind,group_id,active,image_url,test_id,number) VALUES(?,?,?,?,?,?,1,?,?,?)',(next_id+offset,label+'-savol',json.dumps(options,ensure_ascii=False),answer,kind,'','',tid,offset+1))
