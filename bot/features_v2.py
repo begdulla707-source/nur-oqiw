@@ -705,6 +705,19 @@ def register(core,dp,bot,webapp_url):
    db.set_setting('awake_schedule',json.dumps({'date':'','start':start,'end':end,'timezone':'Asia/Tashkent'},ensure_ascii=False))
    return {'ok':True,'message':f'Jadval saqlandi: {start}-{end}. Bu Render serverining uyqu rejimini bekor qilmaydi.'}
   return {'ok':False,'error':'action_not_allowed'}
+ @core.app.get('/api/test/active')
+ async def active_tests_api(req:Request):
+  tid,u=await auth(req)
+  if not tid or not u:return {'ok':False,'error':'not_authorized'}
+  if tid!=ADMIN and not await CORE.subscribed(tid):return {'ok':False,'error':'subscription_required'}
+  tests=[]
+  for t in db.all_tests():
+   if not int(t['active']):continue
+   qs=db.questions_for_test(t['test_id'])
+   if not qs:continue
+   tests.append({'test_id':str(t['test_id']),'name':str(t['name']),'code':str(t['code']),'questions':len(qs)})
+  return {'ok':True,'tests':tests}
+
  @core.app.get('/api/test/state')
  async def state(req: Request):
   tid,u=await auth(req);c=req.query_params.get('code','').strip();t=db.get_test_by_code(c) if c else (db.get_test(u['test_id']) if u and u['test_id'] else None)
