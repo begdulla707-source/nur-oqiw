@@ -4,14 +4,16 @@ import {memo,useCallback,useEffect,useMemo,useRef,useState} from 'react';
 const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw-bot.mcweb.uz';
 
 const MATH_KEYS={
- number:['7','8','9','÷','x','n','4','5','6','×','π','e','1','2','3','−','(',')','0','.','=','+','√','^'],
- symbols:['sin(','cos(','tan(','ln(','log(','abs(','∞','≠','≤','≥','∈','∉','∪','∩','∑','∫','√(','lim','→','⇔','∀','∃','°'],
- letters:['a','b','c','d','e','f','g','h','i','j','k','l','m','n','p','q','r','s','t','u','v','x','y','z'],
- greek:['α','β','γ','δ','ε','θ','λ','μ','π','ρ','σ','φ','ω','τ','η','ξ','Δ','Σ','Ω','ψ','χ','ν','ι','ζ'],
+ number:['7','8','9','÷','%','4','5','6','×','‰','1','2','3','−','+','0','.','=','(',')','√','^','π','e','x','y','n','/','∞','!','|','±','∓','°','²','³'],
+ symbols:['%','‰','sin(','cos(','tan(','cot(','arcsin(','arccos(','arctan(','ln(','log(','lg(','abs(','mod','⌊','⌋','⌈','⌉','∛','√(','∑','∏','∫','∮','lim','→','↔','⇔','⇒','∞','≠','≈','≡','≤','≥','∝','∈','∉','⊂','⊆','⊄','∪','∩','∅','∀','∃','¬','∧','∨','⊥','∥','∠','△','°','′','″','℃'],
+ fractions:['½','⅓','⅔','¼','¾','⅕','⅖','⅗','⅘','⅙','⅛','⅜','⅝','⅞','a/b','x²','x³','xⁿ','¹','²','³','⁰','⁻','⁺','₀','₁','₂','₃','ₙ','±','√','∛','|x|','∂','Δ','∇','∞','∫','∑','∏','⊕','⊗','×','÷'],
+ letters:['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','A','B','C','D','E','F','G','H','I','J','K','L','M','N','P','Q','R','S','T','U','V','W','X','Y','Z'],
+ greek:['α','β','γ','δ','ε','ζ','η','θ','ι','κ','λ','μ','ν','ξ','ο','π','ρ','σ','ς','τ','υ','φ','χ','ψ','ω','Γ','Δ','Θ','Λ','Ξ','Π','Σ','Φ','Ψ','Ω'],
 };
 const MATH_TABS=[
  {key:'number',title:'123'},
  {key:'symbols',title:'∞≠∈'},
+ {key:'fractions',title:'½ x²'},
  {key:'letters',title:'abc'},
  {key:'greek',title:'αβγ'},
 ];
@@ -111,7 +113,7 @@ const Written=memo(function Written({questionId,answer,onSave}){
     <div className="keyboard-history"><button type="button" onClick={undo} disabled={!history.current.past.length} aria-label="Ortga qaytarish"><MathIcon name="undo"/></button><button type="button" onClick={redo} disabled={!history.current.future.length} aria-label="Qayta tiklash"><MathIcon name="redo"/></button></div>
    </div>
    <div className={'keyboard-keys keyset-'+tab}>{MATH_KEYS[tab].map((token,index)=><button type="button" key={tab+'-'+index} onClick={()=>insert(token)}>{token}</button>)}</div>
-   <div className="keyboard-footer"><span>{tab==='symbols'?'Trigonometrik va matematik belgilar':tab==='greek'?'Yunon harflari':tab==='letters'?'Lotin harflari':'Sonlar va amallar'}</span><div className="keyboard-footer-actions"><button type="button" onClick={removeLast} disabled={!value} aria-label="Oxirgi belgini o‘chirish"><MathIcon name="delete"/></button><button type="button" onClick={()=>{flush();setKeyboardOpen(false);inputRef.current?.blur()}} aria-label="Klaviaturani yopish"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div></div>
+   <div className="keyboard-footer"><span>{tab==='symbols'?'Trigonometrik va matematik belgilar':tab==='greek'?'Yunon harflari':tab==='letters'?'Lotin harflari':tab==='fractions'?'Kasrlar, darajalar va hosilalar':'Sonlar va amallar'}</span><div className="keyboard-footer-actions"><button type="button" onClick={removeLast} disabled={!value} aria-label="Oxirgi belgini o‘chirish"><MathIcon name="delete"/></button><button type="button" onClick={()=>{flush();setKeyboardOpen(false);inputRef.current?.blur()}} aria-label="Klaviaturani yopish"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div></div>
   </div>}
  </div>;
 });
@@ -154,7 +156,7 @@ export default function Test(){
    const data=await response.json();
    if(!data.ok){
     setStatus(data.error==='already_submitted'?'done':'blocked');
-    setMessage(data.error==='test_stopped'?'Test administrator tomonidan to‘xtatildi.':data.error==='test_closed'?'Test hozir yopiq.':data.error==='subscription_required'?'Davom etish uchun botdagi majburiy kanallarga obuna bo‘ling.':data.error==='test_not_found'?'Test kodi topilmadi.':data.error==='registration_required'?'Avval botda ro‘yxatdan o‘ting.':data.error==='already_submitted'?'Bu test avval yakunlangan.':'Test ma’lumotlarini olish imkoni bo‘lmadi.');
+    setMessage(data.error==='test_stopped'?'Test administrator tomonidan to‘xtatildi.':data.error==='test_closed'?'Test hozir yopiq.':data.error==='subscription_required'?'Davom etish uchun botdagi majburiy kanallarga obuna bo‘ling.':data.error==='test_not_found'?'Test topilmadi. Kirish kodi yoki test nomini tekshiring.':data.error==='test_not_ready'?'Savollar hali kiritilmagan. Admin testni tayyorlashi kerak.':data.error==='registration_required'?'Avval botda ro‘yxatdan o‘ting.':data.error==='already_submitted'?'Bu test avval yakunlangan.':'Test ma’lumotlarini olish imkoni bo‘lmadi.');
     setScore(data.score??null);setGrade(data.grade||'');setCorrectCount(data.correct_count??null);setTotalQuestions(data.total_questions??null);setName(data.full_name||'');setTestName(data.test_name||'');return;
    }
    if(!Array.isArray(data.questions))throw new Error('questions_missing');
@@ -163,7 +165,7 @@ export default function Test(){
  },[codeFromUrl]);
  useEffect(()=>{
   let cancelled=false;let attempts=0;let timer;
-  const boot=()=>{if(cancelled)return;const tg=window.Telegram?.WebApp;const raw=tg?.initData||'';if(tg&&raw){try{tg.ready();tg.expand();tg.disableVerticalSwipes?.()}catch{}setInitData(raw);load(raw);return}attempts++;if(attempts<12){timer=setTimeout(boot,100);return}setStatus('blocked');setMessage('Mini Appni Telegram botidagi Testni boshlash tugmasi orqali oching.')};
+  const boot=()=>{if(cancelled)return;const tg=window.Telegram?.WebApp;const raw=tg?.initData||'';if(tg&&raw){try{tg.ready();tg.expand();tg.disableVerticalSwipes?.()}catch{}setInitData(raw);load(raw);return}attempts++;if(attempts<32){timer=setTimeout(boot,120);return}setStatus('blocked');setMessage('Mini Appni Telegram botidagi Testni boshlash tugmasi orqali oching.')};
   boot();
   return()=>{cancelled=true;clearTimeout(timer)}
  },[load]);
