@@ -190,14 +190,21 @@ def finish_attempt_atomically(test_id, telegram_id, questions, finished_at):
 def register(core,dp,bot,webapp_url):
  global CORE,ADMIN,BOT,TZ,WEBAPP
  CORE,ADMIN,BOT,TZ,WEBAPP=core,core.ADMIN,bot,core.TZ,webapp_url;r=Router(name='test_v3')
+ saved_profile_metadata={}
  async def auth(req):
   raw=req.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or req.query_params.get('initData','');tid=CORE.telegram_user(raw)
   if tid and raw:
    try:
     from urllib.parse import parse_qsl
     profile=json.loads(dict(parse_qsl(raw,keep_blank_values=True)).get('user','{}'))
-    if profile.get('photo_url'):db.update_user(tid,telegram_photo=str(profile['photo_url']))
-    if profile.get('username'):db.set_setting('telegram_username_'+str(tid),str(profile['username']).lstrip('@').lower())
+    username=str(profile.get('username') or '').lstrip('@').lower()
+    photo=str(profile.get('photo_url') or '')
+    key=(username,photo)
+    if (username or photo) and saved_profile_metadata.get(tid)!=key:
+     if photo:db.update_user(tid,telegram_photo=photo)
+     if username:db.set_setting('telegram_username_'+str(tid),username)
+     if len(saved_profile_metadata)>2000:saved_profile_metadata.clear()
+     saved_profile_metadata[tid]=key
    except Exception:pass
   return tid,db.get_user(tid) if tid else None
  @core.app.get('/api/admin/menus')
