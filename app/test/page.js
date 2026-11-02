@@ -151,8 +151,10 @@ export default function Test(){
  const codeFromUrl=useMemo(()=>{try{return new URLSearchParams(window.location.search).get('code')||''}catch{return ''}},[]);
  const load=useCallback(async(raw)=>{
   if(!raw){setStatus('blocked');setMessage('Telegram boti ichidan oching.');return}
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),9500);
   try{
-   const response=await fetch(API+'/api/test/state?code='+encodeURIComponent(codeFromUrl),{cache:'no-store',headers:{Authorization:'tma '+raw}});
+   const response=await fetch(API+'/api/test/state?code='+encodeURIComponent(codeFromUrl),{cache:'no-store',signal:controller.signal,headers:{Authorization:'tma '+raw}});
    const data=await response.json();
    if(!data.ok){
     setStatus(data.error==='already_submitted'?'done':'blocked');
@@ -161,7 +163,8 @@ export default function Test(){
    }
    if(!Array.isArray(data.questions))throw new Error('questions_missing');
    setQuestions(data.questions);setAnswers(data.answers||{});setName(data.full_name||'');setTestName(data.test_name||'');setCode(data.test_code||codeFromUrl);setEndsAt(data.ends_at||null);setStatus('test');
-  }catch{setStatus('blocked');setMessage('Ulanishda xatolik. Bir ozdan keyin qayta oching.')}
+  }catch(e){setStatus('blocked');setMessage(e?.name==='AbortError'?'Server 9 soniyada javob bermadi. Qayta urining.':'Ulanishda xatolik. Qayta urining.')}
+  finally{clearTimeout(timer)}
  },[codeFromUrl]);
  useEffect(()=>{
   let cancelled=false;let attempts=0;let timer;
@@ -200,8 +203,8 @@ export default function Test(){
  useEffect(()=>{if(status==='test'&&seconds===0&&endsAt)finish()},[status,seconds,endsAt,finish]);
  const answered=Object.keys(answers).filter(k=>String(answers[k]??'').trim()).length;
  const orderedQuestions=useMemo(()=>questions.map((q,i)=>({...q,_originalIndex:i})).sort((a,b)=>(a.kind==='written'?1:0)-(b.kind==='written'?1:0)||a._originalIndex-b._originalIndex),[questions]);
- if(status==='loading')return <main className="test-loading" aria-label="Test"><div className="loading-mark" role="status" aria-label="Test yuklanmoqda"></div></main>;
- if(status!=='test')return <main className="test-result-page"><section className="result-card"><h1>{status==='done'?'Test yakunlandi':'Test ochilmadi'}</h1>{testName&&<p className="result-subtitle">{testName}</p>}{name&&<p className="result-subtitle">{name}</p>}<p>{message}</p>{score!==null&&<div className="result-score">{Number(score).toFixed(2)} <small>ball</small></div>}{grade&&<p>Baho: <b>{grade}</b></p>}{correctCount!==null&&totalQuestions!==null&&<p>To‘g‘ri javoblar: {correctCount}/{totalQuestions}</p>}<a className="result-link" href="/">Asosiy sahifa</a></section></main>;
+ if(status==='loading')return <main className="test-loading" aria-label="Test"><div className="loading-mark" role="status" aria-label="Test yuklanmoqda"></div><p>Test ochilmoqda…</p></main>;
+ if(status!=='test')return <main className="test-result-page"><section className="result-card"><h1>{status==='done'?'Test yakunlandi':'Test ochilmadi'}</h1>{testName&&<p className="result-subtitle">{testName}</p>}{name&&<p className="result-subtitle">{name}</p>}<p>{message}</p>{score!==null&&<div className="result-score">{Number(score).toFixed(2)} <small>ball</small></div>}{grade&&<p>Baho: <b>{grade}</b></p>}{correctCount!==null&&totalQuestions!==null&&<p>To‘g‘ri javoblar: {correctCount}/{totalQuestions}</p>}{status==='blocked'&&initData&&<button type="button" className="result-link result-retry" onClick={()=>{setStatus('loading');setMessage('');load(initData)}}>Qayta tekshirish</button>}<a className="result-link" href="/">Asosiy sahifa</a></section></main>;
  return <main className="test-page">
   <header className="test-topbar"><div className="top-brand"><div><strong>Nur oqıw orayı</strong><small>{testName||'Milliy sertifikat testi'}</small><span className="top-test-meta">{questions.length} savol · {seconds===null?'Vaqt cheklanmagan':String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0')}</span></div></div><div className="top-progress"><b>{answered}/{questions.length}</b><small>javob</small></div></header>
   {message&&<p className="test-alert" role="status">{message}</p>}
