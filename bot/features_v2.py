@@ -801,8 +801,15 @@ def register(core,dp,bot,webapp_url):
  async def profile(m:Message):
   u=db.ensure_user(m.from_user.id);t=db.get_test(u['test_id']) if u['test_id'] else None;a=db.get_attempt(t['test_id'],m.from_user.id) if t else None;res=f"{float(a['score'] or 0):.2f} ball · {a['grade'] or '—'}" if a and a['submitted'] else 'Yakunlanmagan'
   url=f"{WEBAPP.rstrip('/')}/profile";mk=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MINI APP PROFILIM',web_app=WebAppInfo(url=url))]])
-  profile_message=menu_config.render_profile(db,{'name':u['full_name'] or '—','test':t['name'] if t else 'Tanlanmagan','code':t['code'] if t else '—','result':res})
-  await m.answer(profile_message,parse_mode='HTML',reply_markup=mk)
+  values={'name':u['full_name'] or '—','test':t['name'] if t else 'Tanlanmagan','code':t['code'] if t else '—','result':res}
+  profile_message=menu_config.render_profile(db,values)
+  try:
+   await m.answer(profile_message,parse_mode='HTML',reply_markup=mk)
+  except Exception:
+   # An invalid third-party premium emoji must never break a user's profile.
+   from html import escape as html_escape
+   fallback='PROFILIM\n\n'+'\n'.join(f'{key}: {html_escape(str(value))}' for key,value in [('Ism-familiya',values['name']),('Test',values['test']),('Kod',values['code']),('Natija',values['result'])])
+   await m.answer(fallback,parse_mode='HTML',reply_markup=mk)
  @r.message(F.text=='Mening natijam')
  async def user_results(m:Message):
   u=db.get_user(m.from_user.id)
