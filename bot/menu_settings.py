@@ -11,13 +11,13 @@ from aiogram.filters import Command
 # Canonical keys are handler action names; only their display labels change.
 DEFAULTS = {
     'user': [
-        ('Profilim', 'primary'), ('Pulli testlar', 'success'),
+        ('Profilim', 'primary'),
         ('Aktiv testlar', 'success'), ('Testni boshlash', 'primary'),
         ('Test kodini kiritish', 'primary'), ('Mening natijam', 'success'),
         ('Yordam', 'primary'),
     ],
     'admin': [
-        ('Test sozlamalari', 'primary'), ('Pulli testlar', 'success'),
+        ('Test sozlamalari', 'primary'),
         ('Ishtirokchilar', 'primary'), ('Statistika', 'primary'),
         ('Guruhlar holati', 'primary'), ('Guruhga xabar yuborish', 'primary'),
         ('Bildirishnoma', 'success'), ('Majburiy obuna', 'success'),
