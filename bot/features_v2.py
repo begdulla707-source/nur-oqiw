@@ -512,9 +512,13 @@ def register(core,dp,bot,webapp_url):
    participants=[{'full_name':a['full_name'] or 'Ismsiz','telegram_id':int(a['telegram_id']),'score':float(a['score'] or 0),'grade':a['grade'] or '', 'submitted':bool(a['submitted']),'started_at':a['started_at'],'finished_at':a['finished_at']} for a in sorted(attempts,key=lambda a:str(a['started_at'] or ''),reverse=True)]
    tests.append({'test_id':str(t['test_id']),'name':t['name'],'code':t['code'],'active':bool(int(t['active'])),'questions':len(db.questions_for_test(t['test_id'])),'participants':len(attempts),'completed':len(done),'ranking':participants and [{'rank':i+1,'full_name':a['full_name'] or 'Ismsiz','score':float(a['score'] or 0),'grade':a['grade'] or ''} for i,a in enumerate(ranked[:10])] or [],'recent':participants[:50]})
    all_rows.extend(participants)
-  with db.conn() as con:
-   user_count=int(con.execute("SELECT COUNT(*) AS n FROM users").fetchone()['n'])
-  return {'ok':True,'stats':{'users':user_count,'tests':len(tests),'participants':len(all_rows),'completed':sum(1 for a in all_rows if a['submitted'])},'tests':tests}
+  registered=db.all_registered_users()
+  user_count=len(registered)
+  admin_users=[]
+  for user in registered[:200]:
+   uid=int(user['telegram_id'])
+   admin_users.append({'telegram_id':uid,'full_name':user['full_name'] or 'Ismsiz','username':str(db.get_setting('telegram_username_'+str(uid),'') or '').lstrip('@')})
+  return {'ok':True,'stats':{'users':user_count,'tests':len(tests),'participants':len(all_rows),'completed':sum(1 for a in all_rows if a['submitted'])},'tests':tests,'users':admin_users}
  @core.app.post('/api/admin/test/create')
  async def admin_create_test(p:dict,req:Request):
   tid,u=await auth(req)
@@ -949,14 +953,21 @@ def register(core,dp,bot,webapp_url):
    await m.answer('XABAR NAMUNASI — premium emoji va format saqlanadi. Yuborishni quyidagi xabardan tasdiqlang:')
    return await BOT.copy_message(chat_id=m.chat.id,from_chat_id=m.chat.id,message_id=m.message_id,reply_markup=keyboard)
   if txt=='Ishtirokchilar':
+   from html import escape as html_escape
    users=db.all_registered_users()
    if not users:return await m.answer('Hozircha foydalanuvchilar yo‘q.')
-   lines=['FOYDALANUVCHILAR RO‘YXATI','']
-   for i,user in enumerate(users[:35],1):
-    name=str(user['full_name'] or '').strip() or 'Ismsiz'
-    tier=str(user['tier'] or 'default')
-    lines.append(f"{i}. {name}\n   ID: {user['telegram_id']} | Tarif: {tier}")
-   return await m.answer('\n\n'.join(lines)[:3900])
+   lines=['<b>FOYDALANUVCHILAR RO‘YXATI</b>','Ism ustiga bosing — Telegram profili ochiladi.','']
+   for i,user in enumerate(users[:60],1):
+    name=html_escape(str(user['full_name'] or '').strip() or 'Ismsiz')
+    uid=int(user['telegram_id'])
+    username=str(db.get_setting('telegram_username_'+str(uid),'') or '').strip().lstrip('@')
+    if uid>0:
+     link=('https://t.me/'+username if username and username.replace('_','').isalnum() else 'tg://user?id='+str(uid))
+     name='<a href="'+html_escape(link,quote=True)+'">'+name+'</a>'
+    row=f"{i}. {name}\n   ID: {uid}"
+    if sum(len(x) for x in lines)+len(row)>3550:break
+    lines.append(row)
+   return await m.answer('\n\n'.join(lines),parse_mode='HTML',disable_web_page_preview=True)
   if txt=='Guruhga xabar yuborish':
    ast('broadcast_message')
    return await m.answer("Guruhlarga yuboriladigan xabar matnini yuboring. Keyin yuborishdan oldin tasdiqlash so‘raladi.")
