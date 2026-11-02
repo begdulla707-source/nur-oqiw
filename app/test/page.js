@@ -4,18 +4,17 @@ import {memo,useCallback,useEffect,useMemo,useRef,useState} from 'react';
 const API=process.env.NEXT_PUBLIC_BACKEND_URL||'https://nur-oqiw-bot.mcweb.uz';
 
 const MATH_KEYS={
- number:['7','8','9','÷','%','4','5','6','×','‰','1','2','3','−','+','0','.','=','(',')','√','^','π','e','x','y','n','/','∞','!','|','±','∓','°','²','³'],
- symbols:['%','‰','sin(','cos(','tan(','cot(','arcsin(','arccos(','arctan(','ln(','log(','lg(','abs(','mod','⌊','⌋','⌈','⌉','∛','√(','∑','∏','∫','∮','lim','→','↔','⇔','⇒','∞','≠','≈','≡','≤','≥','∝','∈','∉','⊂','⊆','⊄','∪','∩','∅','∀','∃','¬','∧','∨','⊥','∥','∠','△','°','′','″','℃'],
- fractions:['½','⅓','⅔','¼','¾','⅕','⅖','⅗','⅘','⅙','⅛','⅜','⅝','⅞','a/b','x²','x³','xⁿ','¹','²','³','⁰','⁻','⁺','₀','₁','₂','₃','ₙ','±','√','∛','|x|','∂','Δ','∇','∞','∫','∑','∏','⊕','⊗','×','÷'],
- letters:['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','A','B','C','D','E','F','G','H','I','J','K','L','M','N','P','Q','R','S','T','U','V','W','X','Y','Z'],
- greek:['α','β','γ','δ','ε','ζ','η','θ','ι','κ','λ','μ','ν','ξ','ο','π','ρ','σ','ς','τ','υ','φ','χ','ψ','ω','Γ','Δ','Θ','Λ','Ξ','Π','Σ','Φ','Ψ','Ω'],
+ // Compact core layout: six columns, four rows per tab.
+ number:['7','8','9','÷','%','√','4','5','6','×','(',')','1','2','3','−','+','^','0','.','=','π','x','y'],
+ symbols:['sin(','cos(','tan(','log(','ln(','abs(','√(','∛','∞','≠','≈','≤','≥','∑','∫','°','∠','∈','∉','∪','∩','α','β'],
+ fractions:['½','⅓','⅔','¼','¾','⅕','a/b','x²','x³','xⁿ','²','³','⁻','⁺','₁','₂','±','√','∛','Δ','∂','∏','n!','|x|'],
+ letters:['a','b','c','d','e','f','m','n','p','q','t','x','y','z','A','B','C','D','X','Y','π','θ','λ','μ'],
 };
 const MATH_TABS=[
  {key:'number',title:'123'},
- {key:'symbols',title:'∞≠∈'},
+ {key:'symbols',title:'√ ∑'},
  {key:'fractions',title:'½ x²'},
  {key:'letters',title:'abc'},
- {key:'greek',title:'αβγ'},
 ];
 function MathIcon({name}){
  if(name==='keyboard')return <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></svg>;
@@ -90,13 +89,6 @@ const Written=memo(function Written({questionId,answer,onSave}){
   selection.current={start:old.length,end:old.length};
   applyValue(old,false);
  };
- const redo=()=>{
-  if(!history.current.future.length)return;
-  history.current.past.push(valueRef.current);
-  const next=history.current.future.pop();
-  selection.current={start:next.length,end:next.length};
-  applyValue(next,false);
- };
  return <div className="written-answer" ref={rootRef}>
   <div className="written-input-wrap">
    <input ref={inputRef} value={value} inputMode="none" readOnly spellCheck={false} autoComplete="off"
@@ -110,10 +102,10 @@ const Written=memo(function Written({questionId,answer,onSave}){
   {keyboardOpen&&<div className="written-keyboard" aria-label="Matematik klaviatura">
    <div className="keyboard-toolbar">
     <div className="keyboard-tabs" role="tablist" aria-label="Belgilar turi">{MATH_TABS.map(t=><button type="button" key={t.key} role="tab" aria-selected={tab===t.key} className={tab===t.key?'active':''} onClick={()=>setTab(t.key)}>{t.title}</button>)}</div>
-    <div className="keyboard-history"><button type="button" onClick={undo} disabled={!history.current.past.length} aria-label="Ortga qaytarish"><MathIcon name="undo"/></button><button type="button" onClick={redo} disabled={!history.current.future.length} aria-label="Qayta tiklash"><MathIcon name="redo"/></button></div>
+    <div className="keyboard-history"><button type="button" onClick={undo} disabled={!history.current.past.length} aria-label="Ortga qaytarish"><MathIcon name="undo"/></button><button type="button" onClick={removeLast} disabled={!value} aria-label="Oxirgi belgini o‘chirish"><MathIcon name="delete"/></button></div>
    </div>
    <div className={'keyboard-keys keyset-'+tab}>{MATH_KEYS[tab].map((token,index)=><button type="button" key={tab+'-'+index} onClick={()=>insert(token)}>{token}</button>)}</div>
-   <div className="keyboard-footer"><span>{tab==='symbols'?'Trigonometrik va matematik belgilar':tab==='greek'?'Yunon harflari':tab==='letters'?'Lotin harflari':tab==='fractions'?'Kasrlar, darajalar va hosilalar':'Sonlar va amallar'}</span><div className="keyboard-footer-actions"><button type="button" onClick={removeLast} disabled={!value} aria-label="Oxirgi belgini o‘chirish"><MathIcon name="delete"/></button><button type="button" onClick={()=>{flush();setKeyboardOpen(false);inputRef.current?.blur()}} aria-label="Klaviaturani yopish"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div></div>
+
   </div>}
  </div>;
 });
