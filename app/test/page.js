@@ -97,7 +97,6 @@ const Written=memo(function Written({questionId,answer,onSave}){
      onFocus={()=>setKeyboardOpen(true)} onClick={()=>setKeyboardOpen(true)} onBlur={flush} className="answer-input" placeholder="Javobıńızdı kiritiń..." aria-label="Yozma javob"/>
    <button type="button" className="keyboard-switch" aria-label="Matematik klaviaturani ochish yoki yopish"
     onClick={()=>{setKeyboardOpen(open=>!open);inputRef.current?.blur()}}><MathIcon name="keyboard"/></button>
-   <button type="button" className="clear-answer" aria-label="Javobni tozalash" onClick={()=>{selection.current={start:0,end:0};applyValue('')}} disabled={!value}><MathIcon name="delete"/></button>
   </div>
   {keyboardOpen&&<div className="written-keyboard" aria-label="Matematik klaviatura">
    <div className="keyboard-toolbar">
