@@ -82,7 +82,18 @@ def admin_user_menu():
 
 def phone_kb():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telefon raqamingizni yuborish',request_contact=True)]],resize_keyboard=True,one_time_keyboard=True)
 def sub_kb():
-    rows=[[InlineKeyboardButton(text='KANALGA OBUNA BO‘LISH',url=(c if c.startswith('http') else 'https://t.me/'+c.lstrip('@')))] for c in sub_channels() if c.startswith('http') or c.startswith('@')];rows.append([InlineKeyboardButton(text='OBUNANI TEKSHIRISH',callback_data='check_sub',style='success')]);return InlineKeyboardMarkup(inline_keyboard=rows)
+    try: links=json.loads(get_setting('subscription_invite_links','{}') or '{}')
+    except (TypeError,ValueError):links={}
+    rows=[]
+    for index,channel in enumerate(sub_channels(),1):
+        if channel.startswith('@'):link='https://t.me/'+channel.lstrip('@')
+        elif channel.startswith('-100'):link=links.get(channel,'')
+        elif channel.startswith('https://t.me/'):link=channel
+        else:link=''
+        if link and link.startswith('https://t.me/'):
+            rows.append([InlineKeyboardButton(text=f'{index}-KANALGA OBUNA BO‘LISH',url=link,style='primary')])
+    rows.append([InlineKeyboardButton(text='OBUNANI TEKSHIRISH',callback_data='check_sub',style='success')])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 def admin_kb():
     return menus.keyboard(__import__('bot.db',fromlist=['get_setting']),'admin',WEBAPP)
 
