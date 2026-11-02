@@ -114,7 +114,7 @@ async def start(m:Message):
 async def start_deep_link(m:Message):
     u=ensure_user(m.from_user.id)
     if m.from_user.id==ADMIN:
-        update_user(ADMIN,state='admin');return await m.answer('NUR O‘QIW ORAYI\\n\\nAdmin boshqaruv paneli.',reply_markup=admin_kb())
+        update_user(ADMIN,state='admin');return await m.answer('NUR O‘QIW ORAYI\n\nAdmin boshqaruv paneli.',reply_markup=admin_kb())
     parts=(m.text or '').split(maxsplit=1)
     payload=parts[1].strip() if len(parts)>1 else ''
     if not await subscribed(m.from_user.id):
@@ -157,7 +157,7 @@ async def group_status_command(m:Message):
         groups=[g for g in groups if int(g.get('id',0))!=m.chat.id]
         groups.append({'id':m.chat.id,'title':m.chat.title or str(m.chat.id),'type':m.chat.type})
         set_setting('known_groups',json.dumps(groups,ensure_ascii=False))
-        await m.answer(f"Guruh: {chat.title or m.chat.id}\\nBot holati: {member.status}\\nXabar yuborish: {'ha' if can_send else 'yo‘q'}\\nAdmin huquqi: {'ha' if member.status in ('administrator','creator') else 'yo‘q'}")
+        await m.answer(f"Guruh: {chat.title or m.chat.id}\nBot holati: {member.status}\nXabar yuborish: {'ha' if can_send else 'yo‘q'}\nAdmin huquqi: {'ha' if member.status in ('administrator','creator') else 'yo‘q'}")
     except Exception as exc:
         logger.warning("group permission check failed: %s",type(exc).__name__)
         await m.answer("Guruh ruxsatlarini tekshirib bo‘lmadi. Botni guruhga qo‘shing va xabar yuborish huquqini tekshiring.")
@@ -187,10 +187,10 @@ async def use_telegram_name(m:Message):
         t=get_test_by_code(pending_code)
         if t:
             update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready');ensure_attempt(t['test_id'],m.from_user.id)
-            return await m.answer(f"Ism-familiya saqlandi: {name}\\n{t['name']} tanlandi. Testni boshlash tugmasini bosing.",reply_markup=user_menu())
+            return await m.answer(f"Ism-familiya saqlandi: {name}\n{t['name']} tanlandi. Testni boshlash tugmasini bosing.",reply_markup=user_menu())
     u=get_user(m.from_user.id)
     update_user(m.from_user.id,state='ready' if u and u['test_id'] else 'code',code_ok=1 if u and u['test_id'] else 0)
-    await m.answer(f'Ism-familiya saqlandi: {name}\\n' + ('Test tanlangan. Testni boshlashingiz mumkin.' if u and u['test_id'] else 'Endi test kodini kiriting.'),reply_markup=user_menu())
+    await m.answer(f'Ism-familiya saqlandi: {name}\n' + ('Test tanlangan. Testni boshlashingiz mumkin.' if u and u['test_id'] else 'Endi test kodini kiriting.'),reply_markup=user_menu())
 
 @dp.message(F.text=='Test kodini kiritish')
 async def change_test_code(m:Message):
@@ -241,7 +241,7 @@ async def select_active_test(q:CallbackQuery):
         update_user(q.from_user.id,test_id=t['test_id'],code_ok=1,state='ready')
         ensure_attempt(t['test_id'],q.from_user.id)
         url=f"{WEBAPP.rstrip('/')}/test?code={t['code']}"
-        await q.message.answer(str(t['name'])+'\\n\\nMini Appni oching:',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MINI APPNI OCHISH',web_app=WebAppInfo(url=url),style='primary')]]))
+        await q.message.answer(str(t['name'])+'\n\nMini Appni oching:',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MINI APPNI OCHISH',web_app=WebAppInfo(url=url),style='primary')]]))
         await q.answer()
     except Exception:
         logger.exception('active_test callback failed')
