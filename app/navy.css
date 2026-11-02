@@ -536,3 +536,34 @@ main.test-page{padding-bottom:clamp(112px,16vh,148px)!important}
  .admin-shell .admin-user-directory{padding:12px!important}
  .admin-shell .admin-user-directory .admin-participant{padding:10px!important}
 }
+
+/* Final contrast correction for the ranking override panel visible in admin screenshots. */
+.admin-shell .admin-test-card .admin-rank-editor{
+ width:100%!important;max-width:100%!important;min-width:0!important;
+ border:1px solid #34445e!important;border-radius:17px!important;
+ padding:14px!important;box-sizing:border-box!important;
+ background:#19243a!important;overflow:hidden!important
+}
+.admin-shell .admin-test-card .admin-rank-editor>strong{
+ display:block!important;font-size:13px!important;font-weight:800!important;
+ line-height:1.45!important;margin:0 0 10px!important;
+ color:#e9f3ff!important;-webkit-text-fill-color:#e9f3ff!important
+}
+.admin-shell .admin-test-card .admin-rank-editor>div{
+ display:flex!important;flex-wrap:wrap!important;gap:9px!important;
+ min-width:0!important;width:100%!important
+}
+.admin-shell .admin-test-card .admin-rank-editor input,
+.admin-shell .admin-test-card .admin-rank-editor select{
+ flex:1 1 120px!important;min-width:0!important;max-width:100%!important;
+ min-height:44px!important;border-radius:12px!important;
+ background:#f8fbff!important;color:#1a2941!important;-webkit-text-fill-color:#1a2941!important
+}
+.admin-shell .admin-test-card .admin-rank-editor button{
+ flex:1 1 100%!important;min-height:43px!important;border-radius:12px!important;
+ background:#1b4d91!important;color:#fff!important;-webkit-text-fill-color:#fff!important
+}
+.admin-shell .admin-test-card .admin-rank-editor>small{
+ display:block!important;color:#adc0dd!important;-webkit-text-fill-color:#adc0dd!important;
+ margin-top:10px!important;font-size:12px!important;line-height:1.5!important
+}
