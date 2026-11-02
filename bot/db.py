@@ -284,6 +284,41 @@ def ensure_attempt(test_id,telegram_id):
                   (aid,str(test_id),int(telegram_id),"{}","active"))
     return get_attempt(test_id,telegram_id)
 
+def restart_completed_attempt(test_id,telegram_id):
+    """Start a fresh attempt without deleting the previous graded result.
+
+    One active row per user/test is maintained for compatibility with the
+    current schema. The completed row is copied to permanent_results before
+    being reset with a NEW attempt_id, so past results remain distinct.
+    """
+    test_id=str(test_id)
+    telegram_id=int(telegram_id)
+    prior=get_attempt(test_id,telegram_id)
+    if not prior:
+        return "not_started"
+    if not int(prior["submitted"] or 0):
+        return "already_active"
+    if not archive_attempt_result(prior["attempt_id"]):
+        return "archive_failed"
+    new_id=secrets.token_hex(12)
+    with conn() as c:
+        if not USE_POSTGRES:
+            c.execute("BEGIN IMMEDIATE")
+        suffix=" FOR UPDATE" if USE_POSTGRES else ""
+        row=c.execute("SELECT attempt_id,submitted FROM test_attempts WHERE test_id=? AND telegram_id=?"+suffix,
+                      (test_id,telegram_id)).fetchone()
+        if not row:
+            return "not_started"
+        if not int(row["submitted"] or 0):
+            return "already_active"
+        if str(row["attempt_id"])!=str(prior["attempt_id"]):
+            return "already_active"
+        c.execute("""UPDATE test_attempts SET attempt_id=?,started_at=NULL,
+                     finished_at=NULL,score=0,grade='',answers_json='{}',
+                     submitted=0,status='active'
+                     WHERE attempt_id=? AND submitted=1""",(new_id,str(row["attempt_id"])))
+    return "restarted"
+
 def update_attempt(attempt_id,**fields):
     allowed={"started_at","finished_at","score","grade","answers_json","submitted","status"}
     fields={k:v for k,v in fields.items() if k in allowed}
