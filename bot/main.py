@@ -132,8 +132,8 @@ async def start_deep_link(m:Message):
     payload=parts[1].strip() if len(parts)>1 else ''
     if not await subscribed(m.from_user.id):
         update_user(m.from_user.id,state='subscribe',code_ok=0);return await m.answer('Testga kirishdan oldin majburiy kanallarga obuna bo‘ling.',reply_markup=sub_kb())
-    t=get_test_by_code(payload) if payload else None
-    if not t:
+    t=get_test_by_code_or_name(payload) if payload else None
+    if not t or not can_access_test(t['test_id'],m.from_user.id,ADMIN):
         update_user(m.from_user.id,state='code',code_ok=0)
         return await m.answer('Test kodi topilmadi. Test kodini qayta kiriting:',reply_markup=user_menu())
     if not u['full_name']:
@@ -197,7 +197,7 @@ async def use_telegram_name(m:Message):
         return await m.answer('Telegram profilingizda ism topilmadi. Ism va familiyangizni yozing.')
     upsert_user(m.from_user.id,name)
     if pending_code:
-        t=get_test_by_code(pending_code)
+        t=get_test_by_code_or_name(pending_code)
         if t:
             update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready');ensure_attempt(t['test_id'],m.from_user.id)
             return await m.answer(f"Ism-familiya saqlandi: {name}\n{t['name']} tanlandi. Testni boshlash tugmasini bosing.",reply_markup=user_menu())
@@ -221,23 +221,23 @@ async def registration_text(m:Message):
         pending_code=st.split(':',1)[1] if st.startswith('name_code:') else ''
         upsert_user(m.from_user.id,text)
         if pending_code:
-            t=get_test_by_code(pending_code)
-            if t:
+            t=get_test_by_code_or_name(pending_code)
+            if t and can_access_test(t['test_id'],m.from_user.id,ADMIN):
                 update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready');ensure_attempt(t['test_id'],m.from_user.id)
                 return await m.answer(f"Ism-familiyangiz saqlandi. {t['name']} tanlandi, Testni boshlash tugmasini bosing.",reply_markup=user_menu())
         saved=get_user(m.from_user.id);has_test=bool(saved and saved['test_id'] and get_test(saved['test_id']))
         update_user(m.from_user.id,state='ready' if has_test else 'code',code_ok=1 if has_test else 0)
         return await m.answer('Ism-familiyangiz saqlandi. ' + ('Test tanlangan, Testni boshlash tugmasini bosing.' if has_test else 'Endi test kodini kiriting.'),reply_markup=user_menu())
     if st in ('code','test_code'):
-        t=get_test_by_code(text)
-        if not t:return await m.answer('Test kodi noto‘g‘ri. Qayta kiriting:')
+        t=get_test_by_code_or_name(text)
+        if not t or not can_access_test(t['test_id'],m.from_user.id,ADMIN):return await m.answer('Test kodi noto‘g‘ri yoki pulli testga ruxsat yo‘q. Qayta kiriting:')
         update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready');ensure_attempt(t['test_id'],m.from_user.id);return await m.answer(f"{t['name']} tanlandi. Testni boshlashingiz mumkin.",reply_markup=user_menu())
     if st=='ready':return await m.answer('Testni boshlash tugmasini bosing.',reply_markup=user_menu())
     return await m.answer('Test kodini kiriting:')
 
 @dp.message(F.text=='Aktiv testlar')
 async def active_tests(m:Message):
-    tests=[t for t in all_tests() if int(t['active'])]
+    tests=[t for t in all_tests() if int(t['active']) and not is_paid_test(t['test_id'])]
     if not tests:return await m.answer('Hozircha aktiv testlar mavjud emas.',reply_markup=user_menu())
     rows=[[InlineKeyboardButton(text=str(t['name'])[:48],callback_data='active_test:'+str(t['test_id']),style='success')] for t in tests[:40]]
     return await m.answer('AKTIV TESTLAR\n\nTestni tanlang:',reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
@@ -246,7 +246,7 @@ async def active_tests(m:Message):
 async def select_active_test(q:CallbackQuery):
     try:
         tid=q.data.split(':',1)[1];t=get_test(tid)
-        if not t or not int(t['active']):return await q.answer('Test hozir yopiq.',show_alert=True)
+        if not t or not int(t['active']) or not can_access_test(t['test_id'],q.from_user.id,ADMIN):return await q.answer('Test hozir yopiq yoki ruxsat yo‘q.',show_alert=True)
         u=ensure_user(q.from_user.id)
         if not u['full_name']:
             await q.answer('Avval ro‘yxatdan o‘ting.',show_alert=True)
@@ -274,6 +274,8 @@ async def start_test(m:Message):
         update_user(m.from_user.id,test_id=None,code_ok=0,state='test_code')
         return await m.answer('Test topilmadi. Test kodini qaytadan kiriting.')
     t=dict(t)
+    if not can_access_test(t['test_id'],m.from_user.id,ADMIN):
+        return await m.answer('Bu pulli testga ruxsat yo‘q. «Pulli testlar» bo‘limidan adminga murojaat qiling.')
     if not int(t.get('active') or 0):
         return await m.answer('Bu test hozir administrator tomonidan yopilgan.')
     ensure_attempt(t['test_id'],m.from_user.id)
