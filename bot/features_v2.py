@@ -114,7 +114,13 @@ def test_kb(t):
 def type_kb(t):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ODDIY VARIANT',callback_data=f't_choice:{t}')],[InlineKeyboardButton(text='YOZMA VARIANT',callback_data=f't_written:{t}')]])
 def abcd(t,n):return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_ans:{t}:{n}:{x}') for x in 'ABCD']])
 def new_answer_kb():return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=x,callback_data=f't_new_ans:{x}') for x in 'ABCD']])
-def new_question_type_kb():return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ODDIY VARIANT (A/B/C/D)',callback_data='t_new_kind:choice')],[InlineKeyboardButton(text='YOZMA JAVOB',callback_data='t_new_kind:written')],[InlineKeyboardButton(text='KO‘P SAVOLLI TEST',callback_data='t_new_kind:multi')]])
+def new_question_type_kb(paid=False):
+ rows=[
+  [InlineKeyboardButton(text='A/B/C/D VARIANTLI',callback_data='t_new_kind:choice',style='primary')],
+  [InlineKeyboardButton(text='YOZMA JAVOB',callback_data='t_new_kind:written',style='primary')]
+ ]
+ if not paid:rows.append([InlineKeyboardButton(text='KO‘P SAVOLLI TEST',callback_data='t_new_kind:multi')])
+ return InlineKeyboardMarkup(inline_keyboard=rows)
 def draft():
  try:return json.loads(db.get_setting('admin_question_draft','{}') or '{}')
  except:return {}
@@ -1322,7 +1328,7 @@ def register(core,dp,bot,webapp_url):
    try:n=int(txt);assert 1<=n<=200
    except:return await m.answer('Savollar sonini 1 dan 200 gacha butun son bilan kiriting.')
    d=draft();d['count']=n;d['items']=[];save_draft(d);ast('new_kind')
-   return await m.answer(f'1/{n}-savol turini tanlang:',reply_markup=new_question_type_kb())
+   return await m.answer(f'1/{n}-savol turini tanlang:',reply_markup=new_question_type_kb(paid=bool(d.get('paid'))))
   if s=='new_multi_count':
    try:n=int(txt);assert 2<=n<=20
    except:return await m.answer('2 dan 20 gacha kichik savol sonini kiriting.')
@@ -1331,11 +1337,38 @@ def register(core,dp,bot,webapp_url):
   if s=='new_multi_written':
    if not txt.strip():return await m.answer('To‘g‘ri javobni kiriting:')
    return await complete_multi_part(m,'written',txt)
+  if s=='paid_new_question':
+   d=draft()
+   if not d.get('paid') or not d.get('current_kind'):return await m.answer('Yangi pulli test sessiyasi topilmadi.')
+   if not txt or len(txt)>1500:return await m.answer('Savol matni 1–1500 belgidan iborat bo‘lsin.')
+   d['current_question']=txt;save_draft(d)
+   if d['current_kind']=='choice':
+    ast('paid_new_options')
+    return await m.answer('A/B/C/D variantlari matnini <b>bir qatorda</b> yuboring:\n'
+     '<code>12 | 13 | 14 | 15</code>\n'
+     'Agar variantlarning o‘zi A/B/C/D bo‘lsa, <code>SKIP</code> yuboring.',parse_mode='HTML')
+   ast('new_written_answer')
+   return await m.answer('To‘g‘ri yozma javobni yuboring:')
+  if s=='paid_new_options':
+   d=draft()
+   if not d.get('paid') or not d.get('current_question'):return await m.answer('Savol sessiyasi eskirgan.')
+   if txt.strip().upper()=='SKIP':options=['A','B','C','D']
+   else:options=[part.strip() for part in txt.split('|')]
+   if len(options)!=4 or not all(options) or any(len(p)>400 for p in options):
+    return await m.answer('To‘rtta variant kiriting. Misol: <code>1 | 2 | 3 | 4</code>',parse_mode='HTML')
+   d['current_options']=options;save_draft(d);ast('new_answer')
+   return await m.answer('To‘g‘ri javob qaysi variant? A, B, C yoki D ni tanlang:',
+    reply_markup=new_answer_kb())
   if s=='new_written_answer':
    if not txt:return await m.answer('Yozma javob bo‘sh bo‘lmasin. To‘g‘ri javobni kiriting:')
-   d=draft();d.setdefault('items',[]).append({'kind':'written','answer':txt});save_draft(d);done=len(d['items']);total=int(d['count'])
+   d=draft()
+   item={'kind':'written','answer':txt}
+   if d.get('paid'):
+    if not d.get('current_question'):return await m.answer('Avval savol matnini kiriting.')
+    item['question']=d.pop('current_question')
+   d.setdefault('items',[]).append(item);save_draft(d);done=len(d['items']);total=int(d['count'])
    if done<total:
-    ast('new_kind');return await m.answer(f'{done+1}/{total}-savol turini tanlang:',reply_markup=new_question_type_kb())
+    ast('new_kind');return await m.answer(f'{done+1}/{total}-savol turini tanlang:',reply_markup=new_question_type_kb(paid=bool(d.get('paid'))))
    try:
     if len(d['items'])!=total:return await m.answer('Savollar to‘liq emas. Test hali saqlanmadi.')
     t=db.create_test_with_questions(d['name'],d['code'],d['items'],paid=bool(d.get('paid')));clear_draft();ast('admin')
@@ -1393,10 +1426,18 @@ def register(core,dp,bot,webapp_url):
   d=draft();u=db.get_user(ADMIN);letter=q.data.rsplit(':',1)[-1]
   if letter not in 'ABCD' or not d.get('code') or not d.get('name') or not d.get('count') or (u and u['state']!='new_answer'):
    return await q.answer('Test yaratish sessiyasi topilmadi. Qaytadan boshlang.',show_alert=True)
-  d.setdefault('items',[]).append({'kind':'choice','answer':letter});save_draft(d)
+  item={'kind':'choice','answer':letter}
+  if d.get('paid'):
+   if not d.get('current_question') or not d.get('current_options'):
+    return await q.answer('Savol matni va A/B/C/D variantlari kiritilmagan.',show_alert=True)
+   item['question']=d['current_question']
+   item['options']=d['current_options']
+  d.setdefault('items',[]).append(item)
+  d.pop('current_question',None);d.pop('current_options',None)
+  save_draft(d)
   done=len(d['items']);total=int(d['count'])
   if done<total:
-   ast('new_kind');await q.message.answer(f'{done+1}/{total}-savol turini tanlang:',reply_markup=new_question_type_kb())
+   ast('new_kind');await q.message.answer(f'{done+1}/{total}-savol turini tanlang:',reply_markup=new_question_type_kb(paid=bool(d.get('paid'))))
    return await q.answer(f'{done}/{total} saqlandi')
   try:
    if db.test_code_exists(d['code']):return await q.answer('Bu kod avval ishlatilgan. Boshqa kod tanlang.',show_alert=True)
@@ -1416,6 +1457,11 @@ def register(core,dp,bot,webapp_url):
    return await q.answer('Test yaratish bosqichi eskirgan. Yangi testni qaytadan boshlang.',show_alert=True)
   if len(d.get('items',[]))>=int(d['count']):return await q.answer('Barcha savollar kiritilgan.',show_alert=True)
   d['current_kind']=kind;save_draft(d);number=len(d.get('items',[]))+1;total=int(d['count'])
+  if d.get('paid'):
+   if kind not in ('choice','written'):return await q.answer('Savol turi noto‘g‘ri.',show_alert=True)
+   ast('paid_new_question')
+   await q.message.answer(f'<b>{number}/{total}-SAVOL</b>\n\nSavol matnini yuboring. Bu matn Mini App’da o‘quvchilarga ko‘rinadi.',parse_mode='HTML')
+   return await q.answer()
   if kind=='choice':
    ast('new_answer');await q.message.answer(f'{number}/{total}-savol uchun to‘g‘ri variantni tanlang:',reply_markup=new_answer_kb())
   elif kind=='written':
