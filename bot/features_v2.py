@@ -23,6 +23,27 @@ def norm(v):return ' '.join(str(v or '').strip().casefold().split())
 def grade(s):
  s=float(s);return 'A+' if s>=90 else 'A' if s>=80 else 'B' if s>=70 else 'C' if s>=60 else 'D' if s>=50 else 'F'
 def user_menu():return CORE.user_menu()
+async def validate_subscription_channels(channels):
+ errors=[];links={}
+ for channel in channels:
+  try:
+   info=await BOT.get_chat(channel)
+   member=await BOT.get_chat_member(info.id,BOT.id)
+   if member.status not in ('administrator','creator'):
+    errors.append(channel+' — bot administrator emas');continue
+   if channel.startswith('-100'):
+    username=getattr(info,'username',None)
+    link='https://t.me/'+username if username else getattr(info,'invite_link',None)
+    if not link:
+     invitation=await BOT.create_chat_invite_link(chat_id=info.id,name='NUR OQIW obuna')
+     link=invitation.invite_link
+    if not link or not link.startswith('https://t.me/'):
+     errors.append(channel+' — qo‘shilish havolasini yaratib bo‘lmadi')
+    else:links[channel]=link
+  except Exception:
+   errors.append(channel+' — kanal yoki administrator huquqini tekshiring')
+ return errors,links
+
 def subscription_admin_kb():
  active=CORE.sub_required()
  return InlineKeyboardMarkup(inline_keyboard=[
@@ -882,14 +903,9 @@ def register(core,dp,bot,webapp_url):
     channels=list(dict.fromkeys(part.strip() for part in re.split(r'[,\n]+',txt) if part.strip()))
     invalid=[ch for ch in channels if not re.fullmatch(r'@[A-Za-z0-9_]{5,32}|-100\d{8,16}',ch)]
     if invalid:return await m.answer('Noto‘g‘ri kanal: '+', '.join(invalid[:5])+'\nMasalan: @kanalnomi yoki -1001234567890')
-   failed=[]
-   for ch in channels:
-    try:
-     info=await BOT.get_chat(ch)
-     member=await BOT.get_chat_member(info.id,BOT.id)
-     if member.status not in ('administrator','creator'):failed.append(ch+' — bot administrator emas')
-    except Exception:failed.append(ch+' — kanal topilmadi yoki bot huquqi yo‘q')
-   if failed:return await m.answer('Obuna yoqilmadi. Botni kanallarga admin qilib qo‘shing:\n'+'\n'.join(failed[:10]))
+   failed,links=await validate_subscription_channels(channels)
+   if failed:return await m.answer('Obuna yoqilmadi. Botni kanallarga admin qilib qo‘shing va taklif havolasi ruxsatini bering:\n'+'\n'.join(failed[:10]))
+   db.set_setting('subscription_invite_links',json.dumps(links,ensure_ascii=False))
    db.set_setting('subscription_channels',json.dumps(channels,ensure_ascii=False))
    db.set_setting('subscription_required','1');CORE.SUB_CACHE.clear();ast('admin')
    return await m.answer(subscription_admin_text(),reply_markup=subscription_admin_kb())
@@ -1148,14 +1164,9 @@ def register(core,dp,bot,webapp_url):
   elif op=='on':
    channels=CORE.sub_channels()
    if not channels:return await q.answer('Avval kanal qo‘shing.',show_alert=True)
-   errors=[]
-   for channel in channels:
-    try:
-     chat=await BOT.get_chat(channel)
-     member=await BOT.get_chat_member(chat.id,BOT.id)
-     if member.status not in ('administrator','creator'):errors.append(channel)
-    except Exception:errors.append(channel)
-   if errors:return await q.answer('Kanalni yoki botning admin huquqini tekshiring: '+', '.join(errors[:2]),show_alert=True)
+   errors,links=await validate_subscription_channels(channels)
+   if errors:return await q.answer('Obuna yoqilmadi: '+', '.join(errors[:2]),show_alert=True)
+   db.set_setting('subscription_invite_links',json.dumps(links,ensure_ascii=False))
    db.set_setting('subscription_required','1');CORE.SUB_CACHE.clear();db.update_user(ADMIN,state='admin')
   elif op=='clear':
    kb=InlineKeyboardMarkup(inline_keyboard=[
@@ -1164,6 +1175,7 @@ def register(core,dp,bot,webapp_url):
    return await q.message.edit_text('Hamma kanallarni rostdan o‘chirasizmi?',reply_markup=kb)
   elif op=='confirm_clear':
    db.set_setting('subscription_channels','[]')
+   db.set_setting('subscription_invite_links','{}')
    db.set_setting('subscription_required','0');CORE.SUB_CACHE.clear();db.update_user(ADMIN,state='admin')
   await q.message.edit_text(subscription_admin_text(),reply_markup=subscription_admin_kb())
   await q.answer()
