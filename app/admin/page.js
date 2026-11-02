@@ -88,7 +88,7 @@ function PaidAccessPanel({raw,testId}){
  }
  return <div className="paid-access-panel">
   <h4>Pulli test ruxsatlari</h4><p>Faqat quyidagi chat ID egalariga savollar va reyting ochiladi. Yangi testni olish uchun foydalanuvchi @dd17x ga yozadi.</p>
-  <form onSubmit={e=>{e.preventDefault();if(/^\\d+$/.test(telegramId))change(telegramId,'grant');else setError('Musbat Telegram chat ID kiriting.')}}><input aria-label="Telegram chat ID" inputMode="numeric" pattern="[0-9]+" value={telegramId} placeholder="Telegram chat ID" onChange={e=>setTelegramId(e.target.value.replace(/[^0-9]/g,''))}/><button type="submit" className="admin-primary" disabled={busy||!telegramId}>{busy?'Saqlanmoqda':'Ruxsat berish'}</button></form>
+  <form onSubmit={e=>{e.preventDefault();if(/^[0-9]+$/.test(telegramId))change(telegramId,'grant');else setError('Musbat Telegram chat ID kiriting.')}}><input aria-label="Telegram chat ID" inputMode="numeric" pattern="[0-9]+" value={telegramId} placeholder="Telegram chat ID" onChange={e=>setTelegramId(e.target.value.replace(/[^0-9]/g,''))}/><button type="submit" className="admin-primary" disabled={busy||!telegramId}>{busy?'Saqlanmoqda':'Ruxsat berish'}</button></form>
   {error&&<p role="alert" className="admin-error">{error}</p>}
   {users===null?<small>Ruxsatlar yuklanmoqda…</small>:users.length===0?<small>Hozir hech kimga ruxsat berilmagan.</small>:<ul>{users.map(u=><li key={u.telegram_id}><span>{u.full_name} · ID: {u.telegram_id}</span><button type="button" className="action-danger" disabled={busy} onClick={()=>change(u.telegram_id,'revoke')}>Ruxsatni olib tashlash</button></li>)}</ul>}
  </div>;
