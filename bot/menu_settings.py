@@ -1,5 +1,6 @@
 """Editable Telegram keyboard labels, premium emoji and native button colors."""
 import json
+from html import escape as escape_html
 from aiogram import BaseMiddleware, F
 from aiogram.types import (
     KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton,
@@ -26,6 +27,16 @@ DEFAULTS = {
 COLORS = ('primary', 'success', 'danger', 'default')
 COLORS_UZ = {'primary':'Ko‘k', 'success':'Yashil', 'danger':'Qizil', 'default':'Oddiy'}
 KEY = 'menu_custom_v1'
+PROFILE_KEY = 'profile_template_html_v1'
+PROFILE_DEFAULT = 'PROFILIM\n\nIsm-familiya: {name}\nTest: {test}\nKod: {code}\nNatija: {result}'
+
+def render_profile(db, values):
+    template=db.get_setting(PROFILE_KEY,PROFILE_DEFAULT) or PROFILE_DEFAULT
+    # Only these fixed slots are supported; never evaluate user-supplied HTML.
+    for key in ('name','test','code','result'):
+        template=template.replace('{'+key+'}',escape_html(str(values.get(key,'—'))))
+    return template
+
 
 def load(db):
     try:
@@ -99,6 +110,7 @@ def install(dp,db,admin_id,webapp_url):
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text='Foydalanuvchi menyusi',callback_data='menub:list:user',style='primary')],
             [InlineKeyboardButton(text='Admin menyusi',callback_data='menub:list:admin',style='primary')],
+            [InlineKeyboardButton(text='Profilim xabari va premium emoji',callback_data='menub:profile',style='primary')],
         ])
 
     def editor(role,index):
@@ -141,7 +153,16 @@ def install(dp,db,admin_id,webapp_url):
         if q.from_user.id!=admin_id:return await q.answer('Ruxsat yo‘q',show_alert=True)
         args=q.data.split(':')
         action=args[1]
-        if action=='root':
+        if action=='profile':
+            if len(args)==2:
+                await q.message.edit_text('PROFILIM XABARI\n\nQuyidagi kalitlar avtomatik to‘ldiriladi: {name}, {test}, {code}, {result}. Telegram Premium emojilarni ham kiritishingiz mumkin.',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Xabarni tahrirlash',callback_data='menub:profile:edit',style='primary')],[InlineKeyboardButton(text='Asl holatga qaytarish',callback_data='menub:profile:reset',style='danger')],[InlineKeyboardButton(text='Orqaga',callback_data='menub:root')]]))
+            elif args[2]=='edit':
+                db.update_user(admin_id,state='profile_template_edit')
+                await q.message.answer('Yangi PROFILIM matnini yuboring.\n\n{name} · {test} · {code} · {result} avtomatik to‘ldiriladi. Telegram Premium emojilar ham saqlanadi. Bekor qilish: /cancel')
+            elif args[2]=='reset':
+                db.set_setting(PROFILE_KEY,PROFILE_DEFAULT)
+                await q.message.answer('PROFILIM shabloni tiklandi.')
+        elif action=='root':
             await q.message.edit_text('MENYU SOZLAMALARI',reply_markup=root())
         elif action=='list':
             role=args[2]
@@ -188,6 +209,23 @@ def install(dp,db,admin_id,webapp_url):
                     index=target
                 await q.message.edit_text(details(role,index),reply_markup=editor(role,index))
         await q.answer()
+
+    @dp.message(lambda m: m.from_user.id==admin_id and bool(db.get_user(admin_id)) and db.get_user(admin_id)['state']=='profile_template_edit')
+    async def edit_profile_template(m:Message):
+        raw=(m.text or '').strip()
+        if raw=='/cancel':
+            db.update_user(admin_id,state='admin')
+            return await m.answer('O‘zgartirish bekor qilindi.')
+        if not raw or len(raw)>2500:
+            return await m.answer('Xabar matni 1 dan 2500 belgigacha bo‘lsin.')
+        # aiogram preserves Telegram custom_emoji entities as safe <tg-emoji> HTML.
+        custom=m.html_text or raw
+        for token in ('{name}','{test}','{code}','{result}'):
+            if token not in custom:
+                return await m.answer('To‘rtta shablon kaliti ham bo‘lsin: {name}, {test}, {code}, {result}')
+        db.set_setting(PROFILE_KEY,custom)
+        db.update_user(admin_id,state='admin')
+        await m.answer('PROFILIM matni saqlandi. Maxsus emoji va format saqlanadi. /start orqali menyuni yangilash mumkin.',reply_markup=keyboard(db,'admin',webapp_url))
 
     @dp.message(lambda m: m.from_user.id==admin_id and bool(db.get_user(admin_id)) and db.get_user(admin_id)['state']=='menu_edit')
     async def edited_value(m:Message):
