@@ -885,8 +885,42 @@ def register(core,dp,bot,webapp_url):
    lines.append(f"{i}. {name}\n   Kod: {code}\n   {status}"+(f"\n   {mark}" if mark else ''))
   await m.answer('\n\n'.join(lines),reply_markup=user_menu())
  @r.message(F.text=='Pulli testlar')
- async def tariffs(m:Message):
-  await m.answer('Pulli testlar bo‘yicha ma’lumot olish uchun administratorga murojaat qiling: @dd17x',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/dd17x')]]))
+ async def paid_tests_menu(m:Message):
+  if m.from_user.id==ADMIN:
+   tests=db.paid_tests_for_user(ADMIN,ADMIN)
+   rows=[[InlineKeyboardButton(text=(('OCHIQ ' if int(t['active']) else 'YOPIQ ')+str(t['name']))[:55],callback_data='paid_admin:'+str(t['test_id']),style='success' if int(t['active']) else 'danger')] for t in tests[:45]]
+   rows.append([InlineKeyboardButton(text='PULLI TEST YARATISH / SAVOLLAR',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'),style='primary')])
+   return await m.answer('PULLI TESTLAR — ADMIN\n\nTestni tanlang va Telegram chat ID orqali kirish huquqini bering. Yangi pulli test va savollarni Mini App admin bo‘limida yarating.',reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+  allowed=db.paid_tests_for_user(m.from_user.id,ADMIN)
+  rows=[[InlineKeyboardButton(text=(str(t['name'])+' · '+str(t['code']))[:55],web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/test?code='+str(t['code'])),style='success')] for t in allowed if int(t['active']) and db.questions_for_test(t['test_id'])]
+  rows.append([InlineKeyboardButton(text='MINI APP — PULLI TESTLAR',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/paid'),style='primary')])
+  rows.append([InlineKeyboardButton(text='SOTIB OLISH — @dd17x',url='https://t.me/dd17x')])
+  return await m.answer('PULLI TESTLAR\n\n'+('Sizga ruxsat berilgan testlar quyida.' if allowed else 'Hozircha sizga pulli testga kirish berilmagan. Sotib olish uchun @dd17x ga yozing. Admin tasdiqlaganidan keyin test chiqadi.'),reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+ @r.callback_query(F.data.startswith('paid_admin:'))
+ async def paid_admin_actions(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q.',show_alert=True)
+  test_id=q.data.split(':',1)[1]
+  t=db.get_test(test_id)
+  if not t or not db.is_paid_test(test_id):return await q.answer('Pulli test topilmadi.',show_alert=True)
+  holders=db.paid_access_list(test_id)
+  keyboard=InlineKeyboardMarkup(inline_keyboard=[
+   [InlineKeyboardButton(text='CHAT ID ORQALI O‘QUVCHI QO‘SHISH',callback_data='paid_grant:'+test_id,style='success')],
+   [InlineKeyboardButton(text='RUXSATLARNI BOSHQARISH',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'),style='primary')],
+   [InlineKeyboardButton(text='TEST SAVOLLARI',callback_data='t_pick:'+test_id,style='primary')]
+  ])
+  await q.message.answer(f"PULLI TEST: {t['name']}\nKod: {t['code']}\nQatnashish ruxsati: {len(holders)} foydalanuvchi\n\nYangi odam qo‘shish uchun chat ID tugmasini bosing.",reply_markup=keyboard)
+  await q.answer()
+
+ @r.callback_query(F.data.startswith('paid_grant:'))
+ async def paid_grant_enter(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q.',show_alert=True)
+  test_id=q.data.split(':',1)[1]
+  if not db.is_paid_test(test_id):return await q.answer('Pulli test topilmadi.',show_alert=True)
+  db.update_user(ADMIN,state='paid_grant:'+test_id)
+  await q.message.answer('Telegram chat ID ni kiriting (masalan: 123456789). Foydalanuvchi avval botga /start bosgan bo‘lishi kerak. Bekor qilish: /cancel.')
+  await q.answer()
+
  @r.message(F.text=='Yordam')
  async def help_user(m:Message):
   await m.answer('Savol yoki muammo bo‘lsa, administratorga yozing: @dd17x',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ADMIN BILAN BOG‘LANISH',url='https://t.me/dd17x')]]))
@@ -974,6 +1008,22 @@ def register(core,dp,bot,webapp_url):
   if txt=='Pulli testlar':
    ast('premium_user_id')
    return await m.answer("Pulli testlarga kirish huquqini boshqarish uchun foydalanuvchining Telegram ID raqamini kiriting.")
+  if s.startswith('paid_grant:'):
+   if txt=='/cancel':
+    ast('admin');return await m.answer('Bekor qilindi.',reply_markup=CORE.admin_kb())
+   test_id=s.split(':',1)[1]
+   if not db.is_paid_test(test_id):ast('admin');return await m.answer('Pulli test topilmadi.')
+   try:target=int(txt)
+   except (ValueError,TypeError):return await m.answer('Chat ID faqat raqamlardan iborat bo‘lsin.')
+   if target<=0:return await m.answer('Musbat Telegram ID kiriting.')
+   user=db.get_user(target)
+   if not user:return await m.answer('Foydalanuvchi botga /start bosmagan. Avval botga kirsin.')
+   db.paid_grant(test_id,target,ADMIN);ast('admin')
+   paid=db.get_test(test_id)
+   try:
+    await BOT.send_message(target,f"Sizga «{paid['name']}» pulli testiga ruxsat berildi. «Pulli testlar» menyusidan ochishingiz mumkin.",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='PULLI TESTNI OCHISH',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/test?code='+str(paid['code'])),style='success')]]))
+   except Exception:pass
+   return await m.answer(f"Ruxsat berildi: {user['full_name'] or 'Ismsiz'} (ID: {target})\nTest: {paid['name']}\nKod: {paid['code']}",reply_markup=CORE.admin_kb())
   if s=='premium_user_id':
    try:target=int(txt)
    except:return await m.answer("Telegram ID faqat raqam bo‘lishi kerak.")
