@@ -322,3 +322,58 @@ main.test-page{padding-bottom:clamp(112px,16vh,148px)!important}
 .admin-shell .admin-participant .admin-profile-link{color:#68aeff!important;-webkit-text-fill-color:#68aeff!important;text-decoration:none;font-weight:750;border-bottom:1px solid rgba(104,174,255,.35)}
 .admin-shell .admin-participant .admin-profile-link:focus-visible{outline:2px solid #68aeff!important;outline-offset:3px}
 @media(max-width:420px){.landing .landing-brand{gap:10px!important}.landing .landing-brand .landing-eyebrow{font-size:11px!important}.test-page .test-finish-panel{width:calc(100% - 12px)!important}}
+
+/* Paid tests and reliability updates — dark iOS-style surfaces */
+.landing .landing-paid-link{margin-top:15px;display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;
+ text-decoration:none;border:1px solid rgba(69,125,210,.35);border-radius:16px;padding:13px 15px;
+ background:linear-gradient(130deg,rgba(15,42,82,.92),rgba(13,28,53,.94));color:#f4f8ff!important;-webkit-text-fill-color:#f4f8ff!important}
+.landing .landing-paid-link span{font-weight:800;font-size:15px}
+.landing .landing-paid-link small{color:#a7bcdb!important;-webkit-text-fill-color:#a7bcdb!important;grid-row:2;grid-column:1}
+.landing .landing-paid-link svg{grid-row:1 / 3;grid-column:2;color:#73b5ff}
+.landing .ranking-code-form select{width:100%;min-height:48px;margin-bottom:11px;padding:9px 12px;border-radius:13px;
+ background:#121d30;color:#eef5ff;border:1px solid #344563;appearance:auto}
+.profile-shell .profile-loading-card{min-height:200px;display:flex;flex-direction:column;align-items:flex-start;
+ justify-content:center;gap:12px;padding:25px;border-radius:24px;background:#172235!important;color:#e6f1ff!important}
+.profile-shell .profile-loading-card h2{font-size:20px;margin:0;color:#f3f7ff!important}
+.profile-shell .profile-loading-card p{font-size:14px;color:#b0c4dd!important;line-height:1.5;margin:0}
+.profile-shell .profile-loading-card button{font-size:14px;font-weight:750;border:1px solid #478df1;background:#1a6ed8;color:#fff;
+ padding:11px 16px;border-radius:13px;min-height:42px}
+.paid-page{background:linear-gradient(140deg,#070b14,#0b1321)!important;min-height:100dvh;padding:28px 16px 130px;color:#f3f7ff}
+.paid-page .paid-card{width:min(650px,100%);margin:5vh auto 0;padding:25px 22px;border:1px solid #27374f;border-radius:27px;
+ background:linear-gradient(150deg,#192338,#121c2d);box-shadow:0 18px 50px rgba(0,0,0,.17)}
+.paid-page .paid-eyebrow{font-size:11px;font-weight:850;letter-spacing:.13em;color:#9fb3cf}
+.paid-page h1{margin:11px 0;font-size:clamp(24px,7vw,34px);color:#fff}
+.paid-page p{line-height:1.55}
+.paid-page .paid-intro,.paid-page .paid-footnote{font-size:13px;color:#aabbd2}
+.paid-page .paid-state{padding:16px 12px;margin:14px 0;border-radius:15px;background:#111d30;color:#d7e6fc;font-size:14px}
+.paid-page .paid-state button{border:0;border-radius:10px;background:#1d72d9;color:#fff;padding:10px 14px;font-weight:750}
+.paid-page .paid-tests-list{display:grid;gap:10px;margin:18px 0}
+.paid-page .paid-test-item{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:16px;border:1px solid #34527a;
+ border-radius:17px;background:#112b43;color:#f5f9ff;text-decoration:none}
+.paid-page .paid-test-item span{display:grid;gap:4px}.paid-page .paid-test-item strong{font-size:15px}
+.paid-page .paid-test-item small{color:#9ab6d6;font-size:12px}
+.paid-page .paid-contact{display:block;text-align:center;margin:18px 0 10px;padding:14px;
+ border-radius:16px;background:linear-gradient(145deg,#2682ec,#1355ac);font-weight:780;color:#fff;text-decoration:none}
+.admin-shell .admin-paid-checkbox{display:flex!important;flex-direction:row!important;align-items:center!important;gap:10px!important}
+.admin-shell .admin-paid-checkbox input{width:18px!important;height:18px!important;accent-color:#1665c4}
+.admin-shell .admin-paid-badge{display:inline-block;vertical-align:middle;margin-left:9px;padding:4px 8px;
+ border-radius:8px;background:#dceafa;color:#195196;font-size:11px;font-weight:780}
+.admin-shell .paid-access-panel{margin:15px 0;padding:17px;border-radius:19px;border:1px solid #b7d1e9;
+ background:linear-gradient(140deg,rgba(224,241,251,.76),rgba(247,250,255,.9))}
+.admin-shell .paid-access-panel h4{margin:0 0 7px;font-size:16px;color:#153655}
+.admin-shell .paid-access-panel p{font-size:12px;color:#41607d;margin:0 0 10px;line-height:1.55}
+.admin-shell .paid-access-panel form{display:flex;flex-wrap:wrap;gap:8px}
+.admin-shell .paid-access-panel input{flex:1;min-width:155px;min-height:43px;border:1px solid #aac9e5!important;
+ border-radius:12px;padding:11px;background:#fff!important;color:#1b3a58!important}
+.admin-shell .paid-access-panel button{border-radius:12px;padding:9px 12px;min-height:40px}
+.admin-shell .paid-access-panel ul{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:8px}
+.admin-shell .paid-access-panel li{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:9px;
+ border:1px solid #c3d7e9;border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.8)}
+.admin-shell .paid-access-panel li span{color:#1e3d5e;font-size:12px;overflow-wrap:anywhere}
+.admin-shell .paid-access-panel button.action-danger{color:#9c2338!important;background:#ffe2e6!important;border:1px solid #edb5bd!important}
+.admin-shell .admin-question-edit select{width:100%;padding:10px;border:1px solid #c0d3ea;border-radius:11px;
+ background:#fff;color:#1b3b61}
+.test-page .written-keyboard .keyboard-keys{max-height:min(320px,42vh);overflow-y:auto!important;
+ grid-auto-flow:row;overscroll-behavior:contain;scrollbar-width:thin}
+.test-page .written-keyboard .keyboard-tabs{overflow-x:auto;flex-wrap:nowrap!important;scrollbar-width:none}
+.test-page .written-keyboard .keyboard-tabs button{min-width:max-content;padding-inline:9px!important}
