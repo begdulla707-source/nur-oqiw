@@ -23,6 +23,23 @@ def norm(v):return ' '.join(str(v or '').strip().casefold().split())
 def grade(s):
  s=float(s);return 'A+' if s>=90 else 'A' if s>=80 else 'B' if s>=70 else 'C' if s>=60 else 'D' if s>=50 else 'F'
 def user_menu():return CORE.user_menu()
+def subscription_admin_kb():
+ active=CORE.sub_required()
+ return InlineKeyboardMarkup(inline_keyboard=[
+  [InlineKeyboardButton(text='YOQISH' if not active else 'YOQILGAN',callback_data='subadmin:on',style='success'),
+   InlineKeyboardButton(text='O‘CHIRISH' if active else 'O‘CHIRILGAN',callback_data='subadmin:off',style='danger')],
+  [InlineKeyboardButton(text='KANAL QO‘SHISH / TAHRIRLASH',callback_data='subadmin:edit',style='primary')],
+  [InlineKeyboardButton(text='KANALLARNI TOZALASH',callback_data='subadmin:clear',style='danger')],
+  [InlineKeyboardButton(text='YANGILASH',callback_data='subadmin:status')]
+ ])
+
+def subscription_admin_text():
+ channels=CORE.sub_channels()
+ return '\n'.join(['MAJBURIY OBUNA','',
+   'Holat: '+('YOQILGAN' if CORE.sub_required() else 'O‘CHIRILGAN'),
+   'Kanallar:',*(channels or ['Kanal belgilanmagan']),'',
+   'Tugmalardan foydalaning. Kanallar vaqtincha o‘chirilganda saqlanadi.'])
+
 def tests_kb():
  r=[]
  for t in db.all_tests():
@@ -406,7 +423,7 @@ def register(core,dp,bot,webapp_url):
      test=db.get_test_by_code(code) if code else None
      if test and isinstance(desired,bool):
       if bool(int(test['active']))==desired:
-       reply=(reply+'\\n\\nBu test hozirning o‘zida '+('ochiq.' if desired else 'yopiq.')).strip()
+       reply=(reply+'\n\nBu test hozirning o‘zida '+('ochiq.' if desired else 'yopiq.')).strip()
       else:
        safe_action={'type':'test_toggle','test_id':str(test['test_id']),'code':str(test['code']),'name':str(test['name']),'active':desired}
     elif kind=='test_delete':
@@ -443,7 +460,7 @@ def register(core,dp,bot,webapp_url):
     elif kind=='subscription_required' and isinstance(proposed.get('enabled'),bool):
      enabled=proposed['enabled'];channels=db.get_setting('subscription_channels','')
      if enabled and (not channels or channels in ('[]','{}')):
-      reply=(reply+'\\n\\nAvval majburiy obuna kanallarini sozlash kerak.').strip()
+      reply=(reply+'\n\nAvval majburiy obuna kanallarini sozlash kerak.').strip()
      else:safe_action={'type':'subscription_required','enabled':enabled}
     elif kind=='awake_window':
      start_time=str(proposed.get('start',''));end_time=str(proposed.get('end',''))
@@ -763,7 +780,8 @@ def register(core,dp,bot,webapp_url):
  async def profile(m:Message):
   u=db.ensure_user(m.from_user.id);t=db.get_test(u['test_id']) if u['test_id'] else None;a=db.get_attempt(t['test_id'],m.from_user.id) if t else None;res=f"{float(a['score'] or 0):.2f} ball · {a['grade'] or '—'}" if a and a['submitted'] else 'Yakunlanmagan'
   url=f"{WEBAPP.rstrip('/')}/profile";mk=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MINI APP PROFILIM',web_app=WebAppInfo(url=url))]])
-  await m.answer(f"PROFILIM\n\nIsm-familiya: {u['full_name'] or '—'}\nTest: {t['name'] if t else 'Tanlanmagan'}\nKod: {t['code'] if t else '—'}\nNatija: {res}",reply_markup=mk)
+  profile_message=menu_config.render_profile(db,{'name':u['full_name'] or '—','test':t['name'] if t else 'Tanlanmagan','code':t['code'] if t else '—','result':res})
+  await m.answer(profile_message,parse_mode='HTML',reply_markup=mk)
  @r.message(F.text=='Mening natijam')
  async def user_results(m:Message):
   u=db.get_user(m.from_user.id)
@@ -798,13 +816,13 @@ def register(core,dp,bot,webapp_url):
    grade_value=grade(score_value);finished=datetime.now(TZ).isoformat()
    db.update_attempt(a['attempt_id'],score=score_value,grade=grade_value,submitted=1,status='submitted',finished_at=finished)
    db.update_user(fake_id,score=score_value,grade=grade_value,submitted=1,finished_at=finished)
-   return await BOT.send_message(ADMIN,f"TEKSHIRISH TUGADI\\nAkkaunt: {u['full_name']}\\nTest: {t['name']}\\nNatija: {score_value:.2f} ball · {grade_value}",reply_markup=test_kb(tid))
-  x=qs[index];head=f"TEKSHIRISH — {u['full_name']}\\n{t['name']}\\nSavol {index+1}/{len(qs)}\\n{x['question'] or (str(x['number'])+'-savol')}\\n"
+   return await BOT.send_message(ADMIN,f"TEKSHIRISH TUGADI\nAkkaunt: {u['full_name']}\nTest: {t['name']}\nNatija: {score_value:.2f} ball · {grade_value}",reply_markup=test_kb(tid))
+  x=qs[index];head=f"TEKSHIRISH — {u['full_name']}\n{t['name']}\nSavol {index+1}/{len(qs)}\n{x['question'] or (str(x['number'])+'-savol')}\n"
   if x['kind']=='written':
    ast(f"check_written:{tid}:{fake_id}:{index}")
-   return await BOT.send_message(ADMIN,head+"\\nTo‘g‘ri yozma javobni kiriting (simulyatsiya):")
+   return await BOT.send_message(ADMIN,head+"\nTo‘g‘ri yozma javobni kiriting (simulyatsiya):")
   kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=z,callback_data=f"t_check_ans:{tid}:{fake_id}:{index}:{z}") for z in 'ABCD']])
-  return await BOT.send_message(ADMIN,head+"\\nVariantni tanlang:",reply_markup=kb)
+  return await BOT.send_message(ADMIN,head+"\nVariantni tanlang:",reply_markup=kb)
  @r.message(F.from_user.id==ADMIN)
  async def admin_text(m:Message):
   u=db.ensure_user(ADMIN);s=u['state'] or 'admin';txt=(m.text or '').strip()
@@ -844,15 +862,10 @@ def register(core,dp,bot,webapp_url):
      can_send=member.status not in ('left','kicked') and not (member.status=='administrator' and getattr(member,'can_send_messages',True) is False)
      lines.append(f"{g.get('title',g['id'])} ({g['id']}) — {member.status}; xabar yuborish: {'ha' if can_send else 'yo‘q'}")
     except Exception:lines.append(f"{g.get('title',g['id'])} ({g['id']}) — tekshirib bo‘lmadi; bot huquqini tekshiring")
-   return await m.answer('\\n'.join(lines)[:3900])
+   return await m.answer('\n'.join(lines)[:3900])
   if txt=='Majburiy obuna':
-   ast('subscription_channels')
-   channels=CORE.sub_channels()
-   enabled=CORE.sub_required()
-   lines=['MAJBURIY OBUNA','', 'Holat: '+('YOQILGAN' if enabled else 'O‘CHIRILGAN'), 'Kanallar:']
-   lines+=channels if channels else ['Hali kanal qo‘shilmagan']
-   lines+=['','Har bir kanalni yangi qatorda yuboring: @username yoki -100... ID','ON — mavjud kanallar bilan yoqish','OFF — vaqtincha o‘chirish (kanallar saqlanadi)','CLEAR — kanallarni o‘chirish']
-   return await m.answer('\n'.join(lines))
+   ast('admin')
+   return await m.answer(subscription_admin_text(),reply_markup=subscription_admin_kb())
   if s=='subscription_channels':
    command=txt.strip().upper()
    if command=='OFF':
@@ -879,7 +892,7 @@ def register(core,dp,bot,webapp_url):
    if failed:return await m.answer('Obuna yoqilmadi. Botni kanallarga admin qilib qo‘shing:\n'+'\n'.join(failed[:10]))
    db.set_setting('subscription_channels',json.dumps(channels,ensure_ascii=False))
    db.set_setting('subscription_required','1');CORE.SUB_CACHE.clear();ast('admin')
-   return await m.answer('Majburiy obuna YOQILDI. Kanallar:\n'+'\n'.join(channels))
+   return await m.answer(subscription_admin_text(),reply_markup=subscription_admin_kb())
   if txt=='Pulli testlar':
    ast('premium_user_id')
    return await m.answer("Pulli testlarga kirish huquqini boshqarish uchun foydalanuvchining Telegram ID raqamini kiriting.")
@@ -914,10 +927,10 @@ def register(core,dp,bot,webapp_url):
   if s=='broadcast_message':
    if not txt:return await m.answer("Xabar bo‘sh bo‘lmasin. Matnni qayta yuboring.")
    db.set_setting('pending_broadcast',json.dumps({'text':txt},ensure_ascii=False));ast('broadcast_confirm')
-   return await m.answer(f"XABAR NAMUNASI\\n\\n{txt[:2500]}\\n\\nBarcha ro‘yxatdagi guruhlarga yuborilsinmi?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='YUBORISH',callback_data='broadcast_send'),InlineKeyboardButton(text='BEKOR QILISH',callback_data='broadcast_cancel')]]))
+   return await m.answer(f"XABAR NAMUNASI\n\n{txt[:2500]}\n\nBarcha ro‘yxatdagi guruhlarga yuborilsinmi?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='YUBORISH',callback_data='broadcast_send'),InlineKeyboardButton(text='BEKOR QILISH',callback_data='broadcast_cancel')]]))
   if txt=='Ish vaqti jadvali':
    current=db.get_setting('awake_window','08:00-22:00');ast('awake_window')
-   return await m.answer(f"Toshkent vaqti bilan HH:MM-HH:MM ko‘rinishida kiriting. Hozirgi sozlama: {current}.\\nEslatma: Render bepul xizmat uyquga ketgan bo‘lsa, bot ichidagi jadvalning o‘zi uni uyg‘ota olmaydi; tashqi uptime monitor kerak bo‘ladi.")
+   return await m.answer(f"Toshkent vaqti bilan HH:MM-HH:MM ko‘rinishida kiriting. Hozirgi sozlama: {current}.\nEslatma: Render bepul xizmat uyquga ketgan bo‘lsa, bot ichidagi jadvalning o‘zi uni uyg‘ota olmaydi; tashqi uptime monitor kerak bo‘ladi.")
   if s=='awake_window':
    import re
    if not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d',txt):return await m.answer("Format noto‘g‘ri. Masalan: 07:30-23:00")
@@ -979,7 +992,7 @@ def register(core,dp,bot,webapp_url):
   db.upsert_user(fake_id,fake_name);db.update_user(fake_id,code_ok=1,state='ready',test_id=tid)
   db.ensure_attempt(tid,fake_id)
   a=db.get_attempt(tid,fake_id);db.update_attempt(a['attempt_id'],started_at=datetime.now(TZ).isoformat(),status='active')
-  await q.message.answer(f"TEKSHIRISH AKKAUNTI YARATILDI\\nLogin: {fake_name}\\nTest: {t['name']}\\nKod: {t['code']}\\n\\nEndi har bir savolga javob berib test oqimini tekshirishingiz mumkin.")
+  await q.message.answer(f"TEKSHIRISH AKKAUNTI YARATILDI\nLogin: {fake_name}\nTest: {t['name']}\nKod: {t['code']}\n\nEndi har bir savolga javob berib test oqimini tekshirishingiz mumkin.")
   await check_prompt(tid,fake_id,0)
   await q.answer('Tekshiruv akkaunti yaratildi')
  @r.callback_query(F.data.startswith('t_check_ans:'))
@@ -1094,17 +1107,66 @@ def register(core,dp,bot,webapp_url):
  async def tq(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
   tid=q.data.split(':',1)[1];qs=db.questions_for_test(tid);text='SAVOLLAR\n\n'+('\n'.join(f"{x['number']}. To‘g‘ri javob: {x['answer']}" for x in qs) if qs else 'Savol yo‘q');await q.message.edit_text(text[:3900],reply_markup=test_kb(tid));await q.answer()
- @r.callback_query(F.data=='t_archive_results')
+ @r.callback_query(F.data.startswith('t_archive_results'))
  async def archive_results(q:CallbackQuery):
-  if q.from_user.id!=ADMIN:return
+  if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q',show_alert=True)
+  from html import escape as html_escape
   rows=db.all_permanent_results(200)
-  lines=['UMUMIY REYTING ARXIVI','Barcha testlar bo‘yicha saqlangan natijalar:','']
-  for i,x in enumerate(rows,1):
+  try:page=max(0,int(q.data.split(':',1)[1])) if ':' in q.data else 0
+  except (ValueError,IndexError):page=0
+  page_count=max(1,(len(rows)+9)//10)
+  page=min(page,page_count-1)
+  body=['<b>UMUMIY REYTING ARXIVI</b>','Natija egasining ismiga bosing — Telegram profili ochiladi.','']
+  for i,x in enumerate(rows[page*10:(page+1)*10],page*10+1):
+   uid=int(x['telegram_id'] or 0)
+   username=str(db.get_setting('telegram_username_'+str(uid),'') or '').strip().lstrip('@')
+   safe_name=html_escape(str(x['full_name'] or 'Ismsiz'))
+   if uid>0:
+    address='https://t.me/'+username if username and username.replace('_','').isalnum() else 'tg://user?id='+str(uid)
+    user_display='<a href="'+html_escape(address,quote=True)+'">'+safe_name+'</a>'
+   else:user_display=safe_name
    status=(f"{float(x['score'] or 0):.2f} ball · {x['grade'] or '—'}" if x['submitted'] else 'Yakunlanmagan')
    when=str(x['finished_at'] or x['started_at'] or x['archived_at'] or '')[:16].replace('T',' ')
-   lines.append(f"{i}. {x['full_name'] or 'Ismsiz'} (TG:{x['telegram_id']}) · {x['test_name'] or 'Test'} [{x['test_code'] or 'kod yo‘q'}] · {status} · {when}")
-  body='\n'.join(lines) if rows else 'Hozircha saqlangan natijalar yo‘q.'
-  await q.message.edit_text(body[:3900],reply_markup=tests_kb());await q.answer()
+   details=html_escape(str(x['test_name'] or 'Test'))+' ['+html_escape(str(x['test_code'] or 'kod yo‘q'))+']'
+   body.append(f"{i}. {user_display} · ID: {uid}\n{details} · {html_escape(status)} · {html_escape(when)}")
+  if not rows:body.append('Hozircha saqlangan natijalar yo‘q.')
+  nav=[]
+  if page>0:nav.append(InlineKeyboardButton(text='Oldingi',callback_data=f't_archive_results:{page-1}'))
+  if page+1<page_count:nav.append(InlineKeyboardButton(text='Keyingi',callback_data=f't_archive_results:{page+1}',style='primary'))
+  kb=InlineKeyboardMarkup(inline_keyboard=([nav] if nav else [])+[[InlineKeyboardButton(text='Testlarga qaytish',callback_data='t_list')]])
+  await q.message.edit_text('\n\n'.join(body),parse_mode='HTML',reply_markup=kb,disable_web_page_preview=True)
+  await q.answer()
+ @r.callback_query(F.data.startswith('subadmin:'))
+ async def subscription_buttons(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator uchun.',show_alert=True)
+  op=q.data.split(':',1)[1]
+  if op=='edit':
+   db.update_user(ADMIN,state='subscription_channels')
+   await q.message.answer('Kanallarni yangi qatordan kiriting:\n@kanalnomi\n-1001234567890\n\nBot har bir kanalda administrator bo‘lishi kerak.')
+  elif op=='off':
+   db.set_setting('subscription_required','0');CORE.SUB_CACHE.clear();db.update_user(ADMIN,state='admin')
+  elif op=='on':
+   channels=CORE.sub_channels()
+   if not channels:return await q.answer('Avval kanal qo‘shing.',show_alert=True)
+   errors=[]
+   for channel in channels:
+    try:
+     chat=await BOT.get_chat(channel)
+     member=await BOT.get_chat_member(chat.id,BOT.id)
+     if member.status not in ('administrator','creator'):errors.append(channel)
+    except Exception:errors.append(channel)
+   if errors:return await q.answer('Kanalni yoki botning admin huquqini tekshiring: '+', '.join(errors[:2]),show_alert=True)
+   db.set_setting('subscription_required','1');CORE.SUB_CACHE.clear();db.update_user(ADMIN,state='admin')
+  elif op=='clear':
+   kb=InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text='HA, TOZALASH',callback_data='subadmin:confirm_clear',style='danger')],
+    [InlineKeyboardButton(text='BEKOR QILISH',callback_data='subadmin:status')]])
+   return await q.message.edit_text('Hamma kanallarni rostdan o‘chirasizmi?',reply_markup=kb)
+  elif op=='confirm_clear':
+   db.set_setting('subscription_channels','[]')
+   db.set_setting('subscription_required','0');CORE.SUB_CACHE.clear();db.update_user(ADMIN,state='admin')
+  await q.message.edit_text(subscription_admin_text(),reply_markup=subscription_admin_kb())
+  await q.answer()
 
  @r.callback_query(F.data.startswith('t_results:'))
  async def tr(q:CallbackQuery):
@@ -1138,7 +1200,7 @@ def register(core,dp,bot,webapp_url):
    except Exception:
     failed+=1
   db.set_setting('pending_broadcast','{}');db.update_user(ADMIN,state='admin')
-  await q.message.answer(f"GURUH XABARI YAKUNLANDI\\nYuborildi: {sent}\\nYuborilmadi: {failed}")
+  await q.message.answer(f"GURUH XABARI YAKUNLANDI\nYuborildi: {sent}\nYuborilmadi: {failed}")
   await q.answer('Yakunlandi')
  @r.callback_query(F.data=='broadcast_cancel')
  async def broadcast_cancel(q:CallbackQuery):
@@ -1165,7 +1227,7 @@ def register(core,dp,bot,webapp_url):
     failed+=1
    if (sent+failed)%25==0:await asyncio.sleep(.2)
   db.set_setting('pending_notification','{}');db.update_user(ADMIN,state='admin')
-  await q.message.answer(f"BILDIRISHNOMA YAKUNLANDI\\nYuborildi: {sent}\\nYuborilmadi: {failed}")
+  await q.message.answer(f"BILDIRISHNOMA YAKUNLANDI\nYuborildi: {sent}\nYuborilmadi: {failed}")
   await q.answer('Yakunlandi')
  @r.callback_query(F.data=='notification_cancel')
  async def notification_cancel(q:CallbackQuery):
