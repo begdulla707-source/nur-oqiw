@@ -25,8 +25,6 @@ function MathIcon({name}){
 const Written=memo(function Written({questionId,answer,onSave}){
  const [value,setValue]=useState(String(answer??''));
  const [tab,setTab]=useState('number');
- const [nativeKeyboard,setNativeKeyboard]=useState(false);
- const nativeKeyboardRef=useRef(false);
  const [keyboardOpen,setKeyboardOpen]=useState(false);
  const rootRef=useRef(null);
  const [,setHistoryVersion]=useState(0);
@@ -99,12 +97,12 @@ const Written=memo(function Written({questionId,answer,onSave}){
  };
  return <div className="written-answer" ref={rootRef}>
   <div className="written-input-wrap">
-   <input ref={inputRef} value={value} inputMode={nativeKeyboard?'text':'none'} spellCheck={false} autoComplete="off"
+   <input ref={inputRef} value={value} inputMode="none" readOnly spellCheck={false} autoComplete="off"
      onChange={e=>{selection.current={start:e.target.selectionStart??e.target.value.length,end:e.target.selectionEnd??e.target.value.length};applyValue(e.target.value)}}
      onSelect={e=>{selection.current={start:e.currentTarget.selectionStart??valueRef.current.length,end:e.currentTarget.selectionEnd??valueRef.current.length}}}
-     onFocus={()=>{if(!nativeKeyboardRef.current)setKeyboardOpen(true)}} onBlur={flush} className="answer-input" placeholder="Javobıńızdı kiritiń..." aria-label="Yozma javob"/>
-   <button type="button" className="keyboard-switch" aria-label={nativeKeyboard?'Maxsus matematik klaviatura':'Telefon klaviaturasini yoqish'}
-    onClick={()=>{const native=!nativeKeyboardRef.current;nativeKeyboardRef.current=native;setNativeKeyboard(native);setKeyboardOpen(!native);if(native)requestAnimationFrame(()=>inputRef.current?.focus())}}><MathIcon name="keyboard"/></button>
+     onFocus={()=>setKeyboardOpen(true)} onClick={()=>setKeyboardOpen(true)} onBlur={flush} className="answer-input" placeholder="Javobıńızdı kiritiń..." aria-label="Yozma javob"/>
+   <button type="button" className="keyboard-switch" aria-label="Matematik klaviaturani ochish yoki yopish"
+    onClick={()=>{setKeyboardOpen(open=>!open);inputRef.current?.blur()}}><MathIcon name="keyboard"/></button>
    <button type="button" className="clear-answer" aria-label="Javobni tozalash" onClick={()=>{selection.current={start:0,end:0};applyValue('')}} disabled={!value}><MathIcon name="delete"/></button>
   </div>
   {keyboardOpen&&<div className="written-keyboard" aria-label="Matematik klaviatura">
@@ -123,8 +121,9 @@ const Question=memo(function Question({q,number,answer,onChoose}){
  const isPlain=options.every(o=>o.label.toUpperCase()===o.letter);
  const placeholder=/^\s*(?:\d+\s*[-.]?\s*)?(?:savol|савол|question)\s*$/iu.test(String(q.question??'').trim());
  const compact=q.kind!=='written'&&isPlain&&placeholder;
+ const showQuestion=Boolean(String(q.question??'').trim())&&!placeholder;
  return <article className={'question-card'+(compact?' compact-choice':'')+(q.kind==='written'?' written-question':'')+(options.length>4?' many-options':'')} id={'question-'+q.id}>
-  <div className="question-heading"><span className="question-number">{/^[0-9]+$/.test(String(q.display_number||number))?String(q.display_number||number)+'.':String(q.display_number||number)}</span><div className={'question-text'+(compact?' sr-only':'')}>{q.question||'Savol'}</div></div>
+  <div className="question-heading"><span className="question-number">{number}.</span>{showQuestion&&<div className="question-text">{q.question}</div>}</div>
   {q.image_url&&<img src={q.image_url} alt="Savol rasmi" className="question-image" loading="lazy"/>}
   {q.kind==='written'?<Written questionId={q.id} answer={answer} onSave={onChoose}/>:<div className={'option-list'+(!isPlain?' with-descriptions':'')}>{options.map(({letter,label})=>{const picked=answer===letter;return <button type="button" key={letter} aria-label={label===letter?letter:letter+': '+label} aria-pressed={picked} className={'option-choice'+(picked?' is-selected':'')} onClick={()=>onChoose(q.id,letter)}><span className="option-letter">{letter}</span>{label.toUpperCase()!==letter&&<span className="option-label">{label}</span>}</button>})}</div>}
  </article>;
@@ -198,14 +197,13 @@ export default function Test(){
  const seconds=endsAt?Math.max(0,Math.floor((new Date(endsAt).getTime()-now)/1000)):null;
  useEffect(()=>{if(status==='test'&&seconds===0&&endsAt)finish()},[status,seconds,endsAt,finish]);
  const answered=Object.keys(answers).filter(k=>String(answers[k]??'').trim()).length;
+ const orderedQuestions=useMemo(()=>questions.map((q,i)=>({...q,_originalIndex:i})).sort((a,b)=>(a.kind==='written'?1:0)-(b.kind==='written'?1:0)||a._originalIndex-b._originalIndex),[questions]);
  if(status==='loading')return <main className="test-loading" aria-label="Test"><div className="loading-mark" role="status" aria-label="Test yuklanmoqda"></div></main>;
  if(status!=='test')return <main className="test-result-page"><section className="result-card"><h1>{status==='done'?'Test yakunlandi':'Test ochilmadi'}</h1>{testName&&<p className="result-subtitle">{testName}</p>}{name&&<p className="result-subtitle">{name}</p>}<p>{message}</p>{score!==null&&<div className="result-score">{Number(score).toFixed(2)} <small>ball</small></div>}{grade&&<p>Baho: <b>{grade}</b></p>}{correctCount!==null&&totalQuestions!==null&&<p>To‘g‘ri javoblar: {correctCount}/{totalQuestions}</p>}<a className="result-link" href="/">Asosiy sahifa</a></section></main>;
  return <main className="test-page">
-  <header className="test-topbar"><div className="top-brand"><div><strong>Nur oqıw orayı</strong><small>{testName||'Milliy sertifikat testi'}</small></div></div><div className="top-progress"><b>{answered}/{questions.length}</b><small>javob</small></div></header>
-  <div className="test-meta"><span>{questions.length} savol</span><span>{seconds===null?'Vaqt cheklanmagan':String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0')}</span></div>
-  <section className="test-introduction"><h1>{testName||'Test'}</h1><p>Barcha savollar ketma-ket joylangan. Tanlagan javobingizni istalgan payt o‘zgartirishingiz mumkin.</p></section>
+  <header className="test-topbar"><div className="top-brand"><div><strong>Nur oqıw orayı</strong><small>{testName||'Milliy sertifikat testi'}</small><span className="top-test-meta">{questions.length} savol · {seconds===null?'Vaqt cheklanmagan':String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0')}</span></div></div><div className="top-progress"><b>{answered}/{questions.length}</b><small>javob</small></div></header>
   {message&&<p className="test-alert" role="status">{message}</p>}
-  <section className="question-stack">{questions.map((q,index)=><Question key={q.id} q={q} number={index+1} answer={answers[q.id]} onChoose={choose}/>)}</section>
+  <section className="question-stack">{orderedQuestions.map((q,index)=><Question key={q.id} q={q} number={index+1} answer={answers[q.id]} onChoose={choose}/>)}</section>
   <footer className="test-finish-panel"><div><strong>{answered} / {questions.length}</strong><span>savolga javob berildi</span></div><button type="button" onClick={finish} disabled={finishBusy}>{finishBusy?'Saqlanmoqda...':'Testni yakunlash'}</button></footer>
  </main>
 }
