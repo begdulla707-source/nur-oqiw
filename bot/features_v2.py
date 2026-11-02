@@ -1337,6 +1337,38 @@ def register(core,dp,bot,webapp_url):
   if s=='new_multi_written':
    if not txt.strip():return await m.answer('To‘g‘ri javobni kiriting:')
    return await complete_multi_part(m,'written',txt)
+  if s.startswith('paid_add_question:'):
+   _,tid,kind=s.split(':',2)
+   d=draft()
+   if not db.is_paid_test(tid) or d.get('test_id')!=tid:return await m.answer('Test sessiyasi eskirgan.')
+   if not txt or len(txt)>1500:return await m.answer('Savol matni 1 dan 1500 belgigacha bo‘lsin.')
+   d['question']=txt;save_draft(d)
+   if kind=='choice':
+    ast('paid_add_options:'+tid)
+    return await m.answer('4 ta variant matnini yuboring:\n<code>1 | 2 | 3 | 4</code>\n'
+       'Faqat A/B/C/D bo‘lsa <code>SKIP</code> deb yuboring.',parse_mode='HTML')
+   ast('paid_add_written_answer:'+tid)
+   return await m.answer('Yozma savolning to‘g‘ri javobini yuboring.')
+  if s.startswith('paid_add_options:'):
+   tid=s.split(':',1)[1];d=draft()
+   if not db.is_paid_test(tid) or d.get('test_id')!=tid or not d.get('question'):
+    return await m.answer('Savol sessiyasi eskirgan.')
+   options=['A','B','C','D'] if txt.upper()=='SKIP' else [x.strip() for x in txt.split('|')]
+   if len(options)!=4 or not all(options) or any(len(o)>400 for o in options):
+    return await m.answer('4 ta variantni yuboring: <code>A | B | C | D</code>',parse_mode='HTML')
+   d['options']=options;save_draft(d);ast('paid_add_choice_answer:'+tid)
+   return await m.answer('To‘g‘ri A/B/C/D variantini tanlang:',reply_markup=InlineKeyboardMarkup(
+    inline_keyboard=[[InlineKeyboardButton(text=k,callback_data='paid_qanswer:'+tid+':'+k,style='primary') for k in 'ABCD']]))
+  if s.startswith('paid_add_written_answer:'):
+   tid=s.split(':',1)[1];d=draft()
+   if not db.is_paid_test(tid) or d.get('test_id')!=tid or not d.get('question'):
+    return await m.answer('Savol sessiyasi eskirgan.')
+   if not txt:return await m.answer('To‘g‘ri yozma javobni kiriting.')
+   n=max((int(x['number']) for x in db.questions_for_test(tid)),default=0)+1
+   db.upsert_test_question(tid,n,d['question'],[],txt,'written')
+   clear_draft();ast('admin')
+   return await m.answer(f'<b>{n}-SAVOL SAQLANDI</b>\nTur: Yozma javob',
+     parse_mode='HTML',reply_markup=paid_test_kb(tid))
   if s=='paid_new_question':
    d=draft()
    if not d.get('paid') or not d.get('current_kind'):return await m.answer('Yangi pulli test sessiyasi topilmadi.')
@@ -1486,17 +1518,47 @@ def register(core,dp,bot,webapp_url):
  @r.callback_query(F.data.startswith('t_choice:'))
  async def tc(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
-  tid=q.data.split(':',1)[1];clear_draft();ast('choice_num:'+tid);await q.message.answer('Faqat savol raqamini kiriting. Masalan: 1');await q.answer()
+  tid=q.data.split(':',1)[1]
+  if db.is_paid_test(tid):
+   save_draft({'test_id':tid,'kind':'choice'})
+   ast('paid_add_question:'+tid+':choice')
+   await q.message.answer('<b>YANGI SAVOL</b>\n\nVariantli savol matnini yuboring.',parse_mode='HTML')
+   return await q.answer()
+  clear_draft();ast('choice_num:'+tid);await q.message.answer('Faqat savol raqamini kiriting. Masalan: 1');await q.answer()
  @r.callback_query(F.data.startswith('t_written:'))
  async def tw(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
-  tid=q.data.split(':',1)[1];clear_draft();ast('written_num:'+tid);await q.message.answer('Faqat savol raqamini kiriting. Masalan: 1');await q.answer()
+  tid=q.data.split(':',1)[1]
+  if db.is_paid_test(tid):
+   save_draft({'test_id':tid,'kind':'written'})
+   ast('paid_add_question:'+tid+':written')
+   await q.message.answer('<b>YANGI SAVOL</b>\n\nYozma savol matnini yuboring.',parse_mode='HTML')
+   return await q.answer()
+  clear_draft();ast('written_num:'+tid);await q.message.answer('Faqat savol raqamini kiriting. Masalan: 1');await q.answer()
  @r.callback_query(F.data.startswith('t_ans:'))
  async def tans(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
   _,tid,n,letter=q.data.split(':');d=draft()
   if d.get('test_id')!=tid or int(d.get('number',-1))!=int(n):return await q.answer('Savol sessiyasi eskirgan.',show_alert=True)
   db.upsert_test_question(tid,int(n),'',['A','B','C','D'],letter,'choice');clear_draft();ast('admin');await q.message.answer(f'{n}-savol saqlandi. To‘g‘ri javob: {letter}',reply_markup=test_kb(tid));await q.answer('Saqlandi')
+ @r.callback_query(F.data.startswith('paid_qanswer:'))
+ async def paid_save_answer(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q.',show_alert=True)
+  try:_,tid,letter=q.data.split(':',2)
+  except ValueError:return await q.answer('Noto‘g‘ri so‘rov.',show_alert=True)
+  d=draft()
+  u=db.get_user(ADMIN)
+  if (not u or u['state']!='paid_add_choice_answer:'+tid or
+      not db.is_paid_test(tid) or d.get('test_id')!=tid or
+      not d.get('question') or not d.get('options') or letter not in 'ABCD'):
+   return await q.answer('Savol sessiyasi eskirgan.',show_alert=True)
+  n=max((int(x['number']) for x in db.questions_for_test(tid)),default=0)+1
+  db.upsert_test_question(tid,n,d['question'],d['options'],letter,'choice')
+  clear_draft();ast('admin')
+  await q.message.answer(f'<b>{n}-SAVOL SAQLANDI</b>\nTur: A/B/C/D\nTo‘g‘ri javob: <b>{letter}</b>',
+   parse_mode='HTML',reply_markup=paid_test_kb(tid))
+  await q.answer('Savol saqlandi')
+
  @r.callback_query(F.data.startswith('t_open:'))
  async def to(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
@@ -1524,7 +1586,19 @@ def register(core,dp,bot,webapp_url):
  @r.callback_query(F.data.startswith('t_q:'))
  async def tq(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
-  tid=q.data.split(':',1)[1];qs=db.questions_for_test(tid);text='SAVOLLAR\n\n'+('\n'.join(f"{x['number']}. To‘g‘ri javob: {x['answer']}" for x in qs) if qs else 'Savol yo‘q');await q.message.edit_text(text[:3900],reply_markup=test_kb(tid));await q.answer()
+  tid=q.data.split(':',1)[1];qs=db.questions_for_test(tid)
+  if db.is_paid_test(tid):
+   parts=['<b>PULLI TEST SAVOLLARI</b>','']
+   for x in qs:
+    summary=str(x['question'] or 'Savol')[:200]
+    parts.append(f"<b>{x['number']}.</b> {escape(summary)}\nTo‘g‘ri javob: <code>{escape(str(x['answer']))}</code>")
+   if not qs:parts.append('Savol yo‘q.')
+   text='\n\n'.join(parts)[:3800]
+   await q.message.edit_text(text,parse_mode='HTML',reply_markup=paid_test_kb(tid))
+  else:
+   text='SAVOLLAR\n\n'+('\n'.join(f"{x['number']}. To‘g‘ri javob: {x['answer']}" for x in qs) if qs else 'Savol yo‘q')
+   await q.message.edit_text(text[:3900],reply_markup=test_kb(tid))
+  await q.answer()
  @r.callback_query(F.data.startswith('t_archive_results'))
  async def archive_results(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return await q.answer('Ruxsat yo‘q',show_alert=True)
