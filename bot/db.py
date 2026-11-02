@@ -367,6 +367,54 @@ def all_permanent_results(limit=200):
 def save_attempt_answers(attempt_id,answers):
     update_attempt(attempt_id,answers_json=json.dumps(answers,ensure_ascii=False))
 
+def completed_ranking_for_test(test_id):
+    """Highest confirmed score per user, including earlier saved retakes."""
+    with conn() as c:
+        rows=c.execute("""SELECT r.telegram_id,r.score,r.grade,r.finished_at,
+                          COALESCE(u.full_name,r.full_name,'') AS full_name,
+                          COALESCE(u.telegram_photo,'') AS telegram_photo
+                          FROM permanent_results r LEFT JOIN users u ON u.telegram_id=r.telegram_id
+                          WHERE r.test_id=? AND r.submitted=1
+                          UNION ALL
+                          SELECT a.telegram_id,a.score,a.grade,a.finished_at,
+                          COALESCE(u.full_name,'') AS full_name,
+                          COALESCE(u.telegram_photo,'') AS telegram_photo
+                          FROM test_attempts a LEFT JOIN users u ON u.telegram_id=a.telegram_id
+                          WHERE a.test_id=? AND a.submitted=1
+                            AND NOT EXISTS (SELECT 1 FROM permanent_results r WHERE r.attempt_id=a.attempt_id)
+                       """,(str(test_id),str(test_id))).fetchall()
+    winners={}
+    for r in rows:
+        uid=int(r["telegram_id"])
+        old=winners.get(uid)
+        score=float(r["score"] or 0)
+        if old is None or (score,str(r["finished_at"] or ""))>(float(old["score"] or 0),str(old["finished_at"] or "")):
+            winners[uid]=dict(r)
+    return list(winners.values())
+
+
+def test_history_for_user(user_id,viewer_id,admin_id,only_submitted=False):
+    """Include archived retakes, exclude duplicates and enforce paid-test visibility."""
+    with conn() as c:
+        return c.execute("""SELECT h.test_id,h.test_name,h.code,h.started_at,h.finished_at,
+                              h.score,h.grade,h.submitted
+            FROM (
+               SELECT a.attempt_id,a.test_id,COALESCE(t.name,'Test o‘chirilgan') AS test_name,
+                      COALESCE(t.code,'') AS code,a.started_at,a.finished_at,a.score,a.grade,a.submitted
+               FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id
+               WHERE a.telegram_id=?
+               UNION ALL
+               SELECT r.attempt_id,r.test_id,r.test_name,r.test_code AS code,
+                      r.started_at,r.finished_at,r.score,r.grade,r.submitted
+               FROM permanent_results r WHERE r.telegram_id=? AND r.submitted=1
+                 AND NOT EXISTS (SELECT 1 FROM test_attempts a WHERE a.attempt_id=r.attempt_id)
+            ) h
+            WHERE (?=0 OR h.submitted=1)
+              AND (?=? OR NOT EXISTS (SELECT 1 FROM paid_tests p WHERE p.test_id=h.test_id)
+               OR EXISTS (SELECT 1 FROM paid_test_access g WHERE g.test_id=h.test_id AND g.telegram_id=?))
+            ORDER BY COALESCE(h.finished_at,h.started_at) DESC
+            LIMIT 150""",(int(user_id),int(user_id),int(bool(only_submitted)),int(viewer_id),int(admin_id),int(viewer_id))).fetchall()
+
 def all_attempts_for_test(test_id):
     with conn() as c:return c.execute("SELECT a.*,u.full_name,u.phone,u.telegram_photo FROM test_attempts a LEFT JOIN users u ON u.telegram_id=a.telegram_id WHERE a.test_id=? AND (a.started_at IS NOT NULL OR a.submitted=1) ORDER BY COALESCE(a.finished_at,a.started_at) ASC",(str(test_id),)).fetchall()
 
