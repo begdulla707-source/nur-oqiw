@@ -4,9 +4,9 @@ from zoneinfo import ZoneInfo
 from urllib.parse import parse_qsl
 from collections import defaultdict,deque
 from dotenv import load_dotenv
-from aiogram import Bot,Dispatcher,F
+from aiogram import Bot,Dispatcher,F,BaseMiddleware
 from aiogram.filters import Command,CommandStart
-from aiogram.types import Message,KeyboardButton,ReplyKeyboardMarkup,ReplyKeyboardRemove,InlineKeyboardMarkup,InlineKeyboardButton,WebAppInfo,CallbackQuery,Update
+from aiogram.types import Message,KeyboardButton,ReplyKeyboardMarkup,ReplyKeyboardRemove,InlineKeyboardMarkup,InlineKeyboardButton,WebAppInfo,CallbackQuery,Update,ChatMemberUpdated
 from fastapi import FastAPI,Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -156,6 +156,77 @@ async def check_sub(q:CallbackQuery):
     else:await q.message.answer('Barcha majburiy kanallarga obuna bo‘ling.')
     await q.answer()
 
+# Only Telegram group/supergroup chat IDs are recorded; no personal DMs or channels.
+def known_groups():
+    try:
+        parsed=json.loads(get_setting('known_groups','[]') or '[]')
+    except (TypeError,ValueError):
+        parsed=[]
+    if not isinstance(parsed,list):return []
+    result=[]
+    seen=set()
+    for raw in parsed:
+        if not isinstance(raw,dict):continue
+        try:chat_id=int(raw.get('id',0))
+        except (ValueError,TypeError):continue
+        if chat_id>=0 or chat_id in seen:continue
+        kind=str(raw.get('type') or 'supergroup')
+        if kind not in ('group','supergroup'):continue
+        seen.add(chat_id)
+        result.append({'id':chat_id,'title':str(raw.get('title') or chat_id)[:140],'type':kind})
+    return result[:150]
+
+def track_group(chat,joined=True):
+    chat_id=int(chat.id)
+    if chat_id>=0 or chat.type not in ('group','supergroup'):return
+    current=known_groups()
+    old=next((g for g in current if g['id']==chat_id),None)
+    changed=False
+    if old:
+        if not joined:
+            current=[x for x in current if x['id']!=chat_id];changed=True
+        elif old['title']!=(chat.title or str(chat_id)) or old['type']!=chat.type:
+            old['title']=str(chat.title or chat_id)[:140];old['type']=chat.type;changed=True
+    elif joined:
+        current.append({'id':chat_id,'title':str(chat.title or chat_id)[:140],'type':chat.type})
+        changed=True
+    if changed:set_setting('known_groups',json.dumps(current,ensure_ascii=False))
+
+@dp.my_chat_member()
+async def update_bot_group_membership(event:ChatMemberUpdated):
+    if event.chat.type not in ('group','supergroup'):return
+    status=str(event.new_chat_member.status)
+    track_group(event.chat,joined=status not in ('left','kicked'))
+    logger.info('Bot group membership updated: chat=%s, status=%s',event.chat.id,status)
+
+class PrivateChatAccessGuard(BaseMiddleware):
+    """Fail closed for every message/callback in a group, regardless of text.
+
+    Old reply keyboards and inline admin buttons cannot authorize group users.
+    The only group command permitted is /group_status from the configured owner.
+    """
+    async def __call__(self,handler,event,data):
+        if isinstance(event,Message) and event.chat.type in ('group','supergroup','channel'):
+            if event.chat.type in ('group','supergroup'):
+                try:track_group(event.chat)
+                except Exception:logger.exception('Could not track group')
+                text=str(event.text or '')
+                if (event.from_user and event.from_user.id==ADMIN and
+                    text.split(maxsplit=1)[0].split('@')[0]=='/group_status'):
+                    return await handler(event,data)
+            return None
+        if isinstance(event,CallbackQuery):
+            chat=getattr(getattr(event,'message',None),'chat',None)
+            if chat and chat.type!='private':
+                try:await event.answer('Admin panel faqat bot bilan shaxsiy chatda ochiladi.',show_alert=True)
+                except Exception:pass
+                return None
+        return await handler(event,data)
+
+# Run before all handlers; never depend on a button label for authorization.
+dp.message.outer_middleware(PrivateChatAccessGuard())
+dp.callback_query.outer_middleware(PrivateChatAccessGuard())
+
 @dp.message(Command("group_status"))
 async def group_status_command(m:Message):
     if m.chat.type not in ('group','supergroup'):
@@ -166,10 +237,7 @@ async def group_status_command(m:Message):
         chat=await bot.get_chat(m.chat.id)
         permissions=getattr(chat,'permissions',None)
         can_send=member.status not in ('left','kicked') and not (member.status=='administrator' and getattr(member,'can_send_messages',True) is False) and getattr(permissions,'can_send_messages',True) is not False
-        groups=json.loads(get_setting('known_groups','[]') or '[]')
-        groups=[g for g in groups if int(g.get('id',0))!=m.chat.id]
-        groups.append({'id':m.chat.id,'title':m.chat.title or str(m.chat.id),'type':m.chat.type})
-        set_setting('known_groups',json.dumps(groups,ensure_ascii=False))
+        track_group(m.chat)
         await m.answer(f"Guruh: {chat.title or m.chat.id}\nBot holati: {member.status}\nXabar yuborish: {'ha' if can_send else 'yo‘q'}\nAdmin huquqi: {'ha' if member.status in ('administrator','creator') else 'yo‘q'}")
     except Exception as exc:
         logger.warning("group permission check failed: %s",type(exc).__name__)
@@ -360,6 +428,8 @@ menus.install(dp,__import__('bot.db',fromlist=['get_setting']),ADMIN,WEBAPP)
 
 @dp.message(F.text=='Admin paneliga o‘tish')
 async def enter_admin_panel(m:Message):
+    if m.chat.type!='private':
+        return
     if m.from_user.id != ADMIN:
         await m.answer('Bu bo‘lim faqat administrator uchun.')
         return
