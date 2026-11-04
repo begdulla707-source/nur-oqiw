@@ -13,6 +13,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.styles import ParagraphStyle
 from xml.sax.saxutils import escape
+from html import escape as html_escape
 from . import db, menu_settings as menu_config
 try:
  pdfmetrics.registerFont(TTFont('NurVera',os.path.join(os.path.dirname(reportlab.__file__),'fonts','Vera.ttf')))
