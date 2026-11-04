@@ -96,6 +96,16 @@ def paid_test_kb(test_id):
   [InlineKeyboardButton(text='PULLI TESTLAR RO‘YXATI',callback_data='paid_list')]
  ])
 
+def group_admin_keyboard(groups):
+ rows=[]
+ for g in groups[:30]:
+  name=str(g.get('title') or g['id'])[:24]
+  rows.append([InlineKeyboardButton(text='TARK ETISH · '+name,
+      callback_data='group_leave:'+str(g['id']),style='danger')])
+ rows.append([InlineKeyboardButton(text='GURUHLARGA XABAR YOZISH',callback_data='group_compose',style='primary')])
+ rows.append([InlineKeyboardButton(text='RO‘YXATNI YANGILASH',callback_data='group_refresh')])
+ return InlineKeyboardMarkup(inline_keyboard=rows)
+
 def test_kb(t):
  if db.is_paid_test(t):return paid_test_kb(t)
  test=db.get_test(t);active=bool(test and int(test['active']))
@@ -224,6 +234,95 @@ def register(core,dp,bot,webapp_url):
  global CORE,ADMIN,BOT,TZ,WEBAPP
  CORE,ADMIN,BOT,TZ,WEBAPP=core,core.ADMIN,bot,core.TZ,webapp_url;r=Router(name='test_v3')
  saved_profile_metadata={}
+ async def group_admin_page():
+  groups=CORE.known_groups()
+  lines=['<b>BOT QO‘SHILGAN GURUHLAR</b>','',
+    'Guruhlar soni: <b>'+str(len(groups))+'</b>',
+    'Bot guruhga qo‘shilganda avtomatik qayd etiladi.',
+    'Chiqish uchun pastdagi tugmani bosing. Tasdiqsiz bot chiqmaydi.','']
+  active=[]
+  async def inspect(group):
+   gid=int(group['id'])
+   try:
+    member=await asyncio.wait_for(BOT.get_chat_member(gid,BOT.id),timeout=5)
+    status=str(member.status)
+    if status in ('left','kicked'):return (group,'left')
+    return (group,status)
+   except Exception:return (group,'unknown')
+  checks=await asyncio.gather(*(inspect(g) for g in groups[:30]))
+  for idx,(g,status) in enumerate(checks,1):
+   title=html_escape(str(g.get('title') or g['id']))
+   if status=='left':continue
+   active.append(g)
+   label='tekshirib bo‘lmadi' if status=='unknown' else 'faol ('+status+')'
+   lines.append(f"{idx}. <b>{title}</b>\n   ID: <code>{g['id']}</code>\n   Holat: {label}")
+  if not active:lines.append('Hozircha faol guruh qayd etilmagan. Guruhga botni qo‘shing.')
+  if len(groups)>30:lines.append('30 ta guruh ko‘rsatildi.')
+  return '\n\n'.join(lines)[:3900],group_admin_keyboard(active)
+
+ @r.callback_query(F.data=='group_refresh')
+ async def group_refresh(q:CallbackQuery):
+  if q.from_user.id!=ADMIN or q.message.chat.type!='private':
+   return await q.answer('Bu bo‘lim faqat admin uchun.',show_alert=True)
+  text,kb=await group_admin_page()
+  await q.message.edit_text(text,parse_mode='HTML',reply_markup=kb)
+  await q.answer('Yangilandi')
+
+ @r.callback_query(F.data=='group_compose')
+ async def group_compose(q:CallbackQuery):
+  if q.from_user.id!=ADMIN or q.message.chat.type!='private':
+   return await q.answer('Bu bo‘lim faqat admin uchun.',show_alert=True)
+  if not CORE.known_groups():
+   return await q.answer('Bot qo‘shilgan guruhlar ro‘yxati bo‘sh.',show_alert=True)
+  ast('broadcast_message')
+  await q.message.answer(
+   '<b>GURUHLARGA XABAR YUBORISH</b>\n\n'
+   'Xabar matnini yozing. Yuborishdan oldin alohida tasdiqlash tugmasi chiqadi.',
+   parse_mode='HTML')
+  await q.answer()
+
+ @r.callback_query(F.data.startswith('group_leave:'))
+ async def group_leave_prepare(q:CallbackQuery):
+  if q.from_user.id!=ADMIN or q.message.chat.type!='private':
+   return await q.answer('Faqat admin foydalanadi.',show_alert=True)
+  try:gid=int(q.data.split(':',1)[1])
+  except (TypeError,ValueError):return await q.answer('Guruh ID noto‘g‘ri.',show_alert=True)
+  group=next((g for g in CORE.known_groups() if int(g['id'])==gid),None)
+  if not group:return await q.answer('Bu guruh ro‘yxatda yo‘q.',show_alert=True)
+  buttons=InlineKeyboardMarkup(inline_keyboard=[
+   [InlineKeyboardButton(text='HA, BOT GURUHDAN CHIQSIN',
+      callback_data='group_confirm_leave:'+str(gid),style='danger')],
+   [InlineKeyboardButton(text='BEKOR QILISH',callback_data='group_refresh')]])
+  await q.message.edit_text(
+   '<b>GURUHDAN CHIQISHNI TASDIQLANG</b>\n\n'
+   '<b>'+html_escape(group['title'])+'</b>\n'
+   'ID: <code>'+str(gid)+'</code>\n\n'
+   'Bot bu guruhdan chiqadi va guruhga xabar yuborish to‘xtaydi. '
+   'Qayta ishlatish uchun botni guruhga yana qo‘shish kerak.',
+   parse_mode='HTML',reply_markup=buttons)
+  await q.answer()
+
+ @r.callback_query(F.data.startswith('group_confirm_leave:'))
+ async def group_leave_execute(q:CallbackQuery):
+  if q.from_user.id!=ADMIN or q.message.chat.type!='private':
+   return await q.answer('Faqat admin foydalanadi.',show_alert=True)
+  try:gid=int(q.data.split(':',1)[1])
+  except (TypeError,ValueError):return await q.answer('Guruh ID noto‘g‘ri.',show_alert=True)
+  group=next((g for g in CORE.known_groups() if int(g['id'])==gid),None)
+  if not group:return await q.answer('Guruh ro‘yxatdan allaqachon o‘chgan.',show_alert=True)
+  try:
+   result=await BOT.leave_chat(gid)
+   if result is not True:return await q.answer('Telegram chiqishni tasdiqlamadi.',show_alert=True)
+  except Exception as exc:
+   logging.getLogger('nur-oqiw.group').warning('Could not leave group %s: %s',gid,type(exc).__name__)
+   return await q.answer('Guruhdan chiqib bo‘lmadi. Bot huquqini tekshiring.',show_alert=True)
+  remaining=[g for g in CORE.known_groups() if int(g['id'])!=gid]
+  db.set_setting('known_groups',json.dumps(remaining,ensure_ascii=False))
+  text,kb=await group_admin_page()
+  await q.message.edit_text('Bot guruhdan chiqdi: <b>'+html_escape(group['title'])+'</b>\n\n'+text,
+     parse_mode='HTML',reply_markup=kb)
+  await q.answer('Guruh tark etildi')
+
  async def auth(req):
   raw=req.headers.get('Authorization','');raw=raw[4:] if raw.startswith('tma ') else raw;raw=raw or req.query_params.get('initData','');tid=CORE.telegram_user(raw)
   if tid and raw:
@@ -1201,16 +1300,8 @@ def register(core,dp,bot,webapp_url):
    ]
    return await m.answer('\n'.join(lines),reply_markup=CORE.admin_kb())
   if txt=='Guruhlar holati':
-   groups=json.loads(db.get_setting('known_groups','[]') or '[]')
-   if not groups:return await m.answer("Guruhlar ro‘yxati bo‘sh. Botni guruhga qo‘shing va /group_status buyrug‘ini yuboring.")
-   lines=['GURUHLAR VA RUXSATLAR','']
-   for g in groups[:30]:
-    try:
-     member=await BOT.get_chat_member(int(g['id']),BOT.id)
-     can_send=member.status not in ('left','kicked') and not (member.status=='administrator' and getattr(member,'can_send_messages',True) is False)
-     lines.append(f"{g.get('title',g['id'])} ({g['id']}) — {member.status}; xabar yuborish: {'ha' if can_send else 'yo‘q'}")
-    except Exception:lines.append(f"{g.get('title',g['id'])} ({g['id']}) — tekshirib bo‘lmadi; bot huquqini tekshiring")
-   return await m.answer('\n'.join(lines)[:3900])
+   text,kb=await group_admin_page()
+   return await m.answer(text,parse_mode='HTML',reply_markup=kb)
   if txt=='Majburiy obuna':
    ast('admin')
    return await m.answer(subscription_admin_text(),reply_markup=subscription_admin_kb())
@@ -1301,8 +1392,9 @@ def register(core,dp,bot,webapp_url):
     lines.append(row)
    return await m.answer('\n\n'.join(lines),parse_mode='HTML',disable_web_page_preview=True)
   if txt=='Guruhga xabar yuborish':
-   ast('broadcast_message')
-   return await m.answer("Guruhlarga yuboriladigan xabar matnini yuboring. Keyin yuborishdan oldin tasdiqlash so‘raladi.")
+   ast('admin')
+   text,kb=await group_admin_page()
+   return await m.answer(text,parse_mode='HTML',reply_markup=kb)
   if s=='broadcast_message':
    if not txt:return await m.answer("Xabar bo‘sh bo‘lmasin. Matnni qayta yuboring.")
    db.set_setting('pending_broadcast',json.dumps({'text':txt},ensure_ascii=False));ast('broadcast_confirm')
@@ -1679,7 +1771,7 @@ def register(core,dp,bot,webapp_url):
  async def broadcast_send(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return
   pending=json.loads(db.get_setting('pending_broadcast','{}') or '{}');message=str(pending.get('text','')).strip()
-  groups=json.loads(db.get_setting('known_groups','[]') or '[]')
+  groups=CORE.known_groups()
   if not message:return await q.answer('Yuboriladigan xabar topilmadi.',show_alert=True)
   sent=0;failed=0
   for group in groups:
