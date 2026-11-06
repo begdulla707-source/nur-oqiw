@@ -27,7 +27,7 @@ TELEGRAM_UPDATES_MODE=os.getenv('TELEGRAM_UPDATES_MODE','webhook').strip().lower
 if TELEGRAM_UPDATES_MODE not in ('webhook','polling'):TELEGRAM_UPDATES_MODE='webhook'
 ORIGINS=[x.strip().rstrip('/') for x in os.getenv('WEBAPP_ORIGINS','https://nukuspro.uz,https://www.nukuspro.uz,https://nur-oqiw.uz,https://www.nur-oqiw.uz,https://nur-oqiw-santizz.vercel.app,https://nur-oqiw-three.vercel.app').split(',') if x.strip()]
 logging.basicConfig(level=logging.INFO);logger=logging.getLogger('nur-oqiw');RATE=defaultdict(deque);SUB_CACHE={}
-dp=Dispatcher();bot=Bot(TOKEN);app=FastAPI();_cleanup_task=None
+dp=Dispatcher();bot=Bot(TOKEN);app=FastAPI();_cleanup_task=None;_polling_task=None
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ORIGINS,
@@ -497,22 +497,41 @@ async def register_mcweb_webhook_with_retry():
 
 @app.on_event('startup')
 async def register_mcweb_webhook():
-    global _cleanup_task
+    global _cleanup_task,_polling_task
     if _cleanup_task is None or _cleanup_task.done():
         _cleanup_task=asyncio.create_task(cleanup_loop(),name='nur-mock-timer')
     asyncio.create_task(asyncio.to_thread(startup_maintenance))
     if os.getenv('MCWEB_READY')=='1' and TELEGRAM_UPDATES_MODE=='webhook':
         asyncio.create_task(register_mcweb_webhook_with_retry())
     elif TELEGRAM_UPDATES_MODE=='polling':
-        logger.info('Telegram updates are handled by the MCWeb background worker')
+        if os.getenv('NUR_API_POLLING_ENABLED')=='1':
+            if not TOKEN:
+                logger.error('API polling was requested, but BOT_TOKEN is not configured')
+            else:
+                _polling_task=asyncio.create_task(
+                    dp.start_polling(
+                        bot,
+                        allowed_updates=dp.resolve_used_update_types(),
+                        polling_timeout=25,
+                        close_bot_session=False,
+                    ),
+                    name='nur-telegram-polling',
+                )
+                logger.info('Telegram polling started inside the MCWeb API service')
+        else:
+            logger.info('Telegram polling is disabled in the API until NUR_API_POLLING_ENABLED=1')
 
 @app.on_event('shutdown')
 async def close_telegram_client():
-    global _cleanup_task
+    global _cleanup_task,_polling_task
     if _cleanup_task and not _cleanup_task.done():
         _cleanup_task.cancel()
         await asyncio.gather(_cleanup_task,return_exceptions=True)
     _cleanup_task=None
+    if _polling_task and not _polling_task.done():
+        _polling_task.cancel()
+        await asyncio.gather(_polling_task,return_exceptions=True)
+    _polling_task=None
     await bot.session.close()
 
 from .features_v2 import register as register_features
