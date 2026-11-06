@@ -31,7 +31,7 @@ export default function PaidTests(){
  },[retry]);
  return <main className="paid-page"><section className="paid-card"><span className="paid-eyebrow">NUR O‘QIW ORAYI</span><h1>Pulli testlar</h1><p className="paid-intro">Bu yerda faqat administrator tasdiqlagan testlaringiz ko‘rinadi. Kirish huquqi Telegram chat ID’ingizga bog‘langan.</p>
   {loading?<p className="paid-state" role="status">Ruxsatli testlar yuklanmoqda…</p>:error?<div className="paid-state" role="alert"><p>{error}</p><button onClick={()=>{setLoading(true);setError('');setRetry(n=>n+1)}}>Qayta tekshirish</button></div>:tests?.length?<div className="paid-tests-list">{tests.map(t=><Link href={'/test?code='+encodeURIComponent(t.code)} className="paid-test-item" key={t.test_id}><span><strong>{t.name}</strong><small>Kod: {t.code} · {t.questions} savol</small></span><TabIcon name="arrow-right" size={20}/></Link>)}</div>:<p className="paid-state">Hozircha sizga pulli testga ruxsat berilmagan. Testni sotib olganingizdan so‘ng admin chat ID’ingiz orqali kirishni tasdiqlaydi.</p>}
-  <a className="paid-contact" href="https://t.me/dd17x">Sotib olish uchun @dd17x ga yozish</a>
+  <a className="paid-contact" href="https://t.me/up17b">Sotib olish uchun @up17b ga yozish</a>
   <p className="paid-footnote">To‘lovni admin bilan kelishasiz. Testga kirish faqat tasdiqdan keyin ochiladi.</p>
  </section>
  <nav className="bottom-glass-nav" aria-label="Asosiy navigatsiya">
