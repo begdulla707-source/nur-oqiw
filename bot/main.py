@@ -18,13 +18,16 @@ import time as _time
 logging.basicConfig(level=logging.INFO)
 logger=logging.getLogger('nur-oqiw')
 _boot_t0=_time.monotonic()
-init();ensure_schema();seed()
+if os.getenv('NUR_SKIP_SCHEMA_INIT')!='1':init();ensure_schema();seed()
+else:logger.info('Worker is using the service-managed database schema')
 logger.info('Database schema ready in %.2fs',_time.monotonic()-_boot_t0)
 TOKEN=os.getenv('BOT_TOKEN','');ADMIN=int(os.getenv('ADMIN_CHAT_ID','8379731556'));TZ=ZoneInfo(os.getenv('TIMEZONE','Asia/Tashkent'));PORT=int(os.getenv('PORT','10000'))
 WEBAPP=os.getenv('WEBAPP_URL','https://nukuspro.uz');WEBHOOK_URL=os.getenv('WEBHOOK_URL',('https://nur-oqiw-bot.mcweb.uz/telegram/webhook' if os.getenv('MCWEB_READY')=='1' else 'https://nur-oqiw.onrender.com/telegram/webhook'));WEBHOOK_SECRET=os.getenv('WEBHOOK_SECRET','nur_oqiw_webhook')
+TELEGRAM_UPDATES_MODE=os.getenv('TELEGRAM_UPDATES_MODE','webhook').strip().lower()
+if TELEGRAM_UPDATES_MODE not in ('webhook','polling'):TELEGRAM_UPDATES_MODE='webhook'
 ORIGINS=[x.strip().rstrip('/') for x in os.getenv('WEBAPP_ORIGINS','https://nukuspro.uz,https://www.nukuspro.uz,https://nur-oqiw.uz,https://www.nur-oqiw.uz,https://nur-oqiw-santizz.vercel.app,https://nur-oqiw-three.vercel.app').split(',') if x.strip()]
 logging.basicConfig(level=logging.INFO);logger=logging.getLogger('nur-oqiw');RATE=defaultdict(deque);SUB_CACHE={}
-dp=Dispatcher();bot=Bot(TOKEN);app=FastAPI()
+dp=Dispatcher();bot=Bot(TOKEN);app=FastAPI();_cleanup_task=None
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ORIGINS,
@@ -94,6 +97,33 @@ def sub_kb():
             rows.append([InlineKeyboardButton(text=f'{index}-KANALGA OBUNA BO‘LISH',url=link,style='primary')])
     rows.append([InlineKeyboardButton(text='OBUNANI TEKSHIRISH',callback_data='check_sub',style='success')])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+async def mock_channel_status(test,user_id):
+    channel=str(test['required_channel'] or '').strip()
+    if not channel:return True,None
+    link=str(test['required_channel_link'] or '').strip()
+    if not link and channel.startswith('@'):link='https://t.me/'+channel.lstrip('@')
+    try:
+        member=await asyncio.wait_for(bot.get_chat_member(channel,int(user_id)),timeout=5)
+        joined=member.status in ('member','administrator','creator') or (member.status=='restricted' and bool(getattr(member,'is_member',False)))
+        return joined,None if joined else (link or None)
+    except Exception as exc:
+        logger.warning('MOCK subscription check failed for %s: %s',channel,type(exc).__name__)
+        return False,link or None
+
+def mock_subscription_kb(test,link):
+    rows=[]
+    if link:rows.append([InlineKeyboardButton(text='KANALGA OBUNA BO‘LISH',url=link,style='primary')])
+    rows.append([InlineKeyboardButton(text='OBUNANI TEKSHIRISH',callback_data='mock_sub_check:'+str(test['test_id']),style='success')])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+def mock_open_kb(test):
+    url=f"{WEBAPP.rstrip('/')}/test?code={test['code']}"
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MOCK TESTNI OCHISH',web_app=WebAppInfo(url=url),style='primary')]])
+
+async def prompt_mock_subscription(message,test,link=None):
+    return await message.answer('Bu MOCK test uchun avval alohida kanalga obuna bo‘ling, keyin tekshirish tugmasini bosing.',reply_markup=mock_subscription_kb(test,link))
+
 def admin_kb():
     return menus.keyboard(__import__('bot.db',fromlist=['get_setting']),'admin',WEBAPP)
 
@@ -130,12 +160,26 @@ async def start_deep_link(m:Message):
         update_user(ADMIN,state='admin');return await m.answer('NUR O‘QIW ORAYI\n\nAdmin boshqaruv paneli.',reply_markup=admin_kb())
     parts=(m.text or '').split(maxsplit=1)
     payload=parts[1].strip() if len(parts)>1 else ''
-    if not await subscribed(m.from_user.id):
-        update_user(m.from_user.id,state='subscribe',code_ok=0);return await m.answer('Testga kirishdan oldin majburiy kanallarga obuna bo‘ling.',reply_markup=sub_kb())
     t=get_test_by_code_or_name(payload) if payload else None
     if not t or not can_access_test(t['test_id'],m.from_user.id,ADMIN):
         update_user(m.from_user.id,state='code',code_ok=0)
         return await m.answer('Test kodi topilmadi. Test kodini qayta kiriting:',reply_markup=user_menu())
+    is_mock=bool(int(t['is_mock'] or 0))
+    if is_mock and not int(t['published'] or 0):
+        existing=get_attempt(t['test_id'],m.from_user.id)
+        if not existing or not existing['started_at'] or existing['submitted']:
+            return await m.answer('Bu MOCK test hali aktiv testlarga chiqarilmagan.')
+    if not is_mock and not await subscribed(m.from_user.id):
+        update_user(m.from_user.id,state='subscribe',code_ok=0);return await m.answer('Testga kirishdan oldin majburiy kanallarga obuna bo‘ling.',reply_markup=sub_kb())
+    if is_mock:
+        if not int(t['active'] or 0):
+            return await m.answer('Bu MOCK test yopilgan.')
+        joined,link=await mock_channel_status(t,m.from_user.id)
+        if not joined:
+            return await prompt_mock_subscription(m,t,link)
+        update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready')
+        ensure_attempt(t['test_id'],m.from_user.id)
+        return await m.answer(f"{t['name']} · MOCK test\n\nTest uchun ism-familiyangizni Mini App ichida kiriting.",reply_markup=mock_open_kb(t))
     if not u['full_name']:
         update_user(m.from_user.id,state='name_code:'+str(t['code']),code_ok=0)
         return await m.answer(f"{t['name']} testi tanlandi. Ism-familiyangizni yozing yoki Telegram ismingiz bilan davom eting:",reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telegram ismim bilan davom etish')]],resize_keyboard=True,one_time_keyboard=True))
@@ -155,6 +199,22 @@ async def check_sub(q:CallbackQuery):
             await q.message.answer('Ism, Familiyangizni yozing yoki Telegram ismingiz bilan davom eting:',reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Telegram ismim bilan davom etish')]],resize_keyboard=True,one_time_keyboard=True))
     else:await q.message.answer('Barcha majburiy kanallarga obuna bo‘ling.')
     await q.answer()
+
+@dp.callback_query(F.data.startswith('mock_sub_check:'))
+async def check_mock_subscription(q:CallbackQuery):
+    try:test_id=q.data.split(':',1)[1];test=get_test(test_id)
+    except Exception:test=None
+    if not test or not int(test['is_mock'] or 0) or not int(test['published'] or 0) or not int(test['active'] or 0):
+        return await q.answer('MOCK test hozir aktiv emas.',show_alert=True)
+    joined,link=await mock_channel_status(test,q.from_user.id)
+    if not joined:
+        await q.answer('Avval test kanaliga obuna bo‘ling.',show_alert=True)
+        if q.message:await prompt_mock_subscription(q.message,test,link)
+        return
+    update_user(q.from_user.id,test_id=test['test_id'],code_ok=1,state='ready')
+    ensure_attempt(test['test_id'],q.from_user.id)
+    if q.message:await q.message.answer(f"{test['name']} · MOCK test\n\nIsm-familiyangizni Mini App ichida kiriting.",reply_markup=mock_open_kb(test))
+    await q.answer('Obuna tasdiqlandi.')
 
 # Only Telegram group/supergroup chat IDs are recorded; no personal DMs or channels.
 def known_groups():
@@ -275,9 +335,7 @@ async def use_telegram_name(m:Message):
 
 @dp.message(F.text=='Test kodini kiritish')
 async def change_test_code(m:Message):
-    u=ensure_user(m.from_user.id)
-    if not await subscribed(m.from_user.id):
-        return await m.answer('Avval majburiy kanallarga obuna bo‘ling.',reply_markup=sub_kb())
+    ensure_user(m.from_user.id)
     update_user(m.from_user.id,state='test_code',code_ok=0)
     await m.answer('Yangi testning kirish kodini kiriting:')
 
@@ -299,13 +357,23 @@ async def registration_text(m:Message):
     if st in ('code','test_code'):
         t=get_test_by_code_or_name(text)
         if not t or not can_access_test(t['test_id'],m.from_user.id,ADMIN):return await m.answer('Test kodi noto‘g‘ri yoki pulli testga ruxsat yo‘q. Qayta kiriting:')
+        is_mock=bool(int(t['is_mock'] or 0))
+        if is_mock:
+            if not int(t['published'] or 0) or not int(t['active'] or 0):return await m.answer('Bu MOCK test hali aktiv emas. Test kodi va holatini admin bilan tekshiring.')
+            joined,link=await mock_channel_status(t,m.from_user.id)
+            if not joined:return await prompt_mock_subscription(m,t,link)
+            update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready');ensure_attempt(t['test_id'],m.from_user.id)
+            return await m.answer(f"{t['name']} · MOCK test\n\nIsm-familiyangizni Mini App ichida kiriting.",reply_markup=mock_open_kb(t))
+        if not await subscribed(m.from_user.id):
+            update_user(m.from_user.id,state='subscribe',code_ok=0)
+            return await m.answer('Testga kirishdan oldin majburiy kanallarga obuna bo‘ling.',reply_markup=sub_kb())
         update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready');ensure_attempt(t['test_id'],m.from_user.id);return await m.answer(f"{t['name']} tanlandi. Testni boshlashingiz mumkin.",reply_markup=user_menu())
     if st=='ready':return await m.answer('Testni boshlash tugmasini bosing.',reply_markup=user_menu())
     return await m.answer('Test kodini kiriting:')
 
 @dp.message(F.text=='Aktiv testlar')
 async def active_tests(m:Message):
-    tests=[t for t in all_tests() if int(t['active']) and not is_paid_test(t['test_id'])]
+    tests=[t for t in all_tests() if int(t['active']) and not is_paid_test(t['test_id']) and (not int(t['is_mock'] or 0) or int(t['published'] or 0))]
     if not tests:return await m.answer('Hozircha aktiv testlar mavjud emas.',reply_markup=user_menu())
     rows=[[InlineKeyboardButton(text=str(t['name'])[:48],callback_data='active_test:'+str(t['test_id']),style='success')] for t in tests[:40]]
     return await m.answer('AKTIV TESTLAR\n\nTestni tanlang:',reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
@@ -316,13 +384,24 @@ async def select_active_test(q:CallbackQuery):
         tid=q.data.split(':',1)[1];t=get_test(tid)
         if not t or not int(t['active']) or not can_access_test(t['test_id'],q.from_user.id,ADMIN):return await q.answer('Test hozir yopiq yoki ruxsat yo‘q.',show_alert=True)
         u=ensure_user(q.from_user.id)
-        if not u['full_name']:
+        is_mock=bool(int(t['is_mock'] or 0))
+        if is_mock and not int(t['published'] or 0):
+            existing=get_attempt(t['test_id'],q.from_user.id)
+            if not existing or not existing['started_at'] or existing['submitted']:
+                return await q.answer('Bu MOCK test hozir aktiv ro‘yxatda yo‘q.',show_alert=True)
+        if is_mock:
+            joined,link=await mock_channel_status(t,q.from_user.id)
+            if not joined:
+                if q.message:await prompt_mock_subscription(q.message,t,link)
+                return await q.answer('Avval test kanaliga obuna bo‘ling.',show_alert=True)
+        if not u['full_name'] and not is_mock:
             await q.answer('Avval ro‘yxatdan o‘ting.',show_alert=True)
             return
         update_user(q.from_user.id,test_id=t['test_id'],code_ok=1,state='ready')
         attempt=ensure_attempt(t['test_id'],q.from_user.id)
         restarted=False
         if attempt and int(attempt['submitted'] or 0):
+            if is_mock:return await q.answer('Bu MOCK testdagi urinish yakunlangan.',show_alert=True)
             outcome=restart_completed_attempt(t['test_id'],q.from_user.id)
             if outcome not in ('restarted','already_active'):
                 return await q.answer('Yangi urinishni boshlash imkoni bo‘lmadi.',show_alert=True)
@@ -364,9 +443,12 @@ async def start_test(m:Message):
     return await m.answer(f"{t['name']}\n\n"+('Oldingi natijangiz saqlandi. Yangi urinish ochildi.\n' if restarted else '')+"Test tayyor. Quyidagi tugmani bosing — Mini App ochiladi.",reply_markup=kb)
 
 async def cleanup_loop():
-    # Attempts remain active until a user submits or an admin closes the test.
+    from .features_v2 import mock_timer_tick
     while True:
-        await asyncio.sleep(3600)
+        try:await mock_timer_tick()
+        except asyncio.CancelledError:raise
+        except Exception:logger.exception('MOCK timer cleanup failed')
+        await asyncio.sleep(1)
 
 @app.get('/',include_in_schema=False)
 async def root():return {'ok':True,'service':'nur-oqiw','health':'/health'}
@@ -415,11 +497,22 @@ async def register_mcweb_webhook_with_retry():
 
 @app.on_event('startup')
 async def register_mcweb_webhook():
-    if os.getenv('MCWEB_READY')=='1':
+    global _cleanup_task
+    if _cleanup_task is None or _cleanup_task.done():
+        _cleanup_task=asyncio.create_task(cleanup_loop(),name='nur-mock-timer')
+    asyncio.create_task(asyncio.to_thread(startup_maintenance))
+    if os.getenv('MCWEB_READY')=='1' and TELEGRAM_UPDATES_MODE=='webhook':
         asyncio.create_task(register_mcweb_webhook_with_retry())
+    elif TELEGRAM_UPDATES_MODE=='polling':
+        logger.info('Telegram updates are handled by the MCWeb background worker')
 
 @app.on_event('shutdown')
 async def close_telegram_client():
+    global _cleanup_task
+    if _cleanup_task and not _cleanup_task.done():
+        _cleanup_task.cancel()
+        await asyncio.gather(_cleanup_task,return_exceptions=True)
+    _cleanup_task=None
     await bot.session.close()
 
 from .features_v2 import register as register_features
@@ -439,14 +532,12 @@ async def enter_admin_panel(m:Message):
     await m.answer('Admin boshqaruv menyusi.',reply_markup=admin_kb())
 
 async def main():
-    cleanup=asyncio.create_task(cleanup_loop());server=uvicorn.Server(uvicorn.Config(app,host='0.0.0.0',port=PORT,log_level='info'));task=asyncio.create_task(server.serve())
+    server=uvicorn.Server(uvicorn.Config(app,host='0.0.0.0',port=PORT,log_level='info'));task=asyncio.create_task(server.serve())
     try:
         if os.getenv('MCWEB_READY')=='1':
-            await bot.set_webhook(WEBHOOK_URL,secret_token=WEBHOOK_SECRET,drop_pending_updates=False,allowed_updates=dp.resolve_used_update_types())
-            logger.info('Telegram webhook registered; background database maintenance scheduled')
+            logger.info('Starting MCWeb API service; Telegram update mode is %s',TELEGRAM_UPDATES_MODE)
         else:
             logger.info('Legacy runtime: webhook registration disabled to preserve MCWeb ownership')
-        asyncio.create_task(asyncio.to_thread(startup_maintenance))
         await task
-    finally:cleanup.cancel();task.cancel();await asyncio.gather(cleanup,task,return_exceptions=True);await bot.session.close()
+    finally:task.cancel();await asyncio.gather(task,return_exceptions=True)
 if __name__=='__main__':asyncio.run(main())
