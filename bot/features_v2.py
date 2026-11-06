@@ -35,7 +35,17 @@ def mock_wizard_clear():
  db.set_setting('admin_mock_wizard','{}')
 def mock_ready_kb(test_id):
  url=WEBAPP.rstrip('/')+'/admin#results' if WEBAPP else 'https://nur-oqiw-web.mcweb.uz/admin#results'
+ test=db.get_test(test_id);actions=[]
+ if test:
+  test=dict(test);remaining=mock_remaining_seconds(test);active=bool(int(test.get('active') or 0))
+  if not test.get('timer_ends_at') and not any(a['started_at'] for a in db.all_attempts_for_test(test_id)):
+   actions.append([InlineKeyboardButton(text='TESTNI BOSHLASH',callback_data=f'mock_start:{test_id}',style='success')])
+  elif test.get('timer_ends_at') and active and remaining and remaining>0:
+   actions.append([InlineKeyboardButton(text='TESTNI TO‘XTATISH',callback_data=f'mock_stop:{test_id}',style='danger')])
+  else:
+   actions.append([InlineKeyboardButton(text='QAYTA O‘TKAZISH',callback_data=f'mock_restart:{test_id}',style='success')])
  return InlineKeyboardMarkup(inline_keyboard=[
+  *actions,
   [InlineKeyboardButton(text='NATIJALAR',web_app=WebAppInfo(url=url),style='primary')],
   [InlineKeyboardButton(text='MOCK TESTLAR RO‘YXATI',callback_data='mock_list')],
   [InlineKeyboardButton(text='ORTGA QAYTISH',callback_data='mock_back')]
@@ -57,7 +67,7 @@ async def mock_next_question(message,pending):
  if not test:return await message.answer('MOCK test topilmadi.')
  if done>=count:
   db.set_test_active(test_id,1);db.set_test_published(test_id,0);mock_wizard_clear();ast('admin')
-  return await message.answer(f"MOCK TEST TAYYOR\n\n{test['name']}\nKod: {test['code']}\nSavollar: {done}\nTimer: {int(test['duration_minutes'] or 0)} daqiqa\n\nIshtirokchilar faqat test kodini kiritib kiradi. Test Aktiv testlar ro‘yxatida ko‘rinmaydi.",reply_markup=mock_ready_kb(test_id))
+  return await message.answer(f"MOCK TEST TAYYOR\n\n{test['name']}\nKod: {test['code']}\nSavollar: {done}\nTimer: {int(test['duration_minutes'] or 0)} daqiqa\n\nAvval admin TESTNI BOSHLASH tugmasini bosadi. Taymer shu zahoti boshlanadi; qatnashchilar keyin test kodini kiritadi. Test Aktiv testlar ro‘yxatida ko‘rinmaydi.",reply_markup=mock_ready_kb(test_id))
  ast('mock_question_kind')
  return await message.answer(f'{done+1}/{count}-savol turini tanlang:',reply_markup=mock_question_type_kb())
 def norm(v):return ' '.join(str(v or '').strip().casefold().split())
@@ -340,6 +350,32 @@ async def finish_mock_test(test,reason='timer'):
    except Exception:logging.getLogger('nur-oqiw.mock').info('Could not notify MOCK participant %s',attempt['telegram_id'])
   await send_mock_results_pdf(test)
   return closed
+
+async def start_mock_test_session(test_id):
+ test_id=str(test_id or '').strip();test=db.get_test(test_id)
+ if not test or not int(test['is_mock'] or 0):return {'ok':False,'error':'mock_test_not_found'}
+ test=dict(test)
+ if test.get('timer_started_at') and not test.get('timer_ends_at'):
+  test=db.reset_mock_timer(test_id) or db.get_test(test_id);test=dict(test)
+ if not int(test['code_set'] or 0) or not db.questions_for_test(test_id):return {'ok':False,'error':'mock_test_not_ready','message':'Test kodi va savollari to‘liq kiritilmagan.'}
+ if test['timer_ends_at']:
+  remaining=mock_remaining_seconds(dict(test))
+  if int(test['active'] or 0) and remaining and remaining>0:
+   return {'ok':True,'message':f"{test['name']} allaqachon boshlangan. Qolgan vaqt: {format_mock_timer(remaining)}."}
+  return {'ok':False,'error':'mock_needs_retake','message':'Bu test avval boshlangan. Yangi tur uchun QAYTA O‘TKAZISH tugmasini bosing.'}
+ attempts=db.all_attempts_for_test(test_id)
+ if any(a['started_at'] for a in attempts):
+  return {'ok':False,'error':'mock_needs_retake','message':'Bu testda oldingi urinish bor. Avval QAYTA O‘TKAZISH tugmasini bosing.'}
+ duration=max(1,int(test['duration_minutes'] or 0));started=datetime.now(TZ);ends=started+timedelta(minutes=duration)
+ db.set_test_active(test_id,1);db.set_test_published(test_id,0)
+ test=db.start_mock_timer(test_id,started.isoformat(),ends.isoformat()) or db.get_test(test_id)
+ if not test or not test['timer_ends_at']:return {'ok':False,'error':'mock_start_failed','message':'Taymerni boshlashda xatolik bo‘ldi.'}
+ remaining=mock_remaining_seconds(dict(test)) or duration*60
+ try:
+  await update_mock_admin_status(dict(test),'mock_timer_message_'+test_id,
+   f"MOCK TEST BOSHLANDI\n{test['name']} · kod: {test['code']}\nQolgan vaqt: {format_mock_timer(remaining)}")
+ except Exception:logging.getLogger('nur-oqiw.mock').exception('Could not update started MOCK status')
+ return {'ok':True,'message':f"{test['name']} boshlandi. Taymer: {format_mock_timer(remaining)}. Qatnashchilar endi test kodini kiritishi mumkin."}
 
 async def restart_mock_test_session(test_id):
  test_id=str(test_id or '').strip();test=db.get_test(test_id)
@@ -1086,7 +1122,7 @@ def register(core,dp,bot,webapp_url):
   test_id=str(p.get('test_id','')).strip();test=db.get_test(test_id)
   if not test or not int(test['is_mock'] or 0):return {'ok':False,'error':'mock_test_not_found'}
   db.set_test_active(test_id,1);db.set_test_published(test_id,0)
-  return {'ok':True,'published':False,'message':'MOCK test faqat test kodi bilan ochiladi va Aktiv testlar ro‘yxatida ko‘rinmaydi.'}
+  return {'ok':True,'published':False,'message':'MOCK test Aktiv testlar ro‘yxatida ko‘rinmaydi. Qatnashchilar uchun avval TESTNI BOSHLASHni bosing.'}
  @core.app.post('/api/admin/mock/questions-pdf')
  async def admin_mock_questions_pdf(p:dict,req:Request):
   tid,u=await auth(req)
@@ -1107,6 +1143,12 @@ def register(core,dp,bot,webapp_url):
   except Exception:
    logging.getLogger('nur-oqiw.mock').exception('Could not create MOCK share links')
    return {'ok':False,'error':'share_link_failed'}
+ @core.app.post('/api/admin/mock/start')
+ async def admin_mock_start(p:dict,req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  return await start_mock_test_session(str(p.get('test_id','')).strip())
+
  @core.app.post('/api/admin/mock/restart')
  async def admin_mock_restart(p:dict,req:Request):
   tid,u=await auth(req)
@@ -1412,6 +1454,8 @@ def register(core,dp,bot,webapp_url):
    await finish_mock_test(t,'timer')
    return {'ok':False,'error':'mock_timer_ended','is_mock':True,'test_name':t['name']}
   if not db.questions_for_test(t['test_id']):return {'ok':False,'error':'test_not_ready','test_name':t['name'],'is_mock':is_mock}
+  if is_mock and not t['timer_started_at']:
+   return {'ok':False,'error':'mock_not_started','is_mock':True,'test_name':t['name']}
   if u['test_id']!=t['test_id']:db.update_user(tid,test_id=t['test_id'],code_ok=1,state='ready');u=db.get_user(tid)
   a=db.ensure_attempt(t['test_id'],tid)
   if is_mock:
@@ -2282,24 +2326,69 @@ def register(core,dp,bot,webapp_url):
  @r.callback_query(F.data=='mock_list')
  async def mock_list_callback(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
-  mocks=[t for t in db.all_tests() if int(t['is_mock'] or 0)];lines=['MOCK TESTLAR',''];buttons=[]
-  for test in mocks[:40]:
-   test=dict(test);test_id=str(test['test_id']);code=str(test['code']) if int(test['code_set'] or 0) else 'kod kiritilmagan';count=len(db.questions_for_test(test_id));attempts=db.all_attempts_for_test(test_id)
-   current_done=sum(1 for a in attempts if int(a['submitted'] or 0))
+  ready=[];drafts=[]
+  for row in db.all_tests():
+   test=dict(row)
+   if not int(test['is_mock'] or 0):continue
+   count=len(db.questions_for_test(str(test['test_id'])));has_code=bool(int(test['code_set'] or 0))
+   if has_code and count:ready.append((test,count))
+   elif has_code or count or str(test['name'] or '').strip().casefold() not in ('','mock'):drafts.append((test,count))
+  lines=['MOCK TESTLAR','']
+  if ready:lines.append('TAYYOR TESTLAR')
+  buttons=[]
+  for test,count in ready[:40]:
+   test_id=str(test['test_id']);code=str(test['code']);attempts=db.all_attempts_for_test(test_id)
    archived=db.permanent_results_for_test(test_id,5000) if hasattr(db,'permanent_results_for_test') else []
    total_done=len({str(a['attempt_id']) for a in archived if int(a['submitted'] or 0)}|{str(a['attempt_id']) for a in attempts if int(a['submitted'] or 0)})
    started=sum(1 for a in attempts if a['started_at'])
    remaining=mock_remaining_seconds(test);active=bool(int(test['active'] or 0))
-   if remaining is not None:
-    timer_state=('FAOL · Qolgan vaqt: '+format_mock_timer(remaining)) if active and remaining>0 else ('VAQT TUGAGAN · Yakunlanmoqda' if active else ('YAKUNLANGAN' if remaining<=0 else 'TO‘XTATILGAN · '+format_mock_timer(remaining)+' qoldi'))
-   else:timer_state='TAYYOR · Taymer birinchi qatnashchida boshlanadi' if active else 'YOPIQ · qayta o‘tkazish mumkin'
+   if not test.get('timer_ends_at'):
+    timer_state=('TAYMER SOZLANMAGAN · qayta o‘tkazish kerak' if started else f"BOSHLASH KUTILMOQDA · Timer: {int(test['duration_minutes'] or 0)} daqiqa")
+   elif remaining is not None and active and remaining>0:
+    timer_state='FAOL · Qolgan vaqt: '+format_mock_timer(remaining)
+   elif remaining is not None and active:
+    timer_state='VAQT TUGAGAN · Yakunlanmoqda'
+   elif remaining is not None and remaining>0:
+    timer_state='TO‘XTATILGAN · '+format_mock_timer(remaining)+' qoldi'
+   else:timer_state='YAKUNLANGAN'
    lines.append(f"{test['name']} · {code} · {count} savol · {int(test['duration_minutes'] or 0)} daqiqa\n  {timer_state} · Qatnashgan: {started} · Natijalar: {total_done}")
-   if not int(test['code_set'] or 0) or count==0:buttons.append([InlineKeyboardButton(text='TAYYORLASHNI DAVOM ETTIRISH',callback_data=f'mock_continue:{test_id}')])
+   if not test.get('timer_ends_at') and not started:
+    buttons.append([InlineKeyboardButton(text='TESTNI BOSHLASH · '+str(test['name'])[:20],callback_data=f'mock_start:{test_id}',style='success')])
+   elif test.get('timer_ends_at') and active and remaining is not None and remaining>0:
+    buttons.append([InlineKeyboardButton(text='TESTNI TO‘XTATISH · '+str(test['name'])[:18],callback_data=f'mock_stop:{test_id}',style='danger')])
+   else:
+    buttons.append([InlineKeyboardButton(text='QAYTA O‘TKAZISH · '+str(test['name'])[:22],callback_data=f'mock_restart:{test_id}',style='success')])
    if total_done:buttons.append([InlineKeyboardButton(text='NATIJA PDF’INI OLISH · '+code[:18],callback_data=f'mock_pdf:{test_id}',style='primary')])
-   if int(test['code_set'] or 0) and count:buttons.append([InlineKeyboardButton(text='QAYTA O‘TKAZISH · '+str(test['name'])[:22],callback_data=f'mock_restart:{test_id}',style='success')])
-
+  if drafts:
+   lines.extend(['','TAYYORLANAYOTGAN TESTLAR'])
+   for test,count in drafts[:20]:
+    test_id=str(test['test_id']);code=str(test['code']) if int(test['code_set'] or 0) else 'kod kiritilmagan'
+    lines.append(f"{test['name']} · {code} · {count} savol · {int(test['duration_minutes'] or 0)} daqiqa")
+    buttons.append([InlineKeyboardButton(text='TAYYORLASHNI DAVOM ETTIRISH · '+str(test['name'])[:18],callback_data=f'mock_continue:{test_id}')])
+  if not ready and not drafts:lines.extend(['','Hozircha tayyor MOCK test yo‘q. Yangi MOCK test yarating.'])
   buttons.extend([[InlineKeyboardButton(text='NATIJALAR PANELI',web_app=WebAppInfo(url=(WEBAPP.rstrip('/')+'/admin#results' if WEBAPP else 'https://nur-oqiw-web.mcweb.uz/admin#results')),style='primary')],[InlineKeyboardButton(text='ORTGA QAYTISH',callback_data='mock_back')]])
-  await q.message.answer('\n'.join(lines) if mocks else 'Hozircha MOCK test yaratilmagan.',reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons));await q.answer()
+  await q.message.answer('\n'.join(lines),reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons));await q.answer()
+ @r.callback_query(F.data.startswith('mock_start:'))
+ async def mock_start_callback(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
+  test_id=q.data.split(':',1)[1];result=await start_mock_test_session(test_id)
+  if not result.get('ok'):return await q.answer(result.get('message') or 'Testni boshlash imkoni bo‘lmadi.',show_alert=True)
+  await q.message.answer(result['message'],reply_markup=mock_ready_kb(test_id));await q.answer('Taymer boshlandi.')
+ @r.callback_query(F.data.startswith('mock_stop:'))
+ async def mock_stop_callback(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
+  test_id=q.data.split(':',1)[1];test=db.get_test(test_id)
+  if not test or not int(test['is_mock'] or 0):return await q.answer('MOCK test topilmadi.',show_alert=True)
+  kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='HA, TO‘XTATISH VA HISOBLASH',callback_data=f'mock_stop_yes:{test_id}',style='danger')],[InlineKeyboardButton(text='BEKOR QILISH',callback_data='mock_list')]])
+  await q.message.answer(f"{test['name']} testini to‘xtatib, hozirgi urinishlarni hisoblaymi?",reply_markup=kb);await q.answer()
+ @r.callback_query(F.data.startswith('mock_stop_yes:'))
+ async def mock_stop_confirm_callback(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
+  test_id=q.data.split(':',1)[1];test=db.get_test(test_id)
+  if not test or not int(test['is_mock'] or 0):return await q.answer('MOCK test topilmadi.',show_alert=True)
+  await q.answer('Urinishlar hisoblanmoqda…')
+  await finish_mock_test(test,'admin')
+  await q.message.answer(f"{test['name']} test to‘xtatildi. Yakunlangan natijalarni PDF tugmasidan olasiz.",reply_markup=mock_ready_kb(test_id))
  @r.callback_query(F.data.startswith('mock_pdf:'))
  async def mock_pdf_callback(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
@@ -2308,9 +2397,9 @@ def register(core,dp,bot,webapp_url):
   current=any(int(a['submitted'] or 0) for a in db.all_attempts_for_test(test_id))
   archived=any(int(a['submitted'] or 0) for a in db.permanent_results_for_test(test_id,5000))
   if not (current or archived):return await q.answer('Hali test natijasi yo‘q.',show_alert=True)
+  await q.answer('Natijalar PDF’i tayyorlanmoqda…')
   ok=await send_mock_results_pdf(dict(test),force=True)
-  if ok:return await q.answer('Natijalar PDF’i yuborildi.')
-  return await q.answer('PDF yuborilmadi. Bot logini tekshiring.',show_alert=True)
+  if not ok:return await BOT.send_message(ADMIN,'PDF yuborilmadi. Bot logini tekshiring.')
  @r.callback_query(F.data.startswith('mock_restart:'))
  async def mock_restart_callback(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
@@ -2321,7 +2410,7 @@ def register(core,dp,bot,webapp_url):
    [InlineKeyboardButton(text='HA, QAYTA OCHISH',callback_data=f'mock_restart_yes:{test_id}',style='success')],
    [InlineKeyboardButton(text='BEKOR QILISH',callback_data='mock_list')]
   ])
-  await q.message.answer(f"{test['name']} testini qayta o‘tkazasizmi?\n\nEski natijalar arxivda saqlanadi. Tasdiqlansa, test kodi o‘zgarmaydi va taymer birinchi qatnashchi kirganda qaytadan boshlanadi.",reply_markup=kb)
+  await q.message.answer(f"{test['name']} testini qayta o‘tkazasizmi?\n\nEski natijalar arxivda saqlanadi. Tasdiqlansa, test kodi o‘zgarmaydi; yangi taymer esa TESTNI BOSHLASH tugmasi bosilganda boshlanadi.",reply_markup=kb)
   await q.answer()
  @r.callback_query(F.data.startswith('mock_restart_yes:'))
  async def mock_restart_confirm_callback(q:CallbackQuery):
