@@ -263,6 +263,12 @@ def start_mock_timer(tid,started_at,ends_at):
         c.execute("UPDATE tests SET timer_started_at=?,timer_ends_at=? WHERE test_id=? AND is_mock=1 AND (timer_started_at IS NULL OR timer_started_at='')",(str(started_at),str(ends_at),str(tid)))
     return get_test(tid)
 
+def reset_mock_timer(tid):
+    """Reopen a completed MOCK round with a fresh shared timer."""
+    with conn() as c:
+        c.execute("UPDATE tests SET timer_started_at=NULL,timer_ends_at=NULL,active=1,published=0 WHERE test_id=? AND is_mock=1",(str(tid),))
+    return get_test(tid)
+
 def create_test_with_questions(name,code,items,paid=False):
     """Create a complete answer key, including multi-part questions, atomically."""
     normalized=[]
@@ -411,6 +417,10 @@ def archive_completed_results():
 def all_permanent_results(limit=200):
     with conn() as c:
         return c.execute("SELECT * FROM permanent_results ORDER BY COALESCE(finished_at,started_at,archived_at) DESC LIMIT ?",(max(1,min(int(limit),1000)),)).fetchall()
+
+def permanent_results_for_test(test_id,limit=1000):
+    with conn() as c:
+        return c.execute("SELECT * FROM permanent_results WHERE test_id=? ORDER BY COALESCE(finished_at,started_at,archived_at) ASC LIMIT ?",(str(test_id),max(1,min(int(limit),5000)))).fetchall()
 
 def save_attempt_answers(attempt_id,answers):
     update_attempt(attempt_id,answers_json=json.dumps(answers,ensure_ascii=False))
