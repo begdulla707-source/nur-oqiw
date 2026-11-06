@@ -274,9 +274,9 @@ def recalculate_mock_scores(test_id):
   db.archive_attempt_result(attempt_id)
  return values
 
-async def send_mock_results_pdf(test):
+async def send_mock_results_pdf(test,force=False):
  test_id=str(test['test_id']);key='mock_results_pdf_sent_'+test_id
- if db.get_setting(key,''):return False
+ if not force and db.get_setting(key,''):return False
  path=''
  try:
   with tempfile.NamedTemporaryFile(prefix='nur-mock-results-',suffix='.pdf',delete=False) as tmp:path=tmp.name
@@ -341,6 +341,40 @@ async def finish_mock_test(test,reason='timer'):
   await send_mock_results_pdf(test)
   return closed
 
+async def restart_mock_test_session(test_id):
+ test_id=str(test_id or '').strip();test=db.get_test(test_id)
+ if not test or not int(test['is_mock'] or 0):return {'ok':False,'error':'mock_test_not_found'}
+ if not int(test['code_set'] or 0) or not db.questions_for_test(test_id):return {'ok':False,'error':'mock_test_not_ready'}
+ remaining=mock_remaining_seconds(dict(test))
+ if int(test['active'] or 0) and remaining is not None and remaining>0:
+  return {'ok':False,'error':'mock_in_progress','message':'Test hali davom etmoqda. Timer tugagach qayta o‘tkazish mumkin.'}
+ unfinished=[a for a in db.all_attempts_for_test(test_id) if a['started_at'] and not int(a['submitted'] or 0)]
+ if unfinished:
+  await finish_mock_test(test,'admin_restart')
+ attempts=db.all_attempts_for_test(test_id)
+ if any(a['started_at'] and not int(a['submitted'] or 0) for a in attempts):
+  return {'ok':False,'error':'mock_finalize_failed','message':'Yakunlanmagan urinishlarni yopib bo‘lmadi. Natijalar saqlangan; birozdan keyin qayta urinib ko‘ring.'}
+ for attempt in attempts:
+  if not int(attempt['submitted'] or 0):continue
+  result=db.restart_completed_attempt(test_id,int(attempt['telegram_id']))
+  if result=='restarted':
+   fresh=db.get_attempt(test_id,int(attempt['telegram_id']))
+   if fresh:db.update_attempt(fresh['attempt_id'],participant_name='',finish_notified=0)
+  elif result=='already_active':
+   continue
+  elif result not in ('not_started',):
+   logging.getLogger('nur-oqiw.mock').error('Could not reset MOCK attempt %s: %s',attempt['attempt_id'],result)
+   return {'ok':False,'error':'mock_restart_failed','message':'Bitta urinishni arxivlashda xatolik bo‘ldi. Eski natijalar saqlangan; qayta tekshiring.'}
+ reopened=db.reset_mock_timer(test_id)
+ if not reopened:return {'ok':False,'error':'mock_restart_failed'}
+ for suffix,value in (('mock_results_pdf_sent_'+test_id,''),('mock_results_pdf_try_'+test_id,'0'),('mock_timer_message_final_'+test_id,''),('mock_timer_updated_'+test_id,'0')):
+  db.set_setting(suffix,value)
+ try:
+  await update_mock_admin_status(dict(reopened),'mock_timer_message_'+test_id,
+   f"MOCK TEST QAYTA OCHILDI\n{reopened['name']} · kod: {reopened['code']}\nTaymer birinchi qatnashchi kirganda boshlanadi.")
+ except Exception:logging.getLogger('nur-oqiw.mock').exception('Could not update restarted MOCK status')
+ return {'ok':True,'message':f"{reopened['name']} qayta ochildi. Test kodi o‘zgarmadi, avvalgi natijalar arxivda saqlandi. Taymer birinchi qatnashchi kirganda boshlanadi."}
+
 async def mock_timer_tick():
  """Expire shared MOCK timers and keep one editable Telegram status message per test."""
  if not BOT or not ADMIN:return
@@ -393,6 +427,15 @@ async def mock_timer_tick():
 def format_mock_timer(value):
  seconds=max(0,int(value));return f"{seconds//3600:02d}:{(seconds%3600)//60:02d}:{seconds%60:02d}"
 
+def mock_remaining_seconds(test,now=None):
+ try:
+  if not test or not test.get('timer_ends_at'):return None
+  end=datetime.fromisoformat(str(test['timer_ends_at']).replace('Z','+00:00'))
+  if end.tzinfo is None:end=end.replace(tzinfo=TZ)
+  current=now or datetime.now(TZ)
+  return max(0,int(__import__('math').ceil((end.astimezone(TZ)-current).total_seconds())))
+ except Exception:return None
+
 def build_test_pdf(tid,path):
  t=db.get_test(tid)
  if not t:raise ValueError('Test topilmadi')
@@ -400,8 +443,16 @@ def build_test_pdf(tid,path):
  small=ParagraphStyle('NurMockSub',parent=styles['Normal'],fontName=PDF_FONT,fontSize=8,leading=10,alignment=1,textColor=colors.HexColor('#486555'))
  body=ParagraphStyle('NurMockBody',parent=styles['BodyText'],fontName=PDF_FONT,fontSize=7.3,leading=8.5,wordWrap='CJK',textColor=colors.black)
  header=ParagraphStyle('NurMockHead',parent=body,fontSize=7.3,leading=8.5,alignment=1)
- qs=db.questions_for_test(tid);rows_all=[a for a in db.all_attempts_for_test(tid) if int(a['submitted'] or 0)]
- rows_all.sort(key=lambda a:(-float(a['score'] or 0),str(a['full_name'] or '').casefold()))
+ qs=db.questions_for_test(tid);rows_by_id={}
+ if hasattr(db,'permanent_results_for_test'):
+  for archived in db.permanent_results_for_test(tid,5000):
+   row=dict(archived)
+   if int(row.get('submitted') or 0):row['full_name']=row.get('full_name') or '';rows_by_id[str(row.get('attempt_id') or '')]=row
+ for current in db.all_attempts_for_test(tid):
+  if not int(current['submitted'] or 0):continue
+  row=dict(current);rows_by_id[str(row.get('attempt_id') or '')]=row
+ rows_all=list(rows_by_id.values())
+ rows_all.sort(key=lambda a:(-float(a['score'] or 0),str(a.get('full_name') or '').casefold()))
  headings=['№','To‘g‘ri','Ball','Baho','Ism-familiya']
  rows=[[Paragraph('<b>'+escape(x)+'</b>',header) for x in headings]];row_colors=[]
  for rank,a in enumerate(rows_all,1):
@@ -420,7 +471,7 @@ def build_test_pdf(tid,path):
  tab.setStyle(TableStyle(style))
  title=Paragraph(escape(f"NUR O‘QIW ORAYI · {t['name']}"),title_style)
  subtitle_label='MOCK natijalari' if int(t['is_mock'] or 0) else 'Test natijalari'
- subtitle=Paragraph(escape(f"{subtitle_label} · Savollar: {len(qs)} · Qatnashchilar: {len(rows_all)}"+(f" · Kod: {t['code']}" if int(t['code_set'] or 0) else "")),small)
+ subtitle=Paragraph(escape(f"{subtitle_label} · Savollar: {len(qs)} · Natijalar: {len(rows_all)}"+(f" · Kod: {t['code']}" if int(t['code_set'] or 0) else "")),small)
  def draw_footer(canvas,document):
   canvas.saveState()
   canvas.setFont(PDF_FONT,7)
@@ -947,7 +998,12 @@ def register(core,dp,bot,webapp_url):
   for t in db.all_tests():
    attempts=db.all_attempts_for_test(t['test_id'])
    done=[a for a in attempts if a['submitted']]
-   ranked=sorted(done,key=lambda a:(-float(a['score'] or 0),str(a['finished_at'] or '9999')))
+   archived=[dict(a) for a in db.permanent_results_for_test(t['test_id'],5000) if int(a['submitted'] or 0)] if hasattr(db,'permanent_results_for_test') else []
+   current_ids={str(a['attempt_id']) for a in done}
+   historical=[a for a in archived if str(a.get('attempt_id') or '') not in current_ids]
+   result_rows={str(a.get('attempt_id') or ''):a for a in archived}
+   for a in done:result_rows[str(a['attempt_id'])]=dict(a)
+   ranked=sorted(result_rows.values(),key=lambda a:(-float(a.get('score') or 0),str(a.get('finished_at') or '9999')))
    test_remaining=0
    if int(t['is_mock'] or 0) and t['timer_ends_at'] and int(t['active'] or 0):
     try:
@@ -962,7 +1018,7 @@ def register(core,dp,bot,webapp_url):
      try:remaining=max(0,int(__import__('math').ceil((datetime.fromisoformat(ends)-datetime.now(TZ)).total_seconds())))
      except Exception:remaining=0
     participants.append({'full_name':a['full_name'] or 'Ismsiz','telegram_id':int(a['telegram_id']),'score':float(a['score'] or 0),'grade':a['grade'] or '', 'submitted':bool(a['submitted']),'started_at':a['started_at'],'finished_at':a['finished_at'],'ends_at':ends,'remaining_seconds':remaining})
-   tests.append({'test_id':str(t['test_id']),'name':t['name'],'code':str(t['code']) if int(t['code_set'] or 0) else '', 'code_set':bool(int(t['code_set'] or 0)),'questions_pdf_sent':bool(int(t['questions_pdf_sent'] or 0)),'active':bool(int(t['active'])),'is_mock':bool(int(t['is_mock'] or 0)),'published':bool(int(t['published'] or 0)),'duration_minutes':int(t['duration_minutes'] or 0),'timer_started_at':str(t['timer_started_at'] or ''),'timer_ends_at':str(t['timer_ends_at'] or ''),'timer_remaining_seconds':test_remaining,'required_channel':str(t['required_channel'] or ''),'required_channel_link':str(t['required_channel_link'] or ''),'questions_channel':str(t['questions_channel'] or ''),'questions':len(db.questions_for_test(t['test_id'])),'participants':len(attempts),'completed':len(done),'ranking':participants and [{'rank':i+1,'full_name':a['full_name'] or 'Ismsiz','score':float(a['score'] or 0),'grade':a['grade'] or ''} for i,a in enumerate(ranked[:10])] or [],'active_timers':[p for p in participants if p['ends_at'] and not p['submitted']],'recent':participants[:50]})
+   tests.append({'test_id':str(t['test_id']),'name':t['name'],'code':str(t['code']) if int(t['code_set'] or 0) else '', 'code_set':bool(int(t['code_set'] or 0)),'questions_pdf_sent':bool(int(t['questions_pdf_sent'] or 0)),'active':bool(int(t['active'])),'is_mock':bool(int(t['is_mock'] or 0)),'published':bool(int(t['published'] or 0)),'duration_minutes':int(t['duration_minutes'] or 0),'timer_started_at':str(t['timer_started_at'] or ''),'timer_ends_at':str(t['timer_ends_at'] or ''),'timer_remaining_seconds':test_remaining,'required_channel':str(t['required_channel'] or ''),'required_channel_link':str(t['required_channel_link'] or ''),'questions_channel':str(t['questions_channel'] or ''),'questions':len(db.questions_for_test(t['test_id'])),'participants':len(attempts),'completed':len(done),'historical_completed':len(historical),'total_completed':len(ranked),'has_results':bool(ranked),'ranking':[{'rank':i+1,'full_name':a.get('full_name') or 'Ismsiz','score':float(a.get('score') or 0),'grade':a.get('grade') or ''} for i,a in enumerate(ranked[:10])],'active_timers':[p for p in participants if p['ends_at'] and not p['submitted']],'recent':participants[:50]})
    all_rows.extend(participants)
   registered=db.all_registered_users();admin_users=[]
   for user in registered[:200]:
@@ -1051,13 +1107,23 @@ def register(core,dp,bot,webapp_url):
   except Exception:
    logging.getLogger('nur-oqiw.mock').exception('Could not create MOCK share links')
    return {'ok':False,'error':'share_link_failed'}
+ @core.app.post('/api/admin/mock/restart')
+ async def admin_mock_restart(p:dict,req:Request):
+  tid,u=await auth(req)
+  if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
+  return await restart_mock_test_session(str(p.get('test_id','')).strip())
+
  @core.app.post('/api/admin/mock/results-pdf')
  async def admin_mock_results_pdf(p:dict,req:Request):
   tid,u=await auth(req)
   if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
   test_id=str(p.get('test_id','')).strip();test=db.get_test(test_id)
   if not test or not int(test['is_mock'] or 0):return {'ok':False,'error':'mock_test_not_found'}
-  recalculate_mock_scores(test_id);path=''
+  recalculate_mock_scores(test_id)
+  current=any(int(a['submitted'] or 0) for a in db.all_attempts_for_test(test_id))
+  archived=any(int(a['submitted'] or 0) for a in db.permanent_results_for_test(test_id,5000))
+  if not (current or archived):return {'ok':False,'error':'no_results'}
+  path=''
   try:
    with tempfile.NamedTemporaryFile(prefix='nur-mock-results-',suffix='.pdf',delete=False) as tmp:path=tmp.name
    build_test_pdf(test_id,path)
@@ -1159,13 +1225,16 @@ def register(core,dp,bot,webapp_url):
   if not tid or tid!=ADMIN:return {'ok':False,'error':'admin_only'}
   test_id=str(req.query_params.get('test_id','')).strip();t=db.get_test(test_id)
   if not t:return {'ok':False,'error':'test_not_found'}
-  questions=db.questions_for_test(test_id);rows=db.all_attempts_for_test(test_id)
-  out=[]
+  questions=db.questions_for_test(test_id);current=db.all_attempts_for_test(test_id);combined={}
+  if hasattr(db,'permanent_results_for_test'):
+   for a in db.permanent_results_for_test(test_id,5000):combined[str(a['attempt_id'])]=dict(a)
+  for a in current:combined[str(a['attempt_id'])]=dict(a)
+  rows=list(combined.values());out=[]
   for a in rows:
-   try:answers=json.loads(a['answers_json'] or '{}')
+   try:answers=json.loads(a.get('answers_json') or '{}')
    except Exception:answers={}
    correct_count=sum(1 for question in questions if norm(answers.get(str(question['number']),''))==norm(question['answer']))
-   out.append({'telegram_id':int(a['telegram_id']),'username':db.get_setting('telegram_username_'+str(a['telegram_id']),'') or '', 'full_name':a['full_name'] or 'Ismsiz','phone':a['phone'] or '', 'submitted':bool(a['submitted']),'status':a['status'] or '', 'score':float(a['score'] or 0),'grade':a['grade'] or '', 'correct_count':correct_count,'total_questions':len(questions),'started_at':a['started_at'],'finished_at':a['finished_at'],'answers':answers})
+   out.append({'telegram_id':int(a['telegram_id']),'username':db.get_setting('telegram_username_'+str(a['telegram_id']),'') or '', 'full_name':a.get('full_name') or 'Ismsiz','phone':a.get('phone') or '', 'submitted':bool(a.get('submitted')),'status':a.get('status') or '', 'score':float(a.get('score') or 0),'grade':a.get('grade') or '', 'correct_count':correct_count,'total_questions':len(questions),'started_at':a.get('started_at'),'finished_at':a.get('finished_at'),'answers':answers})
   out.sort(key=lambda a:(not a['submitted'],-a['score'] if a['submitted'] else 0,str(a['full_name'] or '').casefold()))
   rank=0
   for row in out:
@@ -2215,12 +2284,51 @@ def register(core,dp,bot,webapp_url):
   if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
   mocks=[t for t in db.all_tests() if int(t['is_mock'] or 0)];lines=['MOCK TESTLAR',''];buttons=[]
   for test in mocks[:40]:
-   test_id=str(test['test_id']);code=str(test['code']) if int(test['code_set'] or 0) else 'kod kiritilmagan';count=len(db.questions_for_test(test_id))
-   lines.append(f"{test['name']} · {code} · {count} savol · {int(test['duration_minutes'] or 0)} daqiqa")
+   test=dict(test);test_id=str(test['test_id']);code=str(test['code']) if int(test['code_set'] or 0) else 'kod kiritilmagan';count=len(db.questions_for_test(test_id));attempts=db.all_attempts_for_test(test_id)
+   current_done=sum(1 for a in attempts if int(a['submitted'] or 0))
+   archived=db.permanent_results_for_test(test_id,5000) if hasattr(db,'permanent_results_for_test') else []
+   total_done=len({str(a['attempt_id']) for a in archived if int(a['submitted'] or 0)}|{str(a['attempt_id']) for a in attempts if int(a['submitted'] or 0)})
+   started=sum(1 for a in attempts if a['started_at'])
+   remaining=mock_remaining_seconds(test);active=bool(int(test['active'] or 0))
+   if remaining is not None:
+    timer_state=('FAOL · Qolgan vaqt: '+format_mock_timer(remaining)) if active and remaining>0 else ('VAQT TUGAGAN · Yakunlanmoqda' if active else ('YAKUNLANGAN' if remaining<=0 else 'TO‘XTATILGAN · '+format_mock_timer(remaining)+' qoldi'))
+   else:timer_state='TAYYOR · Taymer birinchi qatnashchida boshlanadi' if active else 'YOPIQ · qayta o‘tkazish mumkin'
+   lines.append(f"{test['name']} · {code} · {count} savol · {int(test['duration_minutes'] or 0)} daqiqa\n  {timer_state} · Qatnashgan: {started} · Natijalar: {total_done}")
    if not int(test['code_set'] or 0) or count==0:buttons.append([InlineKeyboardButton(text='TAYYORLASHNI DAVOM ETTIRISH',callback_data=f'mock_continue:{test_id}')])
+   if total_done:buttons.append([InlineKeyboardButton(text='NATIJA PDF’INI OLISH · '+code[:18],callback_data=f'mock_pdf:{test_id}',style='primary')])
+   if int(test['code_set'] or 0) and count:buttons.append([InlineKeyboardButton(text='QAYTA O‘TKAZISH · '+str(test['name'])[:22],callback_data=f'mock_restart:{test_id}',style='success')])
 
   buttons.extend([[InlineKeyboardButton(text='NATIJALAR PANELI',web_app=WebAppInfo(url=(WEBAPP.rstrip('/')+'/admin#results' if WEBAPP else 'https://nur-oqiw-web.mcweb.uz/admin#results')),style='primary')],[InlineKeyboardButton(text='ORTGA QAYTISH',callback_data='mock_back')]])
   await q.message.answer('\n'.join(lines) if mocks else 'Hozircha MOCK test yaratilmagan.',reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons));await q.answer()
+ @r.callback_query(F.data.startswith('mock_pdf:'))
+ async def mock_pdf_callback(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
+  test_id=q.data.split(':',1)[1];test=db.get_test(test_id)
+  if not test or not int(test['is_mock'] or 0):return await q.answer('MOCK test topilmadi.',show_alert=True)
+  current=any(int(a['submitted'] or 0) for a in db.all_attempts_for_test(test_id))
+  archived=any(int(a['submitted'] or 0) for a in db.permanent_results_for_test(test_id,5000))
+  if not (current or archived):return await q.answer('Hali test natijasi yo‘q.',show_alert=True)
+  ok=await send_mock_results_pdf(dict(test),force=True)
+  if ok:return await q.answer('Natijalar PDF’i yuborildi.')
+  return await q.answer('PDF yuborilmadi. Bot logini tekshiring.',show_alert=True)
+ @r.callback_query(F.data.startswith('mock_restart:'))
+ async def mock_restart_callback(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
+  test_id=q.data.split(':',1)[1];test=db.get_test(test_id)
+  if not test or not int(test['is_mock'] or 0):return await q.answer('MOCK test topilmadi.',show_alert=True)
+  if not int(test['code_set'] or 0) or not db.questions_for_test(test_id):return await q.answer('Test kodi yoki savollari tayyor emas.',show_alert=True)
+  kb=InlineKeyboardMarkup(inline_keyboard=[
+   [InlineKeyboardButton(text='HA, QAYTA OCHISH',callback_data=f'mock_restart_yes:{test_id}',style='success')],
+   [InlineKeyboardButton(text='BEKOR QILISH',callback_data='mock_list')]
+  ])
+  await q.message.answer(f"{test['name']} testini qayta o‘tkazasizmi?\n\nEski natijalar arxivda saqlanadi. Tasdiqlansa, test kodi o‘zgarmaydi va taymer birinchi qatnashchi kirganda qaytadan boshlanadi.",reply_markup=kb)
+  await q.answer()
+ @r.callback_query(F.data.startswith('mock_restart_yes:'))
+ async def mock_restart_confirm_callback(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
+  test_id=q.data.split(':',1)[1];result=await restart_mock_test_session(test_id)
+  if not result.get('ok'):return await q.answer(result.get('message') or 'Testni qayta ochib bo‘lmadi.',show_alert=True)
+  await q.message.answer(result['message'],reply_markup=mock_ready_kb(test_id));await q.answer('Test qayta ochildi.')
  @r.callback_query(F.data.startswith('mock_continue:'))
  async def mock_continue_callback(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
