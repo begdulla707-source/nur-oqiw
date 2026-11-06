@@ -17,7 +17,7 @@ DEFAULTS = {
         ('Yordam', 'primary'),
     ],
     'admin': [
-        ('Test sozlamalari', 'primary'), ('Pulli testlar', 'primary'),
+        ('Test sozlamalari', 'primary'), ('MOCK testlar', 'success'), ('Pulli testlar', 'primary'),
         ('Ishtirokchilar', 'primary'), ('Statistika', 'primary'),
         ('Guruhlar holati', 'primary'), ('Guruhga xabar yuborish', 'primary'),
         ('Bildirishnoma', 'success'), ('Majburiy obuna', 'success'),
