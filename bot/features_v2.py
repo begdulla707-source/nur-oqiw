@@ -2218,7 +2218,7 @@ def register(core,dp,bot,webapp_url):
    test_id=str(test['test_id']);code=str(test['code']) if int(test['code_set'] or 0) else 'kod kiritilmagan';count=len(db.questions_for_test(test_id))
    lines.append(f"{test['name']} · {code} · {count} savol · {int(test['duration_minutes'] or 0)} daqiqa")
    if not int(test['code_set'] or 0) or count==0:buttons.append([InlineKeyboardButton(text='TAYYORLASHNI DAVOM ETTIRISH',callback_data=f'mock_continue:{test_id}')])
-   if int(test['code_set'] or 0):buttons.append([InlineKeyboardButton(text='TEST KODI · '+code[:24],callback_data=f'mock_link:{test_id}')])
+
   buttons.extend([[InlineKeyboardButton(text='NATIJALAR PANELI',web_app=WebAppInfo(url=(WEBAPP.rstrip('/')+'/admin#results' if WEBAPP else 'https://nur-oqiw-web.mcweb.uz/admin#results')),style='primary')],[InlineKeyboardButton(text='ORTGA QAYTISH',callback_data='mock_back')]])
   await q.message.answer('\n'.join(lines) if mocks else 'Hozircha MOCK test yaratilmagan.',reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons));await q.answer()
  @r.callback_query(F.data.startswith('mock_continue:'))
