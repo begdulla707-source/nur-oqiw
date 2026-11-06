@@ -210,30 +210,33 @@ export default function Test(){
  },[retryBusy,initData,code,codeFromUrl,load]);
  const finish=useCallback(async()=>{
   if(status!=='test'||finishBusy)return;
+  const cleanName=name.trim().replace(/\s+/g,' ');
+  const nameWords=cleanName.split(' ').filter(Boolean);
+  const deadlinePassed=Boolean(endsAt&&new Date(endsAt).getTime()<=Date.now());
+  if(isMock&&nameWords.length<2&&!deadlinePassed){setMessage('Testni yakunlash uchun ism va familiyangizni yozing.');return}
   setFinishBusy(true);
   try{
    window.dispatchEvent(new Event('nur-flush-test-answers'));
    await Promise.resolve();
    await Promise.all(Object.values(answerQueue.current).map(p=>p.catch(()=>{})));
-   const response=await fetch(API+'/api/test/finish',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'tma '+initData},body:JSON.stringify({initData,code:code||codeFromUrl})});
+   const response=await fetch(API+'/api/test/finish',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'tma '+initData},body:JSON.stringify({initData,code:code||codeFromUrl,participant_name:cleanName})});
    const data=await response.json();
    if(data.ok||data.error==='already_submitted'){const mock=Boolean(isMock||data.is_mock);setScore(mock?null:data.score??null);setGrade(mock?'':data.grade||'');setCorrectCount(mock?null:data.correct_count??null);setTotalQuestions(mock?null:data.total_questions??questions.length);setStatus('done');setCanRetry(!mock);setMessage(mock?'Test tugadi. Javoblar tez orada e’lon qilinadi.':'Test yakunlandi. Natijangiz saqlandi.')}
    else if(isMock&&data.error==='test_stopped'){setStatus('done');setMessage('Test tugadi. Javoblar tez orada e’lon qilinadi.')}
-   else setMessage(data.error==='test_stopped'?'Test administrator tomonidan to‘xtatildi.':'Testni yakunlab bo‘lmadi. Qayta urinib ko‘ring.');
+   else setMessage(data.error==='participant_name_required'?'Testni yakunlash uchun ism va familiyangizni yozing.':data.error==='test_stopped'?'Test administrator tomonidan to‘xtatildi.':'Testni yakunlab bo‘lmadi. Qayta urinib ko‘ring.');
   }catch{setMessage('Natijani saqlashda xatolik. Qayta urinib ko‘ring.')}finally{setFinishBusy(false)}
- },[status,finishBusy,initData,code,codeFromUrl,questions.length,isMock]);
+ },[status,finishBusy,initData,code,codeFromUrl,questions.length,isMock,name,endsAt]);
  const seconds=endsAt?Math.max(0,Math.ceil((new Date(endsAt).getTime()-now)/1000)):null;
  useEffect(()=>{if(status==='test'&&seconds===0&&endsAt)finish()},[status,seconds,endsAt,finish]);
  const answered=Object.keys(answers).filter(k=>String(answers[k]??'').trim()).length;
  const orderedQuestions=useMemo(()=>questions.map((q,i)=>({...q,_originalIndex:i})).sort((a,b)=>(a.kind==='written'?1:0)-(b.kind==='written'?1:0)||a._originalIndex-b._originalIndex),[questions]);
  if(status==='loading')return <main className="test-loading" aria-label="Test"><div className="loading-mark" role="status" aria-label="Test yuklanmoqda"></div><p>Test ochilmoqda…</p></main>;
- if(status==='name')return <main className="test-result-page"><section className="result-card mock-entry-card"><p className="result-subtitle">MOCK TEST</p><h1>Ism va familiyangiz</h1>{testName&&<p className="result-subtitle">{testName}</p>}<p>{message}</p><form onSubmit={e=>{e.preventDefault();const clean=name.trim().replace(/\s+/g,' ');if(clean.split(' ').length<2){setMessage('Ism va familiyangizni to‘liq kiriting.');return}setStatus('loading');load(initData,clean)}}><label className="mock-name-label">Ism-familiya<input value={name} onChange={e=>setName(e.target.value)} autoComplete="name" maxLength={120} placeholder="Masalan: Ali Valiyev" required/></label><button className="result-link mock-start-button" type="submit">Testni boshlash</button></form></section></main>;
  if(status==='subscribe')return <main className="test-result-page"><section className="result-card"><h1>Avval kanalga obuna bo‘ling</h1>{testName&&<p className="result-subtitle">{testName}</p>}<p>{message}</p>{channelLink&&<a className="result-link" href={channelLink} target="_blank" rel="noreferrer">Kanalni ochish</a>}<label className="mock-name-label">Ism-familiya<input value={name} onChange={e=>setName(e.target.value)} autoComplete="name" maxLength={120} placeholder="Masalan: Ali Valiyev" required/></label><button className="mock-check-sub" type="button" onClick={()=>{const clean=name.trim().replace(/\s+/g,' ');if(clean.split(' ').length<2){setMessage('Ism va familiyangizni to‘liq kiriting.');return}setStatus('loading');load(initData,clean)}}>Obunani tekshirish va davom etish</button></section></main>;
  if(status!=='test')return <main className="test-result-page"><section className="result-card"><h1>{status==='done'?'Test yakunlandi':'Test ochilmadi'}</h1>{testName&&<p className="result-subtitle">{testName}</p>}{name&&<p className="result-subtitle">{name}</p>}<p>{message}</p>{score!==null&&<div className="result-score">{Number(score).toFixed(2)} <small>ball</small></div>}{grade&&<p>Baho: <b>{grade}</b></p>}{correctCount!==null&&totalQuestions!==null&&<p>To‘g‘ri javoblar: {correctCount}/{totalQuestions}</p>}{status==='done'&&canRetry&&<button type="button" className="result-link result-retake" onClick={retryTest} disabled={retryBusy}>{retryBusy?'Tayyorlanmoqda…':'Testni qayta topshirish'}</button>}{status==='blocked'&&initData&&<button type="button" className="result-link result-retry" onClick={()=>{setStatus('loading');setMessage('');load(initData)}}>Qayta tekshirish</button>}<a className="result-link" href="/">Asosiy sahifa</a></section></main>;
  return <main className="test-page">
   <header className="test-topbar"><div className="top-brand"><div><strong>Nur oqıw orayı</strong><small>{testName||'Milliy sertifikat testi'}</small><span className="top-test-meta">{questions.length} savol{seconds===null?'':' · '+formatTimer(seconds)}</span></div></div><div className="top-progress"><b>{answered}/{questions.length}</b><small>javob</small></div></header>
   {message&&<p className="test-alert" role="status">{message}</p>}
-  <section className="question-stack">{orderedQuestions.map((q,index)=><Question key={q.id} q={q} number={index+1} answer={answers[q.id]} onChoose={choose}/>)}</section>
-  <footer className="test-finish-panel"><div><strong>{answered} / {questions.length}</strong><span>savolga javob berildi</span></div><button type="button" onClick={finish} disabled={finishBusy}>{finishBusy?'Saqlanmoqda...':'Testni yakunlash'}</button></footer>
+  <section className="question-stack">{isMock&&<label className="mock-name-label inline-mock-name">Ism-familiya<input value={name} onChange={e=>setName(e.target.value)} autoComplete="name" maxLength={120} placeholder="Masalan: Ali Valiyev" aria-label="Ism-familiya" required/></label>}{orderedQuestions.map((q,index)=><Question key={q.id} q={q} number={index+1} answer={answers[q.id]} onChoose={choose}/>)}</section>
+  <footer className="test-finish-panel"><div><strong>{answered} / {questions.length}</strong><span>savolga javob berildi</span></div><button type="button" onClick={finish} disabled={finishBusy||(isMock&&name.trim().split(/\s+/).filter(Boolean).length<2&&seconds!==0)}>{finishBusy?'Saqlanmoqda...':'Testni yakunlash'}</button></footer>
  </main>
 }
