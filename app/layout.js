@@ -15,6 +15,7 @@ export default function RootLayout({children}){
         src="https://telegram.org/js/telegram-web-app.js"
         strategy="beforeInteractive"
       />
+      <script dangerouslySetInnerHTML={{__html:"if(location.hostname==='pvp.mcweb.uz'&&(location.pathname==='/'||location.pathname==='/index.html'))location.replace('/pvp/');"}} />
       <TelegramThemeSync/>
       {children}
     </body>
