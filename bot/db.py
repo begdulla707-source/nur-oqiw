@@ -23,7 +23,7 @@ def conn():
 def init():
     with conn() as c:
         c.execute("CREATE TABLE IF NOT EXISTS users(telegram_id BIGINT PRIMARY KEY,full_name TEXT,phone TEXT,registered_at TEXT,code_ok INTEGER DEFAULT 0,started_at TEXT,finished_at TEXT,score DOUBLE PRECISION DEFAULT 0,grade TEXT DEFAULT '',answers_json TEXT DEFAULT '{}',submitted INTEGER DEFAULT 0,state TEXT DEFAULT 'code',tier TEXT DEFAULT 'default',premium_since TEXT,premium_granted_by BIGINT,test_id TEXT DEFAULT '',telegram_photo TEXT DEFAULT '')")
-        c.execute("CREATE TABLE IF NOT EXISTS tests(test_id TEXT PRIMARY KEY,code TEXT UNIQUE NOT NULL,name TEXT NOT NULL,start_time TEXT DEFAULT '08:30',end_time TEXT DEFAULT '09:30',mode TEXT DEFAULT 'auto',active INTEGER DEFAULT 1,created_at TEXT NOT NULL)")
+        c.execute("CREATE TABLE IF NOT EXISTS tests(test_id TEXT PRIMARY KEY,code TEXT UNIQUE NOT NULL,name TEXT NOT NULL,start_time TEXT DEFAULT '08:30',end_time TEXT DEFAULT '09:30',mode TEXT DEFAULT 'auto',active INTEGER DEFAULT 1,created_at TEXT NOT NULL,is_mock INTEGER DEFAULT 0,published INTEGER DEFAULT 1,duration_minutes INTEGER DEFAULT 0,required_channel TEXT DEFAULT '',required_channel_link TEXT DEFAULT '',questions_channel TEXT DEFAULT '',timer_started_at TEXT DEFAULT '',timer_ends_at TEXT DEFAULT '',code_set INTEGER DEFAULT 1,questions_pdf_sent INTEGER DEFAULT 0)")
         c.execute("CREATE TABLE IF NOT EXISTS questions(id INTEGER PRIMARY KEY,question TEXT,options_json TEXT DEFAULT '[]',answer TEXT DEFAULT '',kind TEXT DEFAULT 'choice',group_id TEXT DEFAULT '',active INTEGER DEFAULT 1,image_url TEXT DEFAULT '',test_id TEXT DEFAULT '',number INTEGER DEFAULT 0)")
         c.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)")
         c.execute("CREATE TABLE IF NOT EXISTS item_stats(question_id INTEGER PRIMARY KEY,attempts INTEGER DEFAULT 0,correct INTEGER DEFAULT 0)")
@@ -40,6 +40,8 @@ def init():
             answers_json TEXT DEFAULT '{}',
             submitted INTEGER DEFAULT 0,
             status TEXT DEFAULT 'active',
+            participant_name TEXT DEFAULT '',
+            finish_notified INTEGER DEFAULT 0,
             UNIQUE(test_id,telegram_id)
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_attempts_test ON test_attempts(test_id)")
@@ -124,13 +126,17 @@ def _migrate_local_sqlite():
 def ensure_schema():
     with conn() as c:
         if USE_POSTGRES:
-            cols={x["column_name"] for x in c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='users'").fetchall()};qcols={x["column_name"] for x in c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='questions'").fetchall()}
+            cols={x["column_name"] for x in c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='users'").fetchall()};qcols={x["column_name"] for x in c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='questions'").fetchall()};tcols={x["column_name"] for x in c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='tests'").fetchall()};acols={x["column_name"] for x in c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='test_attempts'").fetchall()}
         else:
-            cols={x["name"] for x in c.execute("PRAGMA table_info(users)").fetchall()};qcols={x["name"] for x in c.execute("PRAGMA table_info(questions)").fetchall()}
+            cols={x["name"] for x in c.execute("PRAGMA table_info(users)").fetchall()};qcols={x["name"] for x in c.execute("PRAGMA table_info(questions)").fetchall()};tcols={x["name"] for x in c.execute("PRAGMA table_info(tests)").fetchall()};acols={x["name"] for x in c.execute("PRAGMA table_info(test_attempts)").fetchall()}
         for name,typ in [("state","TEXT DEFAULT 'code'"),("tier","TEXT DEFAULT 'default'"),("premium_since","TEXT"),("premium_granted_by","BIGINT"),("test_id","TEXT DEFAULT ''"),("telegram_photo","TEXT DEFAULT ''")]:
             if name not in cols:c.execute(f"ALTER TABLE users ADD COLUMN {name} {typ}")
         for name,typ in [("image_url","TEXT DEFAULT ''"),("group_id","TEXT DEFAULT ''"),("active","INTEGER DEFAULT 1"),("test_id","TEXT DEFAULT ''"),("number","INTEGER DEFAULT 0")]:
             if name not in qcols:c.execute(f"ALTER TABLE questions ADD COLUMN {name} {typ}")
+        for name,typ in [("is_mock","INTEGER DEFAULT 0"),("published","INTEGER DEFAULT 1"),("duration_minutes","INTEGER DEFAULT 0"),("required_channel","TEXT DEFAULT ''"),("required_channel_link","TEXT DEFAULT ''"),("questions_channel","TEXT DEFAULT ''"),("timer_started_at","TEXT DEFAULT ''"),("timer_ends_at","TEXT DEFAULT ''"),("code_set","INTEGER DEFAULT 1"),("questions_pdf_sent","INTEGER DEFAULT 0")]:
+            if name not in tcols:c.execute(f"ALTER TABLE tests ADD COLUMN {name} {typ}")
+        for name,typ in [("participant_name","TEXT DEFAULT ''"),("finish_notified","INTEGER DEFAULT 0")]:
+            if name not in acols:c.execute(f"ALTER TABLE test_attempts ADD COLUMN {name} {typ}")
         # Attach legacy questions to the first test after the test is created.
 
 def get_setting(k,d=None):
@@ -224,6 +230,37 @@ def get_test_by_code_or_name(code):
 def create_test(name,code,start_time="00:00",end_time="23:59",mode="open"):
     tid=secrets.token_hex(8)
     with conn() as c:c.execute("INSERT INTO tests(test_id,code,name,start_time,end_time,mode,active,created_at) VALUES(?,?,?,?,?,?,1,?)",(tid,str(code).strip(),str(name).strip(),start_time,end_time,mode,datetime.now(timezone.utc).isoformat()))
+    return get_test(tid)
+
+def create_mock_test(name,duration_minutes,required_channel="",questions_channel="",required_channel_link=""):
+    """Create a private, timed mock exam; it is not listed as active until published."""
+    tid=secrets.token_hex(8)
+    draft_code="MOCK_DRAFT_"+secrets.token_hex(8).upper()
+    with conn() as c:
+        c.execute("INSERT INTO tests(test_id,code,name,start_time,end_time,mode,active,created_at,is_mock,published,duration_minutes,required_channel,required_channel_link,questions_channel,code_set) VALUES(?,?,?,?,?,?,1,?,1,0,?,?,?,?,0)",(tid,draft_code,str(name).strip(),"00:00","23:59","mock",datetime.now(timezone.utc).isoformat(),max(1,min(600,int(duration_minutes))),str(required_channel or "").strip(),str(required_channel_link or "").strip(),str(questions_channel or "").strip()))
+    return get_test(tid)
+
+def set_mock_test_code(tid,code):
+    """Set the user-facing code after the admin has finished entering questions."""
+    code=str(code).strip()
+    with conn() as c:
+        test=c.execute("SELECT test_id FROM tests WHERE test_id=? AND is_mock=1",(str(tid),)).fetchone()
+        if not test:return "not_found"
+        collision=c.execute("SELECT 1 FROM tests WHERE lower(code)=lower(?) AND test_id<>? LIMIT 1",(code,str(tid))).fetchone()
+        if collision:return "code_exists"
+        c.execute("UPDATE tests SET code=?,code_set=1,questions_pdf_sent=0 WHERE test_id=? AND is_mock=1",(code,str(tid)))
+    return "ok"
+
+def set_mock_questions_pdf_sent(tid,sent=1):
+    with conn() as c:c.execute("UPDATE tests SET questions_pdf_sent=? WHERE test_id=? AND is_mock=1",(int(bool(sent)),str(tid)))
+
+def set_test_published(tid,published=1):
+    with conn() as c:c.execute("UPDATE tests SET published=? WHERE test_id=?",(int(bool(published)),str(tid)))
+
+def start_mock_timer(tid,started_at,ends_at):
+    """Set the shared MOCK deadline once; every participant follows the same clock."""
+    with conn() as c:
+        c.execute("UPDATE tests SET timer_started_at=?,timer_ends_at=? WHERE test_id=? AND is_mock=1 AND (timer_started_at IS NULL OR timer_started_at='')",(str(started_at),str(ends_at),str(tid)))
     return get_test(tid)
 
 def create_test_with_questions(name,code,items,paid=False):
@@ -327,12 +364,15 @@ def restart_completed_attempt(test_id,telegram_id):
     return "restarted"
 
 def update_attempt(attempt_id,**fields):
-    allowed={"started_at","finished_at","score","grade","answers_json","submitted","status"}
+    allowed={"started_at","finished_at","score","grade","answers_json","submitted","status","participant_name","finish_notified"}
     fields={k:v for k,v in fields.items() if k in allowed}
     if fields:
         with conn() as c:c.execute("UPDATE test_attempts SET "+",".join(f"{k}=?" for k in fields)+" WHERE attempt_id=?",list(fields.values())+[str(attempt_id)])
         if fields.get("submitted"):
             archive_attempt_result(attempt_id)
+
+def mark_attempt_finish_notified(attempt_id):
+    with conn() as c:return c.execute("UPDATE test_attempts SET finish_notified=1 WHERE attempt_id=? AND finish_notified=0",(str(attempt_id),)).rowcount==1
 
 def archive_attempt_result(attempt_id):
     """Save a durable snapshot of who took which test and their result."""
@@ -341,6 +381,7 @@ def archive_attempt_result(attempt_id):
         if not a:return False
         t=c.execute("SELECT name,code FROM tests WHERE test_id=?",(str(a["test_id"]),)).fetchone()
         u=c.execute("SELECT full_name,phone FROM users WHERE telegram_id=?",(int(a["telegram_id"]),)).fetchone()
+        snapshot_name=str(a["participant_name"] or (u["full_name"] if u else "") or "")
         now=datetime.now(timezone.utc).isoformat()
         c.execute("""INSERT INTO permanent_results
             (attempt_id,test_id,test_code,test_name,telegram_id,full_name,phone,started_at,finished_at,score,grade,answers_json,submitted,status,archived_at)
@@ -352,7 +393,7 @@ def archive_attempt_result(attempt_id):
               score=excluded.score,grade=excluded.grade,answers_json=excluded.answers_json,
               submitted=excluded.submitted,status=excluded.status""",
             (str(a["attempt_id"]),str(a["test_id"]),str(t["code"] if t else ""),str(t["name"] if t else "Test o‘chirilgan"),
-             int(a["telegram_id"]),str(u["full_name"] if u else ""),str(u["phone"] if u else ""),
+             int(a["telegram_id"]),snapshot_name,str(u["phone"] if u else ""),
              a["started_at"],a["finished_at"],float(a["score"] or 0),str(a["grade"] or ""),
              str(a["answers_json"] or "{}"),int(a["submitted"] or 0),str(a["status"] or ""),now))
     return True
@@ -423,7 +464,7 @@ def test_history_for_user(user_id,viewer_id,admin_id,only_submitted=False):
             LIMIT 150""",(int(user_id),int(user_id),int(bool(only_submitted)),int(viewer_id),int(admin_id),int(viewer_id))).fetchall()
 
 def all_attempts_for_test(test_id):
-    with conn() as c:return c.execute("SELECT a.*,u.full_name,u.phone,u.telegram_photo FROM test_attempts a LEFT JOIN users u ON u.telegram_id=a.telegram_id WHERE a.test_id=? AND (a.started_at IS NOT NULL OR a.submitted=1) ORDER BY COALESCE(a.finished_at,a.started_at) ASC",(str(test_id),)).fetchall()
+    with conn() as c:return c.execute("SELECT a.*,COALESCE(NULLIF(a.participant_name,''),u.full_name) AS full_name,u.phone,u.telegram_photo FROM test_attempts a LEFT JOIN users u ON u.telegram_id=a.telegram_id WHERE a.test_id=? AND (a.started_at IS NOT NULL OR a.submitted=1) ORDER BY COALESCE(a.finished_at,a.started_at) ASC",(str(test_id),)).fetchall()
 
 def delete_attempt(test_id,telegram_id):
     with conn() as c:return c.execute("DELETE FROM test_attempts WHERE test_id=? AND telegram_id=?",(str(test_id),int(telegram_id))).rowcount>0
