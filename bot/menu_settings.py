@@ -12,7 +12,7 @@ from aiogram.filters import Command
 DEFAULTS = {
     'user': [
         ('Profilim', 'primary'), ('Pulli testlar', 'primary'),
-        ('Aktiv testlar', 'success'), ('Testni boshlash', 'primary'),
+        ('Aktiv testlar', 'success'), ('MOCK testlar', 'success'), ('Testni boshlash', 'primary'),
         ('Test kodini kiritish', 'primary'), ('Mening natijam', 'success'),
         ('Yordam', 'primary'),
     ],
@@ -21,7 +21,19 @@ DEFAULTS = {
         ('Ishtirokchilar', 'primary'), ('Statistika', 'primary'),
         ('Guruhlar holati', 'primary'), ('Guruhga xabar yuborish', 'primary'),
         ('Bildirishnoma', 'success'), ('Majburiy obuna', 'success'),
-        ('Mini App admini', 'primary'), ('Menyu sozlamalari', 'primary'),
+        ('Mini App admini', 'primary'), ('Menyu sozlamalari', 'primary'), ('MOCK menyu sozlamalari', 'primary'),
+    ],
+    'mock_admin': [
+        ('Yangi MOCK test','primary'), ('MOCK testlar ro‘yxati','success'),
+        ('MOCK ishtirokchilari','primary'), ('MOCK natijalari','primary'),
+        ('MOCK testni boshlash','success'), ('MOCK vaqt qo‘shish','primary'),
+        ('MOCK testni to‘xtatish','danger'), ('MOCK qayta o‘tkazish','primary'),
+        ('MOCK boshlanish vaqti','primary'), ('MOCK qatnashchi limiti','primary'),
+        ('MOCK javoblarni tekshirish','primary'), ('Orqaga qaytish','default'),
+    ],
+    'mock_user': [
+        ('Test kodini kiritish','primary'), ('Shaxsiy MOCK natijam','success'),
+        ('Orqaga qaytish','default'),
     ],
 }
 COLORS = ('primary', 'success', 'danger', 'default')
@@ -58,7 +70,7 @@ def items(db, role):
         if style not in COLORS: style = default_style
         label = str(cfg.get('label',name)).strip()[:55] or name
         icon_id = str(cfg.get('emoji_id','')).strip()
-        visible = bool(cfg.get('visible',True)) or name in ('Menyu sozlamalari','Aktiv testlar')
+        visible = bool(cfg.get('visible',True)) or name in ('Menyu sozlamalari','Aktiv testlar','MOCK menyu sozlamalari','Orqaga qaytish')
         order = int(cfg.get('order',len(result))) if str(cfg.get('order',len(result))).lstrip('-').isdigit() else len(result)
         result.append({'key':name,'label':label,'style':style,'emoji_id':icon_id,'visible':visible,'order':order})
     return sorted(result,key=lambda item:item['order'])
@@ -73,8 +85,11 @@ def button(info, *, webapp_url=None):
 def keyboard(db, role, webapp_url, *, admin_entry=False):
     entries=[x for x in items(db,role) if x['visible']]
     rows=[]
+    back=[x for x in entries if x['key']=='Orqaga qaytish']
+    entries=[x for x in entries if x['key']!='Orqaga qaytish']
     for n in range(0,len(entries),2):
         rows.append([button(x,webapp_url=webapp_url) for x in entries[n:n+2]])
+    if back:rows.append([button(back[0],webapp_url=webapp_url)])
     if admin_entry:
         rows.append([KeyboardButton(text='Admin paneliga o‘tish')])
     return ReplyKeyboardMarkup(keyboard=rows,resize_keyboard=True,is_persistent=True)
@@ -89,7 +104,10 @@ class MenuAliasMiddleware(BaseMiddleware):
         self.db,self.admin_id=db,admin_id
     async def __call__(self,handler,event,data):
         if getattr(event,'text',None):
-            role='admin' if event.from_user and event.from_user.id==self.admin_id and (self.db.get_user(self.admin_id) or {}).get('state')=='admin' else 'user'
+            uid=event.from_user.id if event.from_user else 0
+            is_admin=uid==self.admin_id and (self.db.get_user(self.admin_id) or {}).get('state')=='admin'
+            section=self.db.get_setting('mock_menu_'+str(uid),'')
+            role=('mock_admin' if is_admin else 'mock_user') if section==('admin' if is_admin else 'user') else ('admin' if is_admin else 'user')
             actual=canonical(self.db,event.text,role)
             if actual!=event.text:event=event.model_copy(update={'text':actual})
         return await handler(event,data)
@@ -110,6 +128,8 @@ def install(dp,db,admin_id,webapp_url):
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text='Foydalanuvchi menyusi',callback_data='menub:list:user',style='primary')],
             [InlineKeyboardButton(text='Admin menyusi',callback_data='menub:list:admin',style='primary')],
+            [InlineKeyboardButton(text='MOCK admin menyusi',callback_data='menub:list:mock_admin',style='primary')],
+            [InlineKeyboardButton(text='MOCK foydalanuvchi menyusi',callback_data='menub:list:mock_user',style='primary')],
             [InlineKeyboardButton(text='Profilim xabari va premium emoji',callback_data='menub:profile',style='primary')],
         ])
 
@@ -131,7 +151,7 @@ def install(dp,db,admin_id,webapp_url):
 
     def details(role,index):
         x=items(db,role)[index]
-        return f"MENYU TUGMASI\n\nBo‘lim: {'Admin' if role=='admin' else 'Foydalanuvchi'}\nAsl vazifa: {x['key']}\nKo‘rinadigan nom: {x['label']}\nRang: {COLORS_UZ[x['style']]}\nPremium emoji: {'Ulangan' if x['emoji_id'] else 'Yo‘q'}\nHolat: {'Ko‘rinadi' if x['visible'] else 'Yashirilgan'}\n\nNomini o‘zgartirish tugmaning asl vazifasini o‘zgartirmaydi."
+        return f"MENYU TUGMASI\n\nBo‘lim: {{'admin':'Admin','user':'Foydalanuvchi','mock_admin':'MOCK admin','mock_user':'MOCK foydalanuvchi'}.get(role,role)}\nAsl vazifa: {x['key']}\nKo‘rinadigan nom: {x['label']}\nRang: {COLORS_UZ[x['style']]}\nPremium emoji: {'Ulangan' if x['emoji_id'] else 'Yo‘q'}\nHolat: {'Ko‘rinadi' if x['visible'] else 'Yashirilgan'}\n\nNomini o‘zgartirish tugmaning asl vazifasini o‘zgartirmaydi."
 
     def mutate(role,index,fields=None,*,reset=False):
         name=items(db,role)[index]['key']
@@ -141,11 +161,14 @@ def install(dp,db,admin_id,webapp_url):
         else:records.setdefault(name,{}).update(fields or {})
         save(db,value)
 
-    @dp.message(F.text=='Menyu sozlamalari')
+    @dp.message(F.text.in_({'Menyu sozlamalari','MOCK menyu sozlamalari'}))
     @dp.message(Command('menu_settings'))
     async def menu_settings(m:Message):
         if m.from_user.id!=admin_id:return
         db.update_user(admin_id,state='admin')
+        if m.text=='MOCK menyu sozlamalari':
+            kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MOCK admin menyusi',callback_data='menub:list:mock_admin',style='primary')],[InlineKeyboardButton(text='MOCK foydalanuvchi menyusi',callback_data='menub:list:mock_user',style='primary')],[InlineKeyboardButton(text='Barcha menyular',callback_data='menub:root')]])
+            return await m.answer('MOCK MENYU SOZLAMALARI\n\nAdmin va foydalanuvchi pastki tugmalari, jumladan orqaga qaytish uchun premium emoji tanlang.',reply_markup=kb)
         await m.answer('MENYU SOZLAMALARI\n\nTugmalar nomi, ranglari, premium emojisi va tartibini sozlang.',reply_markup=root())
 
     @dp.callback_query(F.data.startswith('menub:'))
@@ -187,7 +210,7 @@ def install(dp,db,admin_id,webapp_url):
                 await q.message.edit_text(details(role,index),reply_markup=editor(role,index))
             elif action=='toggle':
                 x=items(db,role)[index]
-                if x['key'] in ('Menyu sozlamalari','Aktiv testlar'):
+                if x['key'] in ('Menyu sozlamalari','Aktiv testlar','MOCK menyu sozlamalari','Orqaga qaytish'):
                     return await q.answer('Bu tugma doim mavjud bo‘lishi kerak.',show_alert=True)
                 mutate(role,index,{'visible':not x['visible']})
                 await q.message.edit_text(details(role,index),reply_markup=editor(role,index))
