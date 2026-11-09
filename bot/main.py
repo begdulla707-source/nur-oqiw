@@ -118,7 +118,7 @@ def mock_subscription_kb(test,link):
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def mock_open_kb(test):
-    url=f"{WEBAPP.rstrip('/')}/test?code={test['code']}"
+    url=f"{WEBAPP.rstrip('/')}/test?code={test['code']}&v=mock-20261110b"
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MOCK TESTNI OCHISH',web_app=WebAppInfo(url=url),style='primary')]])
 
 def mock_entry_message(test,uid=None):
