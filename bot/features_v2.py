@@ -150,7 +150,10 @@ def mock_listing():
   elif remaining is not None and remaining>0:
    timer_state='TO‘XTATILGAN · '+format_mock_timer(remaining)+' qoldi'
   else:timer_state='YAKUNLANGAN'
-  schedule=str(test.get('scheduled_start_at') or '')[:16].replace('T',' ')
+  schedule=''
+  if test.get('scheduled_start_at'):
+   try:schedule=datetime.fromisoformat(str(test['scheduled_start_at']).replace('Z','+00:00')).astimezone(TZ).strftime('%d/%m/%Y %H:%M')
+   except (TypeError,ValueError):schedule='belgilangan'
   cap=int(test.get('participant_limit') or 0)
   lines.append(f"{test['name']} · {code} · {count} savol · {int(test['duration_minutes'] or 0)} daqiqa\n  {timer_state} · Qatnashgan: {started}"+(f'/{cap}' if cap else '')+f' · Natijalar: {total_done}'+(f' · Boshlanish: {schedule}' if schedule else ''))
   if not test.get('timer_ends_at') and not started:
@@ -2610,9 +2613,10 @@ def register(core,dp,bot,webapp_url):
   for index,a in enumerate(rows[page*size:(page+1)*size],page*size+1):
    uid=int(a['telegram_id']);name=str(a.get('full_name') or a.get('participant_name') or 'Ismsiz')
    username=str(db.get_setting('telegram_username_'+str(uid),'') or '').strip().lstrip('@')
-   link='https://t.me/'+username if username and username.replace('_','').isalnum() else 'tg://user?id='+str(uid)
+   link=('https://t.me/'+username if username and username.replace('_','').isalnum() else 'tg://user?id='+str(uid)) if uid>0 else ''
    status=f"{float(a.get('score') or 0):.2f} ball" if int(a['submitted'] or 0) else 'Ishlamoqda'
-   lines.append(f'{index}. <a href="{html_escape(link,quote=True)}">{html_escape(name)}</a> · {status}')
+   display=f'<a href="{html_escape(link,quote=True)}">{html_escape(name)}</a>' if link else html_escape(name)
+   lines.append(f'{index}. {display} · {status}')
    if int(a['submitted'] or 0):buttons.append([InlineKeyboardButton(text=f'SHAXSIY PDF · {index}. {name[:20]}',callback_data=f'mock_personal:{tid}:{uid}',style='primary')])
   if not rows:lines.append('Hali ishtirokchi yo‘q.')
   nav=[]
