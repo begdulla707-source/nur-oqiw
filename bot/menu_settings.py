@@ -151,7 +151,8 @@ def install(dp,db,admin_id,webapp_url):
 
     def details(role,index):
         x=items(db,role)[index]
-        return f"MENYU TUGMASI\n\nBo‘lim: {{'admin':'Admin','user':'Foydalanuvchi','mock_admin':'MOCK admin','mock_user':'MOCK foydalanuvchi'}.get(role,role)}\nAsl vazifa: {x['key']}\nKo‘rinadigan nom: {x['label']}\nRang: {COLORS_UZ[x['style']]}\nPremium emoji: {'Ulangan' if x['emoji_id'] else 'Yo‘q'}\nHolat: {'Ko‘rinadi' if x['visible'] else 'Yashirilgan'}\n\nNomini o‘zgartirish tugmaning asl vazifasini o‘zgartirmaydi."
+        section={'admin':'Admin','user':'Foydalanuvchi','mock_admin':'MOCK admin','mock_user':'MOCK foydalanuvchi'}.get(role,role)
+    return f"MENYU TUGMASI\n\nBo‘lim: {section}\nAsl vazifa: {x['key']}\nKo‘rinadigan nom: {x['label']}\nRang: {COLORS_UZ[x['style']]}\nPremium emoji: {'Ulangan' if x['emoji_id'] else 'Yo‘q'}\nHolat: {'Ko‘rinadi' if x['visible'] else 'Yashirilgan'}\n\nNomini o‘zgartirish tugmaning asl vazifasini o‘zgartirmaydi."
 
     def mutate(role,index,fields=None,*,reset=False):
         name=items(db,role)[index]['key']
