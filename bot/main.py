@@ -121,7 +121,7 @@ def mock_open_kb(test):
     url=f"{WEBAPP.rstrip('/')}/test?code={test['code']}"
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MOCK TESTNI OCHISH',web_app=WebAppInfo(url=url),style='primary')]])
 
-def mock_entry_message(test):
+def mock_entry_message(test,uid=None):
     if not int(test['code_set'] or 0) or not test['timer_started_at'] or not test['timer_ends_at']:
         return 'Bu MOCK test hali boshlanmagan. Admin TESTNI BOSHLASH tugmasini bosishini kuting.'
     if not int(test['active'] or 0):
@@ -133,6 +133,8 @@ def mock_entry_message(test):
             return 'Bu MOCK test vaqti tugagan.'
     except (ValueError,TypeError):
         return 'MOCK test taymeri aniqlanmadi. Admin bilan bog‘laning.'
+    if uid and int(uid)!=ADMIN and not mock_has_slot(test['test_id'],uid):
+        return 'Bu MOCK test uchun qatnashchilar limiti to‘lgan.'
     return None
 
 async def prompt_mock_subscription(message,test,link=None):
@@ -149,6 +151,7 @@ async def health():return {'ok':True,'service':'nur-oqiw','storage':'postgres' i
 @dp.message(CommandStart(deep_link=False))
 async def start(m:Message):
     u=ensure_user(m.from_user.id)
+    set_setting('mock_menu_'+str(m.from_user.id),'')
     if m.from_user.username:set_setting('telegram_username_'+str(m.from_user.id),m.from_user.username.lstrip('@').lower())
     if m.from_user.id==ADMIN:
         name=' '.join(x for x in [m.from_user.first_name,m.from_user.last_name] if x).strip()
@@ -182,7 +185,7 @@ async def start_deep_link(m:Message):
     if not is_mock and not await subscribed(m.from_user.id):
         update_user(m.from_user.id,state='subscribe',code_ok=0);return await m.answer('Testga kirishdan oldin majburiy kanallarga obuna bo‘ling.',reply_markup=sub_kb())
     if is_mock:
-        entry_error=mock_entry_message(t)
+        entry_error=mock_entry_message(t,m.from_user.id)
         if entry_error:return await m.answer(entry_error)
         joined,link=await mock_channel_status(t,m.from_user.id)
         if not joined:
@@ -216,7 +219,7 @@ async def check_mock_subscription(q:CallbackQuery):
     except Exception:test=None
     if not test or not int(test['is_mock'] or 0):
         return await q.answer('MOCK test topilmadi.',show_alert=True)
-    entry_error=mock_entry_message(test)
+    entry_error=mock_entry_message(test,q.from_user.id)
     if entry_error:return await q.answer(entry_error,show_alert=True)
     joined,link=await mock_channel_status(test,q.from_user.id)
     if not joined:
@@ -322,7 +325,27 @@ async def contact(m:Message):
     if m.contact.user_id and m.contact.user_id!=m.from_user.id:await m.answer('O‘zingizning Telegram raqamingizni yuboring.');return
     upsert_user(m.from_user.id,u['full_name'],m.contact.phone_number);u=get_user(m.from_user.id);update_user(m.from_user.id,state='test_code' if u['test_id'] else 'code',code_ok=0);await m.answer('Telefon raqamingiz saqlandi.\n\nTest kodini kiriting:',reply_markup=ReplyKeyboardRemove())
 
-MENU_TEXTS={'Profilim','Pulli testlar','Testni boshlash','Test kodini kiritish','Mening natijam','Yordam','Aktiv testlar','Telegram ismim bilan davom etish'}
+MENU_TEXTS={'MOCK testlar','Orqaga qaytish','Shaxsiy MOCK natijam','Profilim','Pulli testlar','Testni boshlash','Test kodini kiritish','Mening natijam','Yordam','Aktiv testlar','Telegram ismim bilan davom etish'}
+
+
+@dp.message(F.text=='MOCK testlar',F.from_user.id!=ADMIN)
+async def enter_mock_user_menu(m:Message):
+    if m.chat.type!='private':return
+    ensure_user(m.from_user.id)
+    set_setting('mock_menu_'+str(m.from_user.id),'user')
+    await m.answer('MOCK test menyusi. Testga faqat admin bergan kod bilan kirasiz.',reply_markup=menus.keyboard(__import__('bot.db',fromlist=['get_setting']),'mock_user',WEBAPP))
+
+@dp.message(F.text=='Orqaga qaytish',F.from_user.id!=ADMIN)
+async def exit_mock_user_menu(m:Message):
+    if m.chat.type!='private' or get_setting('mock_menu_'+str(m.from_user.id),'')!='user':return
+    set_setting('mock_menu_'+str(m.from_user.id),'')
+    await m.answer('Bosh menyu.',reply_markup=user_menu())
+
+@dp.message(F.text=='Shaxsiy MOCK natijam',F.from_user.id!=ADMIN)
+async def own_mock_result(m:Message):
+    if m.chat.type!='private':return
+    from .features_v2 import send_mock_personal_result
+    await send_mock_personal_result(m.chat.id,m.from_user.id)
 
 @dp.message(F.text=='Telegram ismim bilan davom etish')
 async def use_telegram_name(m:Message):
@@ -371,7 +394,7 @@ async def registration_text(m:Message):
         if not t or not can_access_test(t['test_id'],m.from_user.id,ADMIN):return await m.answer('Test kodi noto‘g‘ri yoki pulli testga ruxsat yo‘q. Qayta kiriting:')
         is_mock=bool(int(t['is_mock'] or 0))
         if is_mock:
-            entry_error=mock_entry_message(t)
+            entry_error=mock_entry_message(t,m.from_user.id)
             if entry_error:return await m.answer(entry_error)
             joined,link=await mock_channel_status(t,m.from_user.id)
             if not joined:return await prompt_mock_subscription(m,t,link)
@@ -557,6 +580,7 @@ async def enter_admin_panel(m:Message):
         await m.answer('Bu bo‘lim faqat administrator uchun.')
         return
     update_user(ADMIN,state='admin')
+    set_setting('mock_menu_'+str(ADMIN),'')
     kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Admin panelini ochish',web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/admin'))]])
     await m.answer('Admin paneli tayyor. Ochish uchun quyidagi tugmani bosing.',reply_markup=kb)
     await m.answer('Admin boshqaruv menyusi.',reply_markup=admin_kb())
