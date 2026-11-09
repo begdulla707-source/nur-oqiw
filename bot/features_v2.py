@@ -1,6 +1,6 @@
 from fastapi import Request
 import asyncio
-import json,secrets,os,tempfile,reportlab,urllib.request,urllib.error,urllib.parse,logging
+import json,secrets,os,tempfile,reportlab,urllib.request,urllib.error,urllib.parse,logging,zipfile
 from datetime import datetime,time,timedelta
 from aiogram import Router,F
 from aiogram.filters import CommandStart
@@ -42,11 +42,13 @@ def mock_ready_kb(test_id):
    actions.append([InlineKeyboardButton(text='TESTNI BOSHLASH',callback_data=f'mock_start:{test_id}',style='success')])
   elif test.get('timer_ends_at') and active and remaining and remaining>0:
    actions.append([InlineKeyboardButton(text='TESTNI TO‘XTATISH',callback_data=f'mock_stop:{test_id}',style='danger')])
+   actions.append([InlineKeyboardButton(text='VAQT QO‘SHISH',callback_data=f'mock_extend:{test_id}',style='primary')])
   else:
    actions.append([InlineKeyboardButton(text='QAYTA O‘TKAZISH',callback_data=f'mock_restart:{test_id}',style='success')])
  return InlineKeyboardMarkup(inline_keyboard=[
   *actions,
   [InlineKeyboardButton(text='NATIJALAR',web_app=WebAppInfo(url=url),style='primary')],
+  [InlineKeyboardButton(text='TURLAR · PDF / EXCEL / TAHLIL',callback_data=f'mock_rounds:{test_id}',style='primary')],
   [InlineKeyboardButton(text='MOCK TESTLAR RO‘YXATI',callback_data='mock_list')],
   [InlineKeyboardButton(text='ORTGA QAYTISH',callback_data='mock_back')]
  ])
@@ -343,6 +345,7 @@ async def finish_mock_test(test,reason='timer'):
    state,_,_,_,_=finish_attempt_atomically(test_id,int(attempt['telegram_id']),questions,datetime.now(TZ).isoformat(),recalculate=False)
    if state=='ok':closed+=1
   db.set_test_active(test_id,0);db.set_test_published(test_id,0)
+  db.close_mock_round(test_id,datetime.now(TZ).isoformat())
   recalculate_mock_scores(test_id)
   for attempt in db.all_attempts_for_test(test_id):
    if int(attempt['finish_notified'] or 0) or not db.mark_attempt_finish_notified(attempt['attempt_id']):continue
@@ -472,7 +475,7 @@ def mock_remaining_seconds(test,now=None):
   return max(0,int(__import__('math').ceil((end.astimezone(TZ)-current).total_seconds())))
  except Exception:return None
 
-def build_test_pdf(tid,path):
+def build_test_pdf(tid,path,selected_rows=None,round_label=''):
  t=db.get_test(tid)
  if not t:raise ValueError('Test topilmadi')
  styles=getSampleStyleSheet();title_style=ParagraphStyle('NurMockTitle',parent=styles['Title'],fontName=PDF_FONT,fontSize=14,leading=17,alignment=1,textColor=colors.HexColor('#123d29'),spaceAfter=3)
@@ -480,13 +483,18 @@ def build_test_pdf(tid,path):
  body=ParagraphStyle('NurMockBody',parent=styles['BodyText'],fontName=PDF_FONT,fontSize=7.3,leading=8.5,wordWrap='CJK',textColor=colors.black)
  header=ParagraphStyle('NurMockHead',parent=body,fontSize=7.3,leading=8.5,alignment=1)
  qs=db.questions_for_test(tid);rows_by_id={}
- if hasattr(db,'permanent_results_for_test'):
-  for archived in db.permanent_results_for_test(tid,5000):
-   row=dict(archived)
-   if int(row.get('submitted') or 0):row['full_name']=row.get('full_name') or '';rows_by_id[str(row.get('attempt_id') or '')]=row
- for current in db.all_attempts_for_test(tid):
-  if not int(current['submitted'] or 0):continue
-  row=dict(current);rows_by_id[str(row.get('attempt_id') or '')]=row
+ if selected_rows is not None:
+  for selected in selected_rows:
+   row=dict(selected)
+   if int(row.get('submitted') or 0):rows_by_id[str(row.get('attempt_id') or '')]=row
+ else:
+  if hasattr(db,'permanent_results_for_test'):
+   for archived in db.permanent_results_for_test(tid,5000):
+    row=dict(archived)
+    if int(row.get('submitted') or 0):row['full_name']=row.get('full_name') or '';rows_by_id[str(row.get('attempt_id') or '')]=row
+  for current in db.all_attempts_for_test(tid):
+   if not int(current['submitted'] or 0):continue
+   row=dict(current);rows_by_id[str(row.get('attempt_id') or '')]=row
  rows_all=list(rows_by_id.values())
  rows_all.sort(key=lambda a:(-float(a['score'] or 0),str(a.get('full_name') or '').casefold()))
  headings=['№','To‘g‘ri','Ball','Baho','Ism-familiya']
@@ -507,7 +515,7 @@ def build_test_pdf(tid,path):
  tab.setStyle(TableStyle(style))
  title=Paragraph(escape(f"NUR O‘QIW ORAYI · {t['name']}"),title_style)
  subtitle_label='MOCK natijalari' if int(t['is_mock'] or 0) else 'Test natijalari'
- subtitle=Paragraph(escape(f"{subtitle_label} · Savollar: {len(qs)} · Natijalar: {len(rows_all)}"+(f" · Kod: {t['code']}" if int(t['code_set'] or 0) else "")),small)
+ subtitle=Paragraph(escape(f"{subtitle_label}"+(f" · {round_label}" if round_label else "")+f" · Savollar: {len(qs)} · Natijalar: {len(rows_all)}"+(f" · Kod: {t['code']}" if int(t['code_set'] or 0) else "")),small)
  def draw_footer(canvas,document):
   canvas.saveState()
   canvas.setFont(PDF_FONT,7)
@@ -515,6 +523,50 @@ def build_test_pdf(tid,path):
   canvas.drawRightString(A4[0]-12,7,'by Жанзаков')
   canvas.restoreState()
  doc.build([title,subtitle,Spacer(1,7),tab],onFirstPage=draw_footer,onLaterPages=draw_footer)
+
+
+def build_mock_round_xlsx(tid,label,rows,path):
+ t=db.get_test(tid);qs=db.questions_for_test(tid)
+ if not t:raise ValueError('MOCK test topilmadi')
+ headers=['№','Ism familiya','To‘g‘ri','Savollar','Ball','Baho','Yakunlangan vaqt']
+ data=[headers]
+ for rank,a in enumerate(rows,1):
+  try:answers=json.loads(a.get('answers_json') or '{}')
+  except (ValueError,TypeError):answers={}
+  correct=sum(norm(answers.get(str(q['number'])))==norm(q['answer']) for q in qs)
+  data.append([rank,str(a.get('full_name') or 'Ismsiz'),correct,len(qs),round(float(a.get('score') or 0),2),str(a.get('grade') or mock_grade(a.get('score') or 0)),str(a.get('finished_at') or '')])
+ def cell(col,value,row):
+  ref=chr(65+col)+str(row)
+  if isinstance(value,(int,float)):
+   return f'<c r="{ref}"><v>{value}</v></c>'
+  return f'<c r="{ref}" t="inlineStr"><is><t>{escape(str(value))}</t></is></c>'
+ sheet='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"/></sheetViews><cols><col min="1" max="1" width="7" customWidth="1"/><col min="2" max="2" width="34" customWidth="1"/><col min="3" max="6" width="13" customWidth="1"/><col min="7" max="7" width="28" customWidth="1"/></cols><sheetData>'+''.join('<row r="'+str(n)+'">'+''.join(cell(i,v,n) for i,v in enumerate(row))+'</row>' for n,row in enumerate(data,1))+'</sheetData></worksheet>'
+ parts={
+  '[Content_Types].xml':'<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
+  '_rels/.rels':'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+  'xl/workbook.xml':'<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="MOCK natijalar" sheetId="1" r:id="rId1"/></sheets></workbook>',
+  'xl/_rels/workbook.xml.rels':'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+  'xl/worksheets/sheet1.xml':sheet
+ }
+ with zipfile.ZipFile(path,'w',zipfile.ZIP_DEFLATED) as archive:
+  for name,value in parts.items():archive.writestr(name,value)
+
+def mock_round_analysis(tid,rows):
+ questions=db.questions_for_test(tid);total=len(rows);lines=[f'SAVOLLAR TAHLILI · {total} qatnashchi']
+ for q in questions:
+  key=str(q['number']);correct=wrong=blank=0;choices={v:0 for v in 'ABCD'}
+  for a in rows:
+   try:answers=json.loads(a.get('answers_json') or '{}')
+   except (ValueError,TypeError):answers={}
+   answer=str(answers.get(key) or '').strip()
+   if not answer:blank+=1
+   elif norm(answer)==norm(q['answer']):correct+=1
+   else:wrong+=1
+   if answer.upper() in choices:choices[answer.upper()]+=1
+  percent=round(correct*100/total) if total else 0
+  detail=' · '.join(f'{v}:{n}' for v,n in choices.items()) if str(q['kind'])=='choice' else 'Yozma'
+  lines.append(f"{key}-savol · To‘g‘ri {correct} ({percent}%) · Xato {wrong} · Bo‘sh {blank}\n{detail}")
+ return lines
 
 def build_questions_pdf(tid,path):
  t=db.get_test(tid)
@@ -2349,9 +2401,12 @@ def register(core,dp,bot,webapp_url):
     buttons.append([InlineKeyboardButton(text='TESTNI BOSHLASH · '+str(test['name'])[:20],callback_data=f'mock_start:{test_id}',style='success')])
    elif test.get('timer_ends_at') and active and remaining is not None and remaining>0:
     buttons.append([InlineKeyboardButton(text='TESTNI TO‘XTATISH · '+str(test['name'])[:18],callback_data=f'mock_stop:{test_id}',style='danger')])
+    buttons.append([InlineKeyboardButton(text='VAQT QO‘SHISH · '+code[:18],callback_data=f'mock_extend:{test_id}',style='primary')])
    else:
     buttons.append([InlineKeyboardButton(text='QAYTA O‘TKAZISH · '+str(test['name'])[:22],callback_data=f'mock_restart:{test_id}',style='success')])
-   if total_done:buttons.append([InlineKeyboardButton(text='NATIJA PDF’INI OLISH · '+code[:18],callback_data=f'mock_pdf:{test_id}',style='primary')])
+   if db.mock_rounds_for_test(test_id) or total_done:
+    buttons.append([InlineKeyboardButton(text='TURLAR · PDF / EXCEL / TAHLIL · '+code[:15],callback_data=f'mock_rounds:{test_id}',style='primary')])
+   if total_done:buttons.append([InlineKeyboardButton(text='UMUMIY PDF · '+code[:18],callback_data=f'mock_pdf:{test_id}',style='primary')])
   if drafts:
    lines.extend(['','TAYYORLANAYOTGAN TESTLAR'])
    for test,count in drafts[:20]:
@@ -2367,6 +2422,109 @@ def register(core,dp,bot,webapp_url):
   test_id=q.data.split(':',1)[1];result=await start_mock_test_session(test_id)
   if not result.get('ok'):return await q.answer(result.get('message') or 'Testni boshlash imkoni bo‘lmadi.',show_alert=True)
   await q.message.answer(result['message'],reply_markup=mock_ready_kb(test_id));await q.answer('Taymer boshlandi.')
+
+ @r.callback_query(F.data.startswith('mock_extend:'))
+ async def mock_extend_callback(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
+  tid=q.data.split(':',1)[1];test=db.get_test(tid)
+  if not test or not int(test['is_mock'] or 0) or not int(test['active'] or 0) or not (mock_remaining_seconds(dict(test)) or 0)>0:
+   return await q.answer('Faol MOCK test topilmadi.',show_alert=True)
+  kb=InlineKeyboardMarkup(inline_keyboard=[
+   [InlineKeyboardButton(text=f'+{minutes} DAQIQA',callback_data=f'mock_extend_add:{tid}:{minutes}',style='primary') for minutes in (5,10)],
+   [InlineKeyboardButton(text=f'+{minutes} DAQIQA',callback_data=f'mock_extend_add:{tid}:{minutes}',style='primary') for minutes in (20,30)],
+   [InlineKeyboardButton(text='ORTGA QAYTISH',callback_data='mock_list')]
+  ])
+  await q.message.answer(f"{test['name']} · Qolgan vaqt: {format_mock_timer(mock_remaining_seconds(dict(test)))}\nQancha vaqt qo‘shilsin?",reply_markup=kb);await q.answer()
+ @r.callback_query(F.data.startswith('mock_extend_add:'))
+ async def mock_extend_add_callback(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
+  try:_,tid,minutes=q.data.split(':');minutes=int(minutes)
+  except (ValueError,TypeError):return await q.answer('Noto‘g‘ri so‘rov.',show_alert=True)
+  if minutes not in (5,10,20,30):return await q.answer('Noto‘g‘ri vaqt.',show_alert=True)
+  test=db.get_test(tid)
+  if not test or not int(test['is_mock'] or 0) or not int(test['active'] or 0) or not (mock_remaining_seconds(dict(test)) or 0)>0:
+   return await q.answer('Test yakunlangan.',show_alert=True)
+  old=str(test['timer_ends_at'])
+  new=(datetime.fromisoformat(old.replace('Z','+00:00'))+timedelta(minutes=minutes)).isoformat()
+  if not db.extend_mock_timer(tid,old,new):return await q.answer('Vaqt o‘zgargan. Qaytadan oching.',show_alert=True)
+  updated=dict(db.get_test(tid))
+  await q.answer(f'{minutes} daqiqa qo‘shildi.')
+  await q.message.answer(f"{test['name']} · +{minutes} daqiqa\nQolgan vaqt: {format_mock_timer(mock_remaining_seconds(updated))}",reply_markup=mock_ready_kb(tid))
+ @r.callback_query(F.data.startswith('mock_rounds:'))
+ async def mock_rounds_callback(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
+  tid=q.data.split(':',1)[1];test=db.get_test(tid)
+  if not test or not int(test['is_mock'] or 0):return await q.answer('MOCK test topilmadi.',show_alert=True)
+  rounds=[dict(row) for row in db.mock_rounds_for_test(tid)]
+  lines=[f"{test['name']} · O‘TKAZILGAN TURLAR"];buttons=[]
+  for number,row in enumerate(rounds,1):
+   count=len(db.results_for_mock_round(tid,row['round_id']) or [])
+   status='yakunlangan' if row.get('closed_at') else 'davom etmoqda'
+   lines.append(f"{number}-tur · {str(row['started_at'])[:16].replace('T',' ')} · {status} · {count} natija")
+   buttons.append([InlineKeyboardButton(text=f'{number}-TUR · {count} NATIJA',callback_data=f"mock_round:{tid}:{row['round_id']}",style='primary')])
+  old=db.results_for_mock_round(tid,'old') or []
+  if old:
+   lines.append(f'Avvalgi natijalar · turi aniqlanmagan · {len(old)} natija')
+   buttons.append([InlineKeyboardButton(text=f'AVVALGI NATIJALAR · {len(old)}',callback_data=f'mock_round:{tid}:old',style='primary')])
+  if not rounds and not old:lines.append('Hali o‘tkazilgan tur va natija yo‘q.')
+  buttons.append([InlineKeyboardButton(text='ORTGA QAYTISH',callback_data='mock_list')])
+  await q.message.answer('\n'.join(lines),reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons));await q.answer()
+ @r.callback_query(F.data.startswith('mock_round:'))
+ async def mock_round_callback(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
+  _,tid,rid=q.data.split(':',2);test=db.get_test(tid)
+  if not test or not int(test['is_mock'] or 0):return await q.answer('MOCK test topilmadi.',show_alert=True)
+  rows=db.results_for_mock_round(tid,rid)
+  if rows is None:return await q.answer('Tur topilmadi.',show_alert=True)
+  rounds=[dict(row) for row in db.mock_rounds_for_test(tid)]
+  label='Avvalgi natijalar' if rid=='old' else f"{next((i for i,r in enumerate(rounds,1) if r['round_id']==rid),0)}-tur"
+  kb=InlineKeyboardMarkup(inline_keyboard=[
+   [InlineKeyboardButton(text='PDF',callback_data=f'mock_export:{tid}:{rid}:pdf',style='primary'),InlineKeyboardButton(text='EXCEL',callback_data=f'mock_export:{tid}:{rid}:xlsx',style='primary')],
+   [InlineKeyboardButton(text='SAVOLLAR TAHLILI',callback_data=f'mock_analyze:{tid}:{rid}',style='primary')],
+   [InlineKeyboardButton(text='ORTGA QAYTISH',callback_data=f'mock_rounds:{tid}')]
+  ])
+  await q.message.answer(f"{test['name']} · {label}\nNatijalar: {len(rows)}",reply_markup=kb);await q.answer()
+ @r.callback_query(F.data.startswith('mock_export:'))
+ async def mock_export_callback(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
+  try:_,tid,rid,kind=q.data.split(':')
+  except ValueError:return await q.answer('Noto‘g‘ri so‘rov.',show_alert=True)
+  test=db.get_test(tid);rows=db.results_for_mock_round(tid,rid) if test and int(test['is_mock'] or 0) else None
+  if rows is None or kind not in ('pdf','xlsx'):return await q.answer('Tur topilmadi.',show_alert=True)
+  if not rows:return await q.answer('Bu turda hali natija yo‘q.',show_alert=True)
+  rounds=[dict(row) for row in db.mock_rounds_for_test(tid)]
+  number=next((i for i,r in enumerate(rounds,1) if r['round_id']==rid),0)
+  label='Avvalgi natijalar' if rid=='old' else f'{number}-tur'
+  await q.answer('Hisobot tayyorlanmoqda…')
+  path=''
+  try:
+   with tempfile.NamedTemporaryFile(prefix='nur-mock-round-',suffix='.'+kind,delete=False) as tmp:path=tmp.name
+   if kind=='pdf':build_test_pdf(tid,path,selected_rows=rows,round_label=label)
+   else:build_mock_round_xlsx(tid,label,rows,path)
+   code=''.join(x for x in str(test['code'] or 'MOCK') if x.isalnum() or x in '-_')[:32] or 'MOCK'
+   await BOT.send_document(ADMIN,FSInputFile(path,filename=f'{code}-{rid}-{label.replace(" ","-")}.{kind}'),caption=f"{test['name']} · {label} · {len(rows)} qatnashchi")
+  except Exception:
+   logging.getLogger('nur-oqiw.mock').exception('MOCK round export failed')
+   await BOT.send_message(ADMIN,'Hisobot tayyorlashda xatolik yuz berdi. Keyinroq qayta urinib ko‘ring.')
+  finally:
+   if path:
+    try:os.remove(path)
+    except OSError:pass
+ @r.callback_query(F.data.startswith('mock_analyze:'))
+ async def mock_analyze_callback(q:CallbackQuery):
+  if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
+  _,tid,rid=q.data.split(':',2);test=db.get_test(tid)
+  rows=db.results_for_mock_round(tid,rid) if test and int(test['is_mock'] or 0) else None
+  if rows is None:return await q.answer('Tur topilmadi.',show_alert=True)
+  if not rows:return await q.answer('Bu turda hali natija yo‘q.',show_alert=True)
+  await q.answer('Tahlil tayyorlanmoqda…')
+  lines=mock_round_analysis(tid,rows);chunk=''
+  for line in lines:
+   if len(chunk)+len(line)>3500:
+    await BOT.send_message(ADMIN,chunk);chunk=''
+   chunk+=line+'\n\n'
+  if chunk:await BOT.send_message(ADMIN,chunk)
+
  @r.callback_query(F.data.startswith('mock_stop:'))
  async def mock_stop_callback(q:CallbackQuery):
   if q.from_user.id!=ADMIN:return await q.answer('Faqat administrator.',show_alert=True)
