@@ -23,7 +23,7 @@ def conn():
 def init():
     with conn() as c:
         c.execute("CREATE TABLE IF NOT EXISTS users(telegram_id BIGINT PRIMARY KEY,full_name TEXT,phone TEXT,registered_at TEXT,code_ok INTEGER DEFAULT 0,started_at TEXT,finished_at TEXT,score DOUBLE PRECISION DEFAULT 0,grade TEXT DEFAULT '',answers_json TEXT DEFAULT '{}',submitted INTEGER DEFAULT 0,state TEXT DEFAULT 'code',tier TEXT DEFAULT 'default',premium_since TEXT,premium_granted_by BIGINT,test_id TEXT DEFAULT '',telegram_photo TEXT DEFAULT '')")
-        c.execute("CREATE TABLE IF NOT EXISTS tests(test_id TEXT PRIMARY KEY,code TEXT UNIQUE NOT NULL,name TEXT NOT NULL,start_time TEXT DEFAULT '08:30',end_time TEXT DEFAULT '09:30',mode TEXT DEFAULT 'auto',active INTEGER DEFAULT 1,created_at TEXT NOT NULL,is_mock INTEGER DEFAULT 0,published INTEGER DEFAULT 1,duration_minutes INTEGER DEFAULT 0,required_channel TEXT DEFAULT '',required_channel_link TEXT DEFAULT '',questions_channel TEXT DEFAULT '',timer_started_at TEXT DEFAULT '',timer_ends_at TEXT DEFAULT '',code_set INTEGER DEFAULT 1,questions_pdf_sent INTEGER DEFAULT 0)")
+        c.execute("CREATE TABLE IF NOT EXISTS tests(test_id TEXT PRIMARY KEY,code TEXT UNIQUE NOT NULL,name TEXT NOT NULL,start_time TEXT DEFAULT '08:30',end_time TEXT DEFAULT '09:30',mode TEXT DEFAULT 'auto',active INTEGER DEFAULT 1,created_at TEXT NOT NULL,is_mock INTEGER DEFAULT 0,published INTEGER DEFAULT 1,duration_minutes INTEGER DEFAULT 0,required_channel TEXT DEFAULT '',required_channel_link TEXT DEFAULT '',questions_channel TEXT DEFAULT '',timer_started_at TEXT DEFAULT '',timer_ends_at TEXT DEFAULT '',code_set INTEGER DEFAULT 1,questions_pdf_sent INTEGER DEFAULT 0,scheduled_start_at TEXT DEFAULT '',participant_limit INTEGER DEFAULT 0,expected_questions INTEGER DEFAULT 0)")
         c.execute("CREATE TABLE IF NOT EXISTS questions(id INTEGER PRIMARY KEY,question TEXT,options_json TEXT DEFAULT '[]',answer TEXT DEFAULT '',kind TEXT DEFAULT 'choice',group_id TEXT DEFAULT '',active INTEGER DEFAULT 1,image_url TEXT DEFAULT '',test_id TEXT DEFAULT '',number INTEGER DEFAULT 0)")
         c.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)")
         c.execute("CREATE TABLE IF NOT EXISTS item_stats(question_id INTEGER PRIMARY KEY,attempts INTEGER DEFAULT 0,correct INTEGER DEFAULT 0)")
@@ -145,7 +145,7 @@ def ensure_schema():
             if name not in cols:c.execute(f"ALTER TABLE users ADD COLUMN {name} {typ}")
         for name,typ in [("image_url","TEXT DEFAULT ''"),("group_id","TEXT DEFAULT ''"),("active","INTEGER DEFAULT 1"),("test_id","TEXT DEFAULT ''"),("number","INTEGER DEFAULT 0")]:
             if name not in qcols:c.execute(f"ALTER TABLE questions ADD COLUMN {name} {typ}")
-        for name,typ in [("is_mock","INTEGER DEFAULT 0"),("published","INTEGER DEFAULT 1"),("duration_minutes","INTEGER DEFAULT 0"),("required_channel","TEXT DEFAULT ''"),("required_channel_link","TEXT DEFAULT ''"),("questions_channel","TEXT DEFAULT ''"),("timer_started_at","TEXT DEFAULT ''"),("timer_ends_at","TEXT DEFAULT ''"),("code_set","INTEGER DEFAULT 1"),("questions_pdf_sent","INTEGER DEFAULT 0")]:
+        for name,typ in [("is_mock","INTEGER DEFAULT 0"),("published","INTEGER DEFAULT 1"),("duration_minutes","INTEGER DEFAULT 0"),("required_channel","TEXT DEFAULT ''"),("required_channel_link","TEXT DEFAULT ''"),("questions_channel","TEXT DEFAULT ''"),("timer_started_at","TEXT DEFAULT ''"),("timer_ends_at","TEXT DEFAULT ''"),("code_set","INTEGER DEFAULT 1"),("questions_pdf_sent","INTEGER DEFAULT 0"),("scheduled_start_at","TEXT DEFAULT ''"),("participant_limit","INTEGER DEFAULT 0"),("expected_questions","INTEGER DEFAULT 0")]:
             if name not in tcols:c.execute(f"ALTER TABLE tests ADD COLUMN {name} {typ}")
         for name,typ in [("participant_name","TEXT DEFAULT ''"),("finish_notified","INTEGER DEFAULT 0")]:
             if name not in acols:c.execute(f"ALTER TABLE test_attempts ADD COLUMN {name} {typ}")
@@ -244,12 +244,12 @@ def create_test(name,code,start_time="00:00",end_time="23:59",mode="open"):
     with conn() as c:c.execute("INSERT INTO tests(test_id,code,name,start_time,end_time,mode,active,created_at) VALUES(?,?,?,?,?,?,1,?)",(tid,str(code).strip(),str(name).strip(),start_time,end_time,mode,datetime.now(timezone.utc).isoformat()))
     return get_test(tid)
 
-def create_mock_test(name,duration_minutes,required_channel="",questions_channel="",required_channel_link=""):
+def create_mock_test(name,duration_minutes,required_channel="",questions_channel="",required_channel_link="",expected_questions=0):
     """Create a private, timed mock exam; it is not listed as active until published."""
     tid=secrets.token_hex(8)
     draft_code="MOCK_DRAFT_"+secrets.token_hex(8).upper()
     with conn() as c:
-        c.execute("INSERT INTO tests(test_id,code,name,start_time,end_time,mode,active,created_at,is_mock,published,duration_minutes,required_channel,required_channel_link,questions_channel,code_set) VALUES(?,?,?,?,?,?,1,?,1,0,?,?,?,?,0)",(tid,draft_code,str(name).strip(),"00:00","23:59","mock",datetime.now(timezone.utc).isoformat(),max(1,min(600,int(duration_minutes))),str(required_channel or "").strip(),str(required_channel_link or "").strip(),str(questions_channel or "").strip()))
+        c.execute("INSERT INTO tests(test_id,code,name,start_time,end_time,mode,active,created_at,is_mock,published,duration_minutes,required_channel,required_channel_link,questions_channel,code_set,expected_questions) VALUES(?,?,?,?,?,?,1,?,1,0,?,?,?,?,0,?)",(tid,draft_code,str(name).strip(),"00:00","23:59","mock",datetime.now(timezone.utc).isoformat(),max(1,min(600,int(duration_minutes))),str(required_channel or "").strip(),str(required_channel_link or "").strip(),str(questions_channel or "").strip(),max(0,min(200,int(expected_questions)))))
     return get_test(tid)
 
 def set_mock_test_code(tid,code):
@@ -272,11 +272,59 @@ def set_test_published(tid,published=1):
 def start_mock_timer(tid,started_at,ends_at):
     """Start one shared timer and preserve its round boundary atomically."""
     with conn() as c:
-        changed=c.execute("UPDATE tests SET timer_started_at=?,timer_ends_at=? WHERE test_id=? AND is_mock=1 AND (timer_started_at IS NULL OR timer_started_at='')",(str(started_at),str(ends_at),str(tid)))
+        changed=c.execute("UPDATE tests SET timer_started_at=?,timer_ends_at=?,scheduled_start_at='' WHERE test_id=? AND is_mock=1 AND (timer_started_at IS NULL OR timer_started_at='')",(str(started_at),str(ends_at),str(tid)))
         if changed.rowcount:
             c.execute("INSERT INTO mock_rounds(round_id,test_id,started_at,scheduled_end_at) VALUES(?,?,?,?) ON CONFLICT(test_id,started_at) DO NOTHING",
                 (secrets.token_hex(8),str(tid),str(started_at),str(ends_at)))
     return get_test(tid)
+
+
+def set_mock_schedule(tid,when):
+    with conn() as c:
+        changed=c.execute("UPDATE tests SET scheduled_start_at=? WHERE test_id=? AND is_mock=1 AND (timer_started_at IS NULL OR timer_started_at='')",
+            (str(when or ''),str(tid)))
+    return bool(changed.rowcount)
+
+def set_mock_participant_limit(tid,limit):
+    limit=max(0,min(100000,int(limit)))
+    with conn() as c:
+        changed=c.execute("UPDATE tests SET participant_limit=? WHERE test_id=? AND is_mock=1",(limit,str(tid)))
+    return bool(changed.rowcount)
+
+def mock_has_slot(tid,telegram_id):
+    with conn() as c:
+        t=c.execute("SELECT participant_limit FROM tests WHERE test_id=? AND is_mock=1",(str(tid),)).fetchone()
+        if not t:return False
+        limit=int(t["participant_limit"] or 0)
+        if not limit:return True
+        a=c.execute("SELECT started_at FROM test_attempts WHERE test_id=? AND telegram_id=?",(str(tid),int(telegram_id))).fetchone()
+        if a and a["started_at"]:return True
+        count=c.execute("SELECT COUNT(*) AS n FROM test_attempts WHERE test_id=? AND started_at IS NOT NULL",(str(tid),)).fetchone()
+        return int(count["n"])<limit
+
+def start_mock_attempt_if_slot(tid,telegram_id,started_at):
+    """Reserve a seat and start one attempt in the same database transaction."""
+    with conn() as c:
+        if not USE_POSTGRES:c.execute("BEGIN IMMEDIATE")
+        suffix=" FOR UPDATE" if USE_POSTGRES else ""
+        t=c.execute("SELECT participant_limit,active,timer_ends_at FROM tests WHERE test_id=? AND is_mock=1"+suffix,(str(tid),)).fetchone()
+        if not t or not int(t["active"] or 0) or not t["timer_ends_at"]:return "closed"
+        end=datetime.fromisoformat(str(t["timer_ends_at"]).replace("Z","+00:00"))
+        now=datetime.fromisoformat(str(started_at).replace("Z","+00:00"))
+        if end.tzinfo is None:end=end.replace(tzinfo=timezone.utc)
+        if now.tzinfo is None:now=now.replace(tzinfo=timezone.utc)
+        if now>=end:return "closed"
+        a=c.execute("SELECT started_at,submitted FROM test_attempts WHERE test_id=? AND telegram_id=?",(str(tid),int(telegram_id))).fetchone()
+        if not a:return "missing"
+        if a["started_at"]:return "started"
+        if int(a["submitted"] or 0):return "submitted"
+        limit=int(t["participant_limit"] or 0)
+        if limit:
+            count=c.execute("SELECT COUNT(*) AS n FROM test_attempts WHERE test_id=? AND started_at IS NOT NULL",(str(tid),)).fetchone()
+            if int(count["n"])>=limit:return "full"
+        c.execute("UPDATE test_attempts SET started_at=?,status='active' WHERE test_id=? AND telegram_id=? AND started_at IS NULL",
+                  (str(started_at),str(tid),int(telegram_id)))
+    return "started"
 
 def close_mock_round(tid,closed_at):
     with conn() as c:
