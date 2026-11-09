@@ -65,6 +65,18 @@ def init():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_permanent_results_test ON permanent_results(test_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_permanent_results_user ON permanent_results(telegram_id)")
+        c.execute("""CREATE TABLE IF NOT EXISTS mock_rounds(
+            round_id TEXT PRIMARY KEY,
+            test_id TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            scheduled_end_at TEXT NOT NULL,
+            closed_at TEXT,
+            UNIQUE(test_id,started_at)
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_mock_rounds_test ON mock_rounds(test_id,started_at)")
+        for t in c.execute("SELECT test_id,timer_started_at,timer_ends_at,active FROM tests WHERE is_mock=1 AND timer_started_at IS NOT NULL AND timer_started_at<>'' AND timer_ends_at IS NOT NULL AND timer_ends_at<>''").fetchall():
+            c.execute("INSERT INTO mock_rounds(round_id,test_id,started_at,scheduled_end_at,closed_at) VALUES(?,?,?,?,?) ON CONFLICT(test_id,started_at) DO NOTHING",
+                (secrets.token_hex(8),str(t["test_id"]),str(t["timer_started_at"]),str(t["timer_ends_at"]),None if int(t["active"] or 0) else str(t["timer_ends_at"])))
         c.execute("""CREATE TABLE IF NOT EXISTS paid_tests (
             test_id TEXT PRIMARY KEY,
             created_at TEXT NOT NULL
@@ -258,14 +270,38 @@ def set_test_published(tid,published=1):
     with conn() as c:c.execute("UPDATE tests SET published=? WHERE test_id=?",(int(bool(published)),str(tid)))
 
 def start_mock_timer(tid,started_at,ends_at):
-    """Set the shared MOCK deadline once; every participant follows the same clock."""
+    """Start one shared timer and preserve its round boundary atomically."""
     with conn() as c:
-        c.execute("UPDATE tests SET timer_started_at=?,timer_ends_at=? WHERE test_id=? AND is_mock=1 AND (timer_started_at IS NULL OR timer_started_at='')",(str(started_at),str(ends_at),str(tid)))
+        changed=c.execute("UPDATE tests SET timer_started_at=?,timer_ends_at=? WHERE test_id=? AND is_mock=1 AND (timer_started_at IS NULL OR timer_started_at='')",(str(started_at),str(ends_at),str(tid)))
+        if changed.rowcount:
+            c.execute("INSERT INTO mock_rounds(round_id,test_id,started_at,scheduled_end_at) VALUES(?,?,?,?) ON CONFLICT(test_id,started_at) DO NOTHING",
+                (secrets.token_hex(8),str(tid),str(started_at),str(ends_at)))
     return get_test(tid)
 
-def reset_mock_timer(tid):
-    """Reopen a completed MOCK round with a fresh shared timer."""
+def close_mock_round(tid,closed_at):
     with conn() as c:
+        t=c.execute("SELECT timer_started_at FROM tests WHERE test_id=? AND is_mock=1",(str(tid),)).fetchone()
+        if t and t["timer_started_at"]:
+            c.execute("UPDATE mock_rounds SET closed_at=? WHERE test_id=? AND started_at=? AND closed_at IS NULL",
+                (str(closed_at),str(tid),str(t["timer_started_at"])))
+
+def extend_mock_timer(tid,expected_end,new_end):
+    with conn() as c:
+        changed=c.execute("UPDATE tests SET timer_ends_at=? WHERE test_id=? AND is_mock=1 AND active=1 AND timer_ends_at=?",
+            (str(new_end),str(tid),str(expected_end)))
+        if changed.rowcount:
+            t=c.execute("SELECT timer_started_at FROM tests WHERE test_id=?",(str(tid),)).fetchone()
+            c.execute("UPDATE mock_rounds SET scheduled_end_at=? WHERE test_id=? AND started_at=? AND closed_at IS NULL",
+                (str(new_end),str(tid),str(t["timer_started_at"])))
+    return bool(changed.rowcount)
+
+def reset_mock_timer(tid):
+    """Reopen a completed MOCK round while keeping past results."""
+    with conn() as c:
+        t=c.execute("SELECT timer_started_at FROM tests WHERE test_id=? AND is_mock=1",(str(tid),)).fetchone()
+        if t and t["timer_started_at"]:
+            c.execute("UPDATE mock_rounds SET closed_at=? WHERE test_id=? AND started_at=? AND closed_at IS NULL",
+                (datetime.now(timezone.utc).isoformat(),str(tid),str(t["timer_started_at"])))
         c.execute("UPDATE tests SET timer_started_at=NULL,timer_ends_at=NULL,active=1,published=0 WHERE test_id=? AND is_mock=1",(str(tid),))
     return get_test(tid)
 
@@ -421,6 +457,34 @@ def all_permanent_results(limit=200):
 def permanent_results_for_test(test_id,limit=1000):
     with conn() as c:
         return c.execute("SELECT * FROM permanent_results WHERE test_id=? ORDER BY COALESCE(finished_at,started_at,archived_at) ASC LIMIT ?",(str(test_id),max(1,min(int(limit),5000)))).fetchall()
+
+def mock_rounds_for_test(test_id):
+    with conn() as c:
+        return c.execute("SELECT * FROM mock_rounds WHERE test_id=? ORDER BY started_at ASC",(str(test_id),)).fetchall()
+
+def results_for_mock_round(test_id,round_id):
+    """Deduplicate saved snapshots, then select attempts by immutable start time."""
+    rows={}
+    for a in permanent_results_for_test(test_id,5000):
+        if int(a["submitted"] or 0):rows[str(a["attempt_id"])]=dict(a)
+    for a in all_attempts_for_test(test_id):
+        if int(a["submitted"] or 0):rows[str(a["attempt_id"])]=dict(a)
+    rounds=[dict(x) for x in mock_rounds_for_test(test_id)]
+    selected=next((r for r in rounds if r["round_id"]==str(round_id)),None)
+    if not selected and str(round_id)!="old":return None
+    def stamp(value):
+        if not value:return None
+        try:
+            x=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+            return x if x.tzinfo else x.replace(tzinfo=timezone.utc)
+        except (ValueError,TypeError):return None
+    def belongs(a,r):
+        begun=stamp(a.get("started_at"));start=stamp(r["started_at"])
+        if not begun or not start or begun<start:return False
+        upper=stamp(r.get("closed_at") or r.get("scheduled_end_at"))
+        return upper is None or begun<=upper
+    result=[a for a in rows.values() if (belongs(a,selected) if selected else not any(belongs(a,r) for r in rounds))]
+    return sorted(result,key=lambda a:(-float(a.get("score") or 0),str(a.get("full_name") or "").casefold()))
 
 def save_attempt_answers(attempt_id,answers):
     update_attempt(attempt_id,answers_json=json.dumps(answers,ensure_ascii=False))
