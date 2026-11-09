@@ -1742,8 +1742,8 @@ def register(core,dp,bot,webapp_url):
     await finish_mock_test(t,'timer')
     return {'ok':False,'error':'already_submitted','is_mock':True,'message':'Test tugadi. Javoblar tez orada e’lon qilinadi.'}
   if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
-  if u['test_id']!=t['test_id'] and (not existing_attempt or not existing_attempt['started_at']):return {'ok':False,'error':'test_not_started'}
   a=db.get_attempt(t['test_id'],tid)
+  if u['test_id']!=t['test_id'] and (not a or not a['started_at']):return {'ok':False,'error':'test_not_started'}
   if not a or not a['started_at']:return {'ok':False,'error':'test_not_started'}
   if not int(t['is_mock'] or 0) and not u['full_name']:return {'ok':False,'error':'not_authorized'}
   if a['submitted']:return {'ok':False,'error':'already_submitted'}
@@ -1790,7 +1790,7 @@ def register(core,dp,bot,webapp_url):
    return {'ok':True,'is_mock':True,'message':'Test tugadi. Javoblar tez orada e’lon qilinadi.','full_name':str(final_attempt['participant_name'] or '') if final_attempt else '','test_name':t['name']}
   if is_mock and len(participant_name.split())<2 and not (existing_attempt and int(existing_attempt['submitted'] or 0)):
    return {'ok':False,'error':'participant_name_required','is_mock':True,'test_name':t['name'],'message':'Testni yakunlash uchun ism va familiyangizni kiriting.'}
-  if u['test_id']!=t['test_id']:return {'ok':False,'error':'test_not_started'}
+  if u['test_id']!=t['test_id'] and (not existing_attempt or not existing_attempt['started_at']):return {'ok':False,'error':'test_not_started'}
   a=db.get_attempt(t['test_id'],tid)
   if not a or not a['started_at']:return {'ok':False,'error':'test_not_started'}
   if a['submitted']:
