@@ -105,9 +105,9 @@ class MenuAliasMiddleware(BaseMiddleware):
     async def __call__(self,handler,event,data):
         if getattr(event,'text',None):
             uid=event.from_user.id if event.from_user else 0
-            is_admin=uid==self.admin_id and (self.db.get_user(self.admin_id) or {}).get('state')=='admin'
+            admin_state=uid==self.admin_id and (self.db.get_user(self.admin_id) or {}).get('state')=='admin'
             section=self.db.get_setting('mock_menu_'+str(uid),'')
-            role=('mock_admin' if is_admin else 'mock_user') if section==('admin' if is_admin else 'user') else ('admin' if is_admin else 'user')
+            role='mock_admin' if uid==self.admin_id and section=='admin' else 'mock_user' if section=='user' else 'admin' if admin_state else 'user'
             actual=canonical(self.db,event.text,role)
             if actual!=event.text:event=event.model_copy(update={'text':actual})
         return await handler(event,data)
