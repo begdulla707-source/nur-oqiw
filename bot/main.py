@@ -121,6 +121,20 @@ def mock_open_kb(test):
     url=f"{WEBAPP.rstrip('/')}/test?code={test['code']}"
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='MOCK TESTNI OCHISH',web_app=WebAppInfo(url=url),style='primary')]])
 
+def mock_entry_message(test):
+    if not int(test['code_set'] or 0) or not test['timer_started_at'] or not test['timer_ends_at']:
+        return 'Bu MOCK test hali boshlanmagan. Admin TESTNI BOSHLASH tugmasini bosishini kuting.'
+    if not int(test['active'] or 0):
+        return 'Bu MOCK test to‘xtatilgan.'
+    try:
+        deadline=datetime.fromisoformat(str(test['timer_ends_at']).replace('Z','+00:00'))
+        if deadline.tzinfo is None:deadline=deadline.replace(tzinfo=TZ)
+        if datetime.now(TZ)>=deadline.astimezone(TZ):
+            return 'Bu MOCK test vaqti tugagan.'
+    except (ValueError,TypeError):
+        return 'MOCK test taymeri aniqlanmadi. Admin bilan bog‘laning.'
+    return None
+
 async def prompt_mock_subscription(message,test,link=None):
     return await message.answer('Bu MOCK test uchun avval alohida kanalga obuna bo‘ling, keyin tekshirish tugmasini bosing.',reply_markup=mock_subscription_kb(test,link))
 
@@ -165,15 +179,11 @@ async def start_deep_link(m:Message):
         update_user(m.from_user.id,state='code',code_ok=0)
         return await m.answer('Test kodi topilmadi. Test kodini qayta kiriting:',reply_markup=user_menu())
     is_mock=bool(int(t['is_mock'] or 0))
-    if is_mock and not int(t['published'] or 0):
-        existing=get_attempt(t['test_id'],m.from_user.id)
-        if not existing or not existing['started_at'] or existing['submitted']:
-            return await m.answer('Bu MOCK test hali aktiv testlarga chiqarilmagan.')
     if not is_mock and not await subscribed(m.from_user.id):
         update_user(m.from_user.id,state='subscribe',code_ok=0);return await m.answer('Testga kirishdan oldin majburiy kanallarga obuna bo‘ling.',reply_markup=sub_kb())
     if is_mock:
-        if not int(t['active'] or 0):
-            return await m.answer('Bu MOCK test yopilgan.')
+        entry_error=mock_entry_message(t)
+        if entry_error:return await m.answer(entry_error)
         joined,link=await mock_channel_status(t,m.from_user.id)
         if not joined:
             return await prompt_mock_subscription(m,t,link)
@@ -204,8 +214,10 @@ async def check_sub(q:CallbackQuery):
 async def check_mock_subscription(q:CallbackQuery):
     try:test_id=q.data.split(':',1)[1];test=get_test(test_id)
     except Exception:test=None
-    if not test or not int(test['is_mock'] or 0) or not int(test['published'] or 0) or not int(test['active'] or 0):
-        return await q.answer('MOCK test hozir aktiv emas.',show_alert=True)
+    if not test or not int(test['is_mock'] or 0):
+        return await q.answer('MOCK test topilmadi.',show_alert=True)
+    entry_error=mock_entry_message(test)
+    if entry_error:return await q.answer(entry_error,show_alert=True)
     joined,link=await mock_channel_status(test,q.from_user.id)
     if not joined:
         await q.answer('Avval test kanaliga obuna bo‘ling.',show_alert=True)
@@ -359,7 +371,8 @@ async def registration_text(m:Message):
         if not t or not can_access_test(t['test_id'],m.from_user.id,ADMIN):return await m.answer('Test kodi noto‘g‘ri yoki pulli testga ruxsat yo‘q. Qayta kiriting:')
         is_mock=bool(int(t['is_mock'] or 0))
         if is_mock:
-            if not int(t['published'] or 0) or not int(t['active'] or 0):return await m.answer('Bu MOCK test hali aktiv emas. Test kodi va holatini admin bilan tekshiring.')
+            entry_error=mock_entry_message(t)
+            if entry_error:return await m.answer(entry_error)
             joined,link=await mock_channel_status(t,m.from_user.id)
             if not joined:return await prompt_mock_subscription(m,t,link)
             update_user(m.from_user.id,test_id=t['test_id'],code_ok=1,state='ready');ensure_attempt(t['test_id'],m.from_user.id)
@@ -373,7 +386,7 @@ async def registration_text(m:Message):
 
 @dp.message(F.text=='Aktiv testlar')
 async def active_tests(m:Message):
-    tests=[t for t in all_tests() if int(t['active']) and not is_paid_test(t['test_id']) and (not int(t['is_mock'] or 0) or int(t['published'] or 0))]
+    tests=[t for t in all_tests() if int(t['active']) and not is_paid_test(t['test_id']) and not int(t['is_mock'] or 0)]
     if not tests:return await m.answer('Hozircha aktiv testlar mavjud emas.',reply_markup=user_menu())
     rows=[[InlineKeyboardButton(text=str(t['name'])[:48],callback_data='active_test:'+str(t['test_id']),style='success')] for t in tests[:40]]
     return await m.answer('AKTIV TESTLAR\n\nTestni tanlang:',reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
@@ -385,10 +398,8 @@ async def select_active_test(q:CallbackQuery):
         if not t or not int(t['active']) or not can_access_test(t['test_id'],q.from_user.id,ADMIN):return await q.answer('Test hozir yopiq yoki ruxsat yo‘q.',show_alert=True)
         u=ensure_user(q.from_user.id)
         is_mock=bool(int(t['is_mock'] or 0))
-        if is_mock and not int(t['published'] or 0):
-            existing=get_attempt(t['test_id'],q.from_user.id)
-            if not existing or not existing['started_at'] or existing['submitted']:
-                return await q.answer('Bu MOCK test hozir aktiv ro‘yxatda yo‘q.',show_alert=True)
+        if is_mock:
+            return await q.answer('MOCK testga test kodini kiritish orqali kiring.',show_alert=True)
         if is_mock:
             joined,link=await mock_channel_status(t,q.from_user.id)
             if not joined:
