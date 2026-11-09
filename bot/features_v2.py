@@ -453,7 +453,7 @@ async def start_mock_test_session(test_id):
  remaining=mock_remaining_seconds(dict(test)) or duration*60
  try:
   await update_mock_admin_status(dict(test),'mock_timer_message_'+test_id,
-   f"MOCK TEST BOSHLANDI\n{test['name']} · kod: {test['code']}\nQolgan vaqt: {format_mock_timer(remaining)}")
+   f"QOLGAN VAQT: {format_mock_timer(remaining)}\nMOCK TEST BOSHLANDI\n{test['name']} · kod: {test['code']}")
  except Exception:logging.getLogger('nur-oqiw.mock').exception('Could not update started MOCK status')
  return {'ok':True,'message':f"{test['name']} boshlandi. Taymer: {format_mock_timer(remaining)}. Qatnashchilar endi test kodini kiritishi mumkin."}
 
@@ -528,7 +528,7 @@ async def mock_timer_tick():
     if db.get_setting(final_key,'')!=state:
      detail='Natijalar PDF’i admin chatiga yuborildi.' if sent_pdf else 'Natijalar PDF’i yuborilmoqda; xatolik bo‘lsa bot qayta urinadi.'
      attempts=db.all_attempts_for_test(test_id);started=sum(1 for a in attempts if a['started_at']);completed=sum(1 for a in attempts if a['started_at'] and int(a['submitted'] or 0))
-     text=f"MOCK TEST YAKUNLANDI\n{test['name']} · kod: {test['code']}\nQatnashgan: {started} · Natijasi tayyor: {completed}\nVaqt tugadi. {detail}"
+     text=f"QOLGAN VAQT: 00:00:00\nMOCK TEST YAKUNLANDI\n{test['name']} · kod: {test['code']}\nQatnashgan: {started} · Natijasi tayyor: {completed}\nVaqt tugadi. {detail}"
      await update_mock_admin_status(test,message_key,text);db.set_setting(final_key,state)
     continue
    if not int(test.get('active') or 0):
@@ -538,12 +538,12 @@ async def mock_timer_tick():
     if db.get_setting(final_key,'')!=state:
      detail='Natijalar PDF’i admin chatiga yuborildi.' if sent_pdf else 'Natijalar PDF’i yuborilmoqda; xatolik bo‘lsa bot qayta urinadi.'
      attempts=db.all_attempts_for_test(test_id);started=sum(1 for a in attempts if a['started_at']);completed=sum(1 for a in attempts if a['started_at'] and int(a['submitted'] or 0))
-     text=f"MOCK TEST TO‘XTATILDI\n{test['name']} · kod: {test['code']}\nQatnashgan: {started} · Natijasi tayyor: {completed}\n{detail}"
+     text=f"QOLGAN VAQT: 00:00:00\nMOCK TEST TO‘XTATILDI\n{test['name']} · kod: {test['code']}\nQatnashgan: {started} · Natijasi tayyor: {completed}\n{detail}"
      await update_mock_admin_status(test,message_key,text);db.set_setting(final_key,state)
     continue
    last=float(db.get_setting(time_key,'0') or 0)
    if now.timestamp()-last<0.95:continue
-   text=f"MOCK TEST VAQTI\n{test['name']} · kod: {test['code']}\nQolgan vaqt: {format_mock_timer(remaining)}"
+   text=f"QOLGAN VAQT: {format_mock_timer(remaining)}\nMOCK TEST · {test['name']}\nKod: {test['code']}"
    message_id=db.get_setting(message_key,'')
    if message_id:
     try:await BOT.edit_message_text(text,chat_id=ADMIN,message_id=int(message_id),reply_markup=mock_admin_results_kb())
@@ -1742,7 +1742,7 @@ def register(core,dp,bot,webapp_url):
     await finish_mock_test(t,'timer')
     return {'ok':False,'error':'already_submitted','is_mock':True,'message':'Test tugadi. Javoblar tez orada e’lon qilinadi.'}
   if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
-  if u['test_id']!=t['test_id']:return {'ok':False,'error':'test_not_started'}
+  if u['test_id']!=t['test_id'] and (not existing_attempt or not existing_attempt['started_at']):return {'ok':False,'error':'test_not_started'}
   a=db.get_attempt(t['test_id'],tid)
   if not a or not a['started_at']:return {'ok':False,'error':'test_not_started'}
   if not int(t['is_mock'] or 0) and not u['full_name']:return {'ok':False,'error':'not_authorized'}
@@ -1779,6 +1779,8 @@ def register(core,dp,bot,webapp_url):
   if not is_mock and not u['full_name']:return {'ok':False,'error':'not_authorized'}
   if tid!=ADMIN and not is_mock and not await CORE.subscribed(tid):return {'ok':False,'error':'subscription_required'}
   participant_name=' '.join(str(p.get('participant_name','')).strip().split())[:120] if is_mock else ''
+  if is_mock and len(participant_name.split())<2 and existing_attempt:
+   participant_name=' '.join(str(existing_attempt['participant_name'] or '').strip().split())[:120]
   if is_mock and existing_attempt and not int(existing_attempt['submitted'] or 0) and len(participant_name.split())>=2:
    db.update_attempt(existing_attempt['attempt_id'],participant_name=participant_name);existing_attempt=db.get_attempt(t['test_id'],tid)
   if is_mock and mock_clock_expired(t):
@@ -1786,13 +1788,14 @@ def register(core,dp,bot,webapp_url):
    await finish_mock_test(t,'timer')
    final_attempt=db.get_attempt(t['test_id'],tid)
    return {'ok':True,'is_mock':True,'message':'Test tugadi. Javoblar tez orada e’lon qilinadi.','full_name':str(final_attempt['participant_name'] or '') if final_attempt else '','test_name':t['name']}
-  if is_mock and len(participant_name.split())<2:return {'ok':False,'error':'participant_name_required','is_mock':True,'test_name':t['name']}
+  if is_mock and len(participant_name.split())<2 and not (existing_attempt and int(existing_attempt['submitted'] or 0)):
+   return {'ok':False,'error':'participant_name_required','is_mock':True,'test_name':t['name'],'message':'Testni yakunlash uchun ism va familiyangizni kiriting.'}
   if u['test_id']!=t['test_id']:return {'ok':False,'error':'test_not_started'}
   a=db.get_attempt(t['test_id'],tid)
   if not a or not a['started_at']:return {'ok':False,'error':'test_not_started'}
   if a['submitted']:
    answers=json.loads(a['answers_json'] or '{}');correct,total,_=result_counts(answers,db.questions_for_test(t['test_id']))
-   if is_mock:return {'ok':False,'error':'already_submitted','is_mock':True,'message':'Test tugadi. Javoblar tez orada e’lon qilinadi.'}
+   if is_mock:return {'ok':True,'is_mock':True,'message':'Javoblaringiz saqlangan. Natijalar tez orada e’lon qilinadi.'}
    return {'ok':False,'error':'already_submitted','score':a['score'],'grade':a['grade'],'correct_count':correct,'total_questions':total}
   if not int(t['active']):return {'ok':False,'error':'test_stopped','test_name':t['name']}
   if expired(a,t):
@@ -1836,12 +1839,11 @@ def register(core,dp,bot,webapp_url):
  async def user_results(m:Message):
   u=db.get_user(m.from_user.id)
   if not u:return await m.answer("Siz hali ro‘yxatdan o‘tmagansiz. /start ni bosing.",reply_markup=user_menu())
-  with db.conn() as c:
-   rows=c.execute("SELECT a.test_id,t.name,t.code,a.started_at,a.finished_at,a.score,a.grade,a.submitted FROM test_attempts a LEFT JOIN tests t ON t.test_id=a.test_id WHERE a.telegram_id=? ORDER BY COALESCE(a.finished_at,a.started_at) DESC",(m.from_user.id,)).fetchall()
-  if not rows:return await m.answer("Hozircha test natijangiz yo‘q.",reply_markup=user_menu())
-  lines=['MENING NATIJALARIM','']
+  rows=db.test_history_for_user(m.from_user.id,m.from_user.id,ADMIN,only_submitted=True)
+  if not rows:return await m.answer("Hozircha yakunlangan test natijangiz yo‘q.",reply_markup=user_menu())
+  lines=['MENING NATIJALARIM']
   for i,row in enumerate(rows[:15],1):
-   name=str(row['name'] or 'Test')
+   name=str(row['test_name'] or 'Test')
    code=str(row['code'] or 'kod yo‘q')
    if row['submitted']:
     status=f"Natija: {float(row['score'] or 0):.2f} ball"
@@ -1849,8 +1851,8 @@ def register(core,dp,bot,webapp_url):
    else:
     status='Holat: Yakunlanmagan'
     mark=None
-   lines.append(f"{i}. {name}\n   Kod: {code}\n   {status}"+(f"\n   {mark}" if mark else ''))
-  await m.answer('\n\n'.join(lines),reply_markup=user_menu())
+   lines.append(f"{i}. {name} · Kod: {code} · {status}"+(f" · {mark}" if mark else ''))
+  await m.answer('\n'.join(lines),reply_markup=user_menu())
  @r.message(F.text=='Pulli testlar')
  async def paid_tests_menu(m:Message):
   if m.from_user.id==ADMIN:
