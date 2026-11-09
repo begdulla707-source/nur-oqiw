@@ -1292,21 +1292,14 @@ def register(core,dp,bot,webapp_url):
   if int(t['is_mock'] or 0) and int(t['active']):
    finalized=await finish_mock_test(t,'admin')
    return {'ok':True,'active':False,'finalized':finalized,'message':'MOCK test to‘xtatildi. Qatnashchilar hisoblandi va natijalar PDF’i yuborildi.'}
-  if int(t['is_mock'] or 0) and t['timer_ends_at']:
-   try:
-    deadline=datetime.fromisoformat(str(t['timer_ends_at']).replace('Z','+00:00'))
-    if deadline.tzinfo is None:deadline=deadline.replace(tzinfo=TZ)
-    if datetime.now(TZ)>=deadline.astimezone(TZ):return {'ok':False,'error':'mock_timer_ended'}
-   except Exception:pass
+  if int(t['is_mock'] or 0):
+   return {'ok':False,'error':'mock_needs_retake','message':'MOCK testni qayta o‘tkazish tugmasi bilan yangi turga tayyorlang, so‘ng TESTNI BOSHLASHni bosing.'}
   if int(t['active']):
    # Closing pauses, rather than forcibly submitting, in-progress answers.
    # Reopening therefore lets learners resume their existing attempt.
    db.set_test_active(test_id,0)
    return {'ok':True,'active':False,'finalized':0,'message':'Test vaqtincha yopildi. Yakunlanmagan urinishlar va javoblar saqlandi; qayta ochilganda davom ettirish mumkin.'}
   db.set_test_active(test_id,1)
-  if int(t['is_mock'] or 0):
-   db.set_test_published(test_id,1)
-   for key in ('mock_results_pdf_sent_'+test_id,'mock_timer_message_final_'+test_id,'mock_timer_updated_'+test_id,'mock_results_pdf_try_'+test_id):db.set_setting(key,'')
   return {'ok':True,'active':True,'finalized':0,'message':'Test qayta ochildi.'}
  @core.app.post('/api/admin/jarvis/action')
  async def admin_jarvis_action(p:dict,req:Request):
