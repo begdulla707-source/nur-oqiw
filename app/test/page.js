@@ -91,16 +91,17 @@ const Written=memo(function Written({questionId,answer,onSave}){
   selection.current={start:old.length,end:old.length};
   applyValue(old,false);
  };
+ const fraction=value.match(/^\s*([^/]+)\s*\/\s*([^/]+)\s*$/);
  return <div className="written-answer" ref={rootRef}>
   <div className="written-input-wrap">
    <input ref={inputRef} value={value} inputMode="none" readOnly spellCheck={false} autoComplete="off"
      onChange={e=>{selection.current={start:e.target.selectionStart??e.target.value.length,end:e.target.selectionEnd??e.target.value.length};applyValue(e.target.value)}}
      onSelect={e=>{selection.current={start:e.currentTarget.selectionStart??valueRef.current.length,end:e.currentTarget.selectionEnd??valueRef.current.length}}}
-     onFocus={()=>setKeyboardOpen(true)} onClick={()=>setKeyboardOpen(true)} onBlur={flush} className="answer-input" placeholder="Javobıńızdı kiritiń..." aria-label="Yozma javob"/>
+     onFocus={()=>setKeyboardOpen(true)} onClick={()=>setKeyboardOpen(true)} onBlur={flush} className={'answer-input'+(fraction?' has-fraction':'')} placeholder="Javobıńızdı kiritiń..." aria-label="Yozma javob"/>
+   {fraction&&<span className="written-fraction-preview" aria-hidden="true"><b>{fraction[1].trim()}</b><i/><b>{fraction[2].trim()}</b></span>}
    <button type="button" className="keyboard-switch" aria-label="Matematik klaviaturani ochish yoki yopish"
     onClick={()=>{setKeyboardOpen(open=>!open);inputRef.current?.blur()}}><MathIcon name="keyboard"/></button>
   </div>
-  {(()=>{const fraction=value.match(/^\s*([^/]+)\s*\/\s*([^/]+)\s*$/);return fraction?<span className="written-fraction-preview" aria-label={'Kasr '+fraction[1]+' bo‘lingan '+fraction[2]}><b>{fraction[1].trim()}</b><i/><b>{fraction[2].trim()}</b></span>:null})()}
   {keyboardOpen&&<div className="written-keyboard" aria-label="Matematik klaviatura">
    <div className="keyboard-toolbar">
     <div className="keyboard-tabs" role="tablist" aria-label="Belgilar turi">{MATH_TABS.map(t=><button type="button" key={t.key} role="tab" aria-selected={tab===t.key} className={tab===t.key?'active':''} onClick={()=>setTab(t.key)}>{t.title}</button>)}</div>
@@ -126,6 +127,8 @@ const Question=memo(function Question({q,number,answer,onChoose}){
 });
 export default function Test(){
  const answerQueue=useRef({});
+ const unsavedAnswers=useRef({});
+ const timedFinishAttempted=useRef(false);
  const [initData,setInitData]=useState('');
  const [questions,setQuestions]=useState([]);
  const [answers,setAnswers]=useState({});
@@ -175,6 +178,7 @@ export default function Test(){
  useEffect(()=>{if(!endsAt)return;const clock=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(clock)},[endsAt]);
  const choose=useCallback(async(id,value)=>{
   if(value===undefined||value===null)return;
+  unsavedAnswers.current[id]=value;
   setAnswers(old=>old[id]===value?old:{...old,[id]:value});setMessage('');
   const previous=answerQueue.current[id]||Promise.resolve();
   const task=previous.catch(()=>{}).then(async()=>{
@@ -182,7 +186,7 @@ export default function Test(){
    const data=await response.json();if(!data.ok){if(isMock&&(data.error==='already_submitted'||data.error==='test_stopped'||data.error==='mock_timer_ended')){setStatus('done');setMessage('Test tugadi. Javoblar tez orada e’lon qilinadi.')}throw new Error(data.error||'save_failed')}return data;
   });
   answerQueue.current[id]=task;
-  try{await task}catch{setMessage('Javob saqlanmadi. Internetni tekshirib, qayta tanlang.')}finally{
+  try{await task;if(unsavedAnswers.current[id]===value)delete unsavedAnswers.current[id];return true}catch{setMessage('Javob saqlanmadi. Internetni tekshirib, qayta tanlang.');return false}finally{
    if(answerQueue.current[id]===task)delete answerQueue.current[id];
   }
  },[initData,code,codeFromUrl,isMock]);
@@ -201,7 +205,7 @@ export default function Test(){
     setMessage(data.error==='test_closed'?'Test hozir yopiq.':data.error==='subscription_required'?'Avval majburiy kanallarga obuna bo‘ling.':'Qayta boshlanmadi. Qayta urinib ko‘ring.');
     return;
    }
-   answerQueue.current={};
+   answerQueue.current={};unsavedAnswers.current={};timedFinishAttempted.current=false;
    setAnswers({});setQuestions([]);setScore(null);setGrade('');setCorrectCount(null);setTotalQuestions(null);
    setMessage('');setCanRetry(false);setStatus('loading');
    await load(initData);
@@ -218,7 +222,14 @@ export default function Test(){
   try{
    window.dispatchEvent(new Event('nur-flush-test-answers'));
    await Promise.resolve();
-   await Promise.all(Object.values(answerQueue.current).map(p=>p.catch(()=>{})));
+   await Promise.allSettled(Object.values(answerQueue.current));
+   const pending=Object.entries(unsavedAnswers.current);
+   if(pending.length){
+    const saved=await Promise.all(pending.map(([id,value])=>choose(id,value)));
+    if(saved.some(ok=>!ok)||Object.keys(unsavedAnswers.current).length){
+     setMessage('Ba’zi javoblar saqlanmadi. Internetni tekshirib, testni qayta yakunlang.');return;
+    }
+   }
    const response=await fetch(API+'/api/test/finish',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'tma '+initData},body:JSON.stringify({initData,code:code||codeFromUrl,participant_name:cleanName})});
    const data=await response.json();
    if(data.ok||data.error==='already_submitted'){const mock=Boolean(isMock||data.is_mock);setScore(mock?null:data.score??null);setGrade(mock?'':data.grade||'');setCorrectCount(mock?null:data.correct_count??null);setTotalQuestions(mock?null:data.total_questions??questions.length);setStatus('done');setCanRetry(!mock);setMessage(mock?'Test tugadi. Javoblar tez orada e’lon qilinadi.':'Test yakunlandi. Natijangiz saqlandi.')}
@@ -228,9 +239,9 @@ export default function Test(){
     if(data.error==='participant_name_required')document.querySelector('.inline-mock-name input')?.focus();
    }
   }catch{setMessage('Natijani saqlashda xatolik. Qayta urinib ko‘ring.')}finally{setFinishBusy(false)}
- },[status,finishBusy,initData,code,codeFromUrl,questions.length,isMock,name,endsAt]);
+ },[status,finishBusy,initData,code,codeFromUrl,questions.length,isMock,name,endsAt,choose]);
  const seconds=endsAt?Math.max(0,Math.ceil((new Date(endsAt).getTime()-now)/1000)):null;
- useEffect(()=>{if(status==='test'&&seconds===0&&endsAt)finish()},[status,seconds,endsAt,finish]);
+ useEffect(()=>{if(status==='test'&&seconds===0&&endsAt&&!timedFinishAttempted.current){timedFinishAttempted.current=true;finish()}},[status,seconds,endsAt,finish]);
  const answered=Object.keys(answers).filter(k=>String(answers[k]??'').trim()).length;
  const orderedQuestions=useMemo(()=>questions.map((q,i)=>({...q,_originalIndex:i})).sort((a,b)=>(a.kind==='written'?1:0)-(b.kind==='written'?1:0)||a._originalIndex-b._originalIndex),[questions]);
  if(status==='loading')return <main className="test-loading" aria-label="Test"><div className="loading-mark" role="status" aria-label="Test yuklanmoqda"></div><p>Test ochilmoqda…</p></main>;
@@ -244,3 +255,4 @@ export default function Test(){
   <footer className="test-finish-panel"><div><strong>{answered} / {questions.length}</strong><span>savolga javob berildi</span></div><button type="button" onClick={finish} disabled={finishBusy||(isMock&&name.trim().split(/\s+/).filter(Boolean).length<2&&seconds!==0)}>{finishBusy?'Saqlanmoqda...':'Testni yakunlash'}</button></footer>
  </main>
 }
+
