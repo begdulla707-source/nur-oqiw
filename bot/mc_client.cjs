@@ -5,6 +5,22 @@
 const readline = require('node:readline');
 const crypto = require('node:crypto');
 
+function safeText(value) {
+  function flatten(v) {
+    if (typeof v === 'string') {
+      if (/^[\s]*[\[{]/.test(v)) { try { const parsed = JSON.parse(v); if (typeof parsed === 'object') return flatten(parsed); } catch {} }
+      return v;
+    }
+    if (Array.isArray(v)) return v.map(flatten).join('');
+    if (!v || typeof v !== 'object') return '';
+    if (v.type === 'string') return String(v.value || '');
+    if (v.type && v.value !== undefined) return flatten(v.value);
+    return ['text', 'translate', 'with', 'extra'].filter(k => v[k] !== undefined).map(k => flatten(v[k])).join('');
+  }
+  return flatten(value).replace(/§[0-9A-FK-OR]/ig, '')
+    .replace(/\/(login|register|reg|l)\s+\S+(?:\s+\S+)?/ig, '/$1 [yashirildi]').slice(0, 1200);
+}
+
 class Manager {
   constructor({ createBot, Captcha, emit, setTimer = setTimeout, clearTimer = clearTimeout }) {
     Object.assign(this, { createBot, Captcha, emit, setTimer, clearTimer });
@@ -33,34 +49,51 @@ class Manager {
 
   connect(s) {
     if (!s.live) return;
-    s.status = 'connecting'; s.waiting = null; s.sentCaptcha = false; s.loginNeeded = false;
+    s.status = 'connecting'; s.waiting = null; s.sentCaptcha = false; s.loginNeeded = false; s.lastKick = '';
     const generation = ++s.generation;
     this.emit({ event: 'status', id: s.cfg.id, status: 'connecting' });
     let bot;
     try {
+      const version = s.cfg.version || (s.cfg.host.toLowerCase() === 'mc.minestax.uz' ? '1.16.5' : false);
       bot = this.createBot({ host: s.cfg.host, port: s.cfg.port, username: s.cfg.username,
-        auth: 'offline', version: s.cfg.version || false, viewDistance: 'tiny' });
+        auth: 'offline', version, viewDistance: 'tiny', connectTimeout: 20000 });
       s.bot = bot;
       const captcha = new this.Captcha(bot, { delay: 200 });
-      let imageTimer = null;
-      let imageDeadline = Date.now() + 60000;
-      captcha.on('imageReady', ({ data, image }) => {
-        if (!s.live || generation !== s.generation || s.sentCaptcha || Date.now() > imageDeadline ||
-            (data?.facing && data.facing !== 'forward')) return;
+      let imageTimer = null, bestImage = null, reachedLogin = false;
+      let imageDeadline = Date.now() + 120000;
+      const capture = ({ data, image }) => {
+        if (!s.live || generation !== s.generation || s.sentCaptcha || Date.now() > imageDeadline || !image) return;
+        const score = (data?.facing === 'forward' ? 1000 : 0) + (data?.frames?.length || 0);
+        if (!bestImage || score >= bestImage.score) bestImage = { image, score };
         s.waiting = { state: 'assembling' };
-        if (imageTimer) this.clearTimer(imageTimer);
+        if (imageTimer) return;
         imageTimer = this.later(s, async () => {
           try {
             if (!s.live || generation !== s.generation || s.sentCaptcha) return;
-            const bytes = await image.png().toBuffer();
+            const candidate = bestImage; imageTimer = null; bestImage = null;
+            if (!candidate) return;
+            const bytes = await candidate.image.png().toBuffer();
             if (!s.live || generation !== s.generation || s.sentCaptcha || bytes.length > 1500000) return;
             const challenge = crypto.randomBytes(8).toString('hex');
             s.waiting = { state: 'ready', challenge };
             s.sentCaptcha = true;
             this.emit({ event: 'captcha', id: s.cfg.id, challenge, image: bytes.toString('base64') });
           } catch { this.emit({ event: 'error', id: s.cfg.id, code: 'captcha_image_failed' }); }
-        }, 800);
+        }, 1100);
+      };
+      captcha.on('imageReady', capture);
+      captcha.on('inventoryInfo', capture);
+      bot.on('login', () => {
+        if (!s.live || generation !== s.generation) return;
+        reachedLogin = true; s.status = 'verifying';
+        this.emit({ event: 'status', id: s.cfg.id, status: 'verifying' });
       });
+      this.later(s, () => {
+        if (!reachedLogin && s.bot && generation === s.generation) {
+          s.lastKick = 'Ulanish vaqti tugadi';
+          try { s.bot.quit(); } catch {}
+        }
+      }, 30000);
       bot.on('spawn', () => {
         if (!s.live || generation !== s.generation) return;
         s.status = 'connected'; this.emit({ event: 'status', id: s.cfg.id, status: 'connected' });
@@ -69,17 +102,17 @@ class Manager {
       });
       bot.on('messagestr', (message, position, _json, sender) => {
         if (!s.live || generation !== s.generation) return;
-        const safe = String(message || '').replace(/\/(login|register|l)\s+\S+(?:\s+\S+)?/ig, '/$1 [yashirildi]').slice(0, 1200);
+        const safe = safeText(String(message || ''));
         if (!safe) return;
         // Ordinary chat is shown only to the owner's private Telegram chat.
-        this.emit({ event: 'chat', id: s.cfg.id, text: safe });
+        this.emit({ event: 'chat', id: s.cfg.id, text: safe, position });
         if (sender) return;
         if (/(?:captcha|капч).{0,40}(?:wrong|incorrect|invalid|неверн|noto.g.ri|xato)/i.test(safe)) {
-          s.sentCaptcha = false; s.waiting = null; imageDeadline = Date.now() + 60000;
+          s.sentCaptcha = false; s.waiting = null; imageDeadline = Date.now() + 120000;
         }
-        if (/\/(?:login|register)\b|авторизац|войдите|log\s*in/i.test(safe)) {
+        if (/\/(?:login|register|reg)\b|авторизац|войдите|log\s*in/i.test(safe)) {
           s.loginNeeded = true;
-          this.emit({ event: 'status', id: s.cfg.id, status: 'login_needed' });
+          this.emit({ event: 'status', id: s.cfg.id, status: 'login_needed', auth_mode: /register|регистрац|\breg\b/i.test(safe) ? 'register' : 'login' });
         }
         if (/successfully (?:logged|authenticated)|успешн.{0,30}(?:вход|авторизац)|muvaffaqiyatli.{0,30}(?:kir|tasdiq)/i.test(safe)) {
           s.loginNeeded = false; this.scheduleJoin(s, generation, 4000);
@@ -88,12 +121,13 @@ class Manager {
         if (/(?:server|сервер).{0,30}(?:full|полон|to.la)|(?:full|полон).{0,30}(?:server|сервер)/i.test(safe))
           this.scheduleJoin(s, generation, 60000);
       });
-      bot.on('error', () => this.emit({ event: 'error', id: s.cfg.id, code: 'connection_error' }));
+      bot.on('kicked', reason => { if (generation === s.generation) s.lastKick = safeText(reason); });
+      bot.on('error', error => this.emit({ event: 'error', id: s.cfg.id, code: 'connection_error', detail: safeText(error?.message || '') }));
       let ended = false;
       bot.on('end', () => {
         if (ended || generation !== s.generation) return; ended = true;
         this.clearTimers(s); s.bot = null; s.waiting = null; s.status = 'reconnecting';
-        this.emit({ event: 'status', id: s.cfg.id, status: 'reconnecting', retry_seconds: Math.round(s.delay / 1000) });
+        this.emit({ event: 'status', id: s.cfg.id, status: 'reconnecting', reason: s.lastKick, retry_seconds: Math.round(s.delay / 1000) });
         const delay = s.delay; s.delay = Math.min(s.delay * 2, 300000);
         this.later(s, () => this.connect(s), delay);
       });
@@ -107,17 +141,17 @@ class Manager {
 
   scheduleJoin(s, generation, delay) {
     this.later(s, () => {
-      if (!s.bot || generation !== s.generation || s.waiting || s.loginNeeded ||
+      if (!s.bot || s.bot._client?.state !== 'play' || generation !== s.generation || s.waiting || s.loginNeeded ||
           Date.now() - s.lastJoin < 55000) return;
       if (s.cfg.host.toLowerCase() !== 'mc.minestax.uz') return;
-      try { s.bot.chat('/boxpvp'); s.lastJoin = Date.now(); }
+      try { s.bot.chat('/boxpvp'); s.lastJoin = Date.now(); this.emit({ event: 'status', id: s.cfg.id, status: 'joining_mode' }); }
       catch { this.emit({ event: 'error', id: s.cfg.id, code: 'join_failed' }); }
     }, delay);
   }
 
   answer(id, challenge, text) {
     const s = this.sessions.get(id);
-    if (!s?.bot || !s.waiting || s.waiting.challenge !== challenge || !/^[A-Za-z0-9]{1,32}$/.test(text)) return false;
+    if (!s?.bot || s.bot._client?.state !== 'play' || !s.waiting || s.waiting.challenge !== challenge || !/^[A-Za-z0-9]{1,32}$/.test(text)) return false;
     try { s.bot.chat(text); } catch { return false; }
     s.waiting = null;
     this.emit({ event: 'captcha_submitted', id, challenge });
@@ -127,13 +161,13 @@ class Manager {
 
   message(id, text) {
     const s = this.sessions.get(id);
-    if (!s?.bot || typeof text !== 'string' || !text.trim() || text.length > 256 || /[\r\n]/.test(text)) return false;
+    if (!s?.bot || s.bot._client?.state !== 'play' || typeof text !== 'string' || !text.trim() || text.length > 256 || /[\r\n]/.test(text)) return false;
     try { s.bot.chat(text); return true; } catch { return false; }
   }
 
   tab(id) {
     const s = this.sessions.get(id);
-    if (!s?.bot || !s.bot.players) return null;
+    if (!s?.bot || s.bot._client?.state !== 'play' || !s.bot.players) return null;
     return Object.keys(s.bot.players).filter(name => /^[A-Za-z0-9_]{1,16}$/.test(name)).sort().slice(0, 200);
   }
 
@@ -171,4 +205,4 @@ if (require.main === module) {
   }).on('close', () => { manager.command({ action: 'shutdown' }); process.exit(0); });
 }
 
-module.exports = { Manager };
+module.exports = { Manager, safeText };

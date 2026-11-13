@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { Manager } = require('../bot/mc_client.cjs');
+const { Manager, safeText } = require('../bot/mc_client.cjs');
 
 function fixture() {
   const events = [], bots = [], scheduled = [];
@@ -10,7 +10,7 @@ function fixture() {
   const manager = new Manager({
     Captcha,
     createBot: options => {
-      const bot = new EventEmitter(); bot.options = options; bot.sent = [];
+      const bot = new EventEmitter(); bot.options = options; bot.sent = []; bot._client = { state: 'play' };
       bot.chat = text => bot.sent.push(text); bot.quit = () => {}; bot.players = { Alex: {}, Steve: {} };
       bots.push(bot); return bot;
     },
@@ -26,7 +26,7 @@ test('captcha challenge is account-scoped, answered once, and old code rejected'
   const f = fixture(); f.start('abcde123'); f.start('abcde456');
   const image = { png: () => ({ toBuffer: async () => Buffer.from('png-test') }) };
   f.bots[0].captcha.emit('imageReady', { data: { facing: 'forward' }, image });
-  await f.scheduled.find(t => t.ms === 800).fn();
+  await f.scheduled.find(t => t.ms === 1100).fn();
   const event = f.events.find(x => x.event === 'captcha');
   assert.equal(event.id, 'abcde123');
   assert.equal(f.manager.answer('abcde456', event.challenge, 'Ab9'), false);
@@ -39,13 +39,32 @@ test('captcha challenge is account-scoped, answered once, and old code rejected'
 
 test('disconnect invalidates captcha and schedules increasing reconnect delay', () => {
   const f = fixture(); f.start('abcde123'); const first = f.bots[0];
+  assert.equal(first.options.version, '1.16.5');
+  first.emit('kicked', { type: 'compound', value: { text: { type: 'string', value: 'Tekshiruvdan o‘tmadi' } } });
   first.emit('end');
+  assert.ok(f.events.some(e => e.status === 'reconnecting' && e.reason === 'Tekshiruvdan o‘tmadi'));
   assert.equal(f.manager.message('abcde123', 'hello'), false);
   const timer = f.scheduled.find(t => t.ms === 30000 && !t.cancelled);
   assert.ok(timer); timer.fn();
   assert.equal(f.bots.length, 2);
   f.bots[1].emit('end');
   assert.ok(f.scheduled.some(t => t.ms === 60000 && !t.cancelled));
+  f.manager.stop('abcde123');
+});
+
+test('server kick components are readable and credentials are redacted', () => {
+  assert.equal(safeText('{"text":"Sabab: ","extra":[{"text":"xato"}]}'), 'Sabab: xato');
+  assert.equal(safeText('/register secret secret'), '/register [yashirildi]');
+});
+
+test('hand-map captcha is captured while in verification before spawn', async () => {
+  const f = fixture(); f.start('abcde123'); const bot = f.bots[0];
+  bot.emit('login');
+  const image = { png: () => ({ toBuffer: async () => Buffer.from('png-test') }) };
+  bot.captcha.emit('inventoryInfo', { data: {}, image });
+  await f.scheduled.find(t => t.ms === 1100).fn();
+  assert.ok(f.events.some(e => e.status === 'verifying'));
+  assert.ok(f.events.some(e => e.event === 'captcha'));
   f.manager.stop('abcde123');
 });
 

@@ -64,6 +64,12 @@ async def main_test():
     assert commands[-1][0] == 'start'
     await feed('Chat / buyruq'); await feed('/boxpvp')
     assert commands[-1] == ('message', {'id': account_id, 'text': '/boxpvp'})
+    await feed('Kirish /login'); await feed('SecretLogin1')
+    assert commands[-1] == ('message', {'id': account_id, 'text': '/login SecretLogin1'})
+    await feed('Ro‘yxatdan o‘tish'); await feed('SecretReg1')
+    assert commands[-1] == ('message', {'id': account_id, 'text': '/register SecretReg1 SecretReg1'})
+    assert 'SecretLogin1' not in str(db.get_setting('minecraft_afk_accounts_v1', ''))
+    assert 'SecretReg1' not in str(db.get_setting('minecraft_afk_accounts_v1', ''))
     await feed('TAB')
     assert commands[-1] == ('tab', {'id': account_id})
     main.minecraft_afk.pending_captchas[77] = {'id': account_id, 'challenge': 'challenge1'}
@@ -72,6 +78,18 @@ async def main_test():
     main.minecraft_afk.pending_captchas[78] = {'id': account_id, 'challenge': 'challenge2'}
     await feed('c2D')
     assert commands[-1] == ('answer', {'id': account_id, 'challenge': 'challenge2', 'text': 'c2D'})
+    bridge = main.minecraft_afk
+    bridge.enqueue_chat({'id': account_id, 'text': 'Server xabari', 'position': 'system'})
+    bridge.enqueue_chat({'id': account_id, 'text': '/login SecretLogin1', 'position': 'system'})
+    await asyncio.sleep(1.3)
+    texts = [str(getattr(call, 'text', '') or '') for call in session.calls]
+    assert any('Server xabari' in text and '[yashirildi]' in text and 'SecretLogin1' not in text for text in texts)
+    await bridge.notify_status({'id': account_id, 'status': 'reconnecting', 'reason': 'Tekshiruvdan o‘tmadi', 'retry_seconds': 30})
+    assert 'Tekshiruvdan o‘tmadi' in session.calls[-1].text
+    bridge.statuses[account_id] = 'verifying'
+    await bridge.deliver_captcha({'id': account_id, 'challenge': 'challenge3',
+        'image': base64.b64encode(b'\x89PNG\r\n\x1a\nTEST').decode()})
+    assert any(item['challenge'] == 'challenge3' for item in bridge.pending_captchas.values())
     await feed('Orqaga qaytish')
     assert db.get_user(123)['state'] == 'admin'
     db.ensure_user(456)

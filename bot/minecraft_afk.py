@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import secrets
+import time
 from pathlib import Path
 
 from aiogram import F, Router
@@ -38,6 +39,7 @@ def menu():
         [_button('Serverga kirish', 'server'), _button('Akkaunt qo‘shish', 'add')],
         [_button('Akkauntlar', 'list'), _button('TAB', 'tab')],
         [_button('Chat / buyruq', 'chat'), _button('Ulanishni boshlash', 'server')],
+        [_button('Kirish /login', 'server'), _button('Ro‘yxatdan o‘tish', 'add')],
         [_button('Ulanishni to‘xtatish', 'stop')],
         [_button('Orqaga qaytish', 'back')],
     ], resize_keyboard=True, is_persistent=True)
@@ -96,6 +98,11 @@ class MinecraftBridge:
         self.selected = None
         self.closing = False
         self.restore_task = None
+        self.chat_buffers = {}
+        self.chat_tasks = {}
+        self.last_notices = {}
+        self.last_verification_message = {}
+        self.chat_delivery_logged = set()
 
     async def start_process(self):
         async with self.start_lock:
@@ -149,13 +156,17 @@ class MinecraftBridge:
                     if future and not future.done(): future.set_result(event.get('result'))
                 elif event.get('event') == 'captcha':
                     asyncio.create_task(self.deliver_captcha(event))
+                elif event.get('event') == 'chat':
+                    self.enqueue_chat(event)
                 elif event.get('event') == 'status':
                     account_id, status = event.get('id'), event.get('status')
                     self.statuses[account_id] = status
                     if status in ('connecting', 'reconnecting', 'stopped'):
                         self.clear_captchas(account_id)
-                    if status == 'login_needed':
-                        asyncio.create_task(self.notify_login(account_id))
+                    if status in ('verifying', 'connected', 'login_needed', 'joining_mode', 'reconnecting'):
+                        asyncio.create_task(self.notify_status(event))
+                elif event.get('event') == 'error':
+                    asyncio.create_task(self.notify_status(event))
         except (OSError, ValueError, asyncio.CancelledError):
             pass
         finally:
@@ -169,11 +180,68 @@ class MinecraftBridge:
     def clear_captchas(self, account_id):
         self.pending_captchas = {mid: item for mid, item in self.pending_captchas.items() if item['id'] != account_id}
 
-    async def notify_login(self, account_id):
-        account = next((x for x in accounts() if x.get('id') == account_id), None)
-        if account:
-            try: await self.bot.send_message(self.admin, account['username'] + ': server login so‘rayapti. Chat / buyruq bo‘limidan kiriting.')
-            except Exception: LOG.warning('Could not notify owner about login prompt')
+    async def notify_status(self, event):
+        account_id = event.get('id')
+        account = next((x for x in await asyncio.to_thread(accounts) if x.get('id') == account_id), None)
+        if not account: return
+        status = event.get('status') or event.get('code', 'error')
+        reason = str(event.get('reason') or event.get('detail') or '').strip()[:700]
+        key = (account_id, status, reason)
+        now = time.monotonic()
+        if now - self.last_notices.get(key, -10000) < 90: return
+        self.last_notices[key] = now
+        LOG.info('Minecraft account=%s status=%s reason=%s', account_id, status, reason[:150])
+        if status == 'verifying': text = 'Serverga ulandi. Tekshiruv davom etmoqda.'
+        elif status == 'connected': text = 'Minecraft o‘yin holati ochildi.'
+        elif status == 'login_needed':
+            text = 'Server ro‘yxatdan o‘tishni so‘rayapti. Ro‘yxatdan o‘tish tugmasini bosing.' if event.get('auth_mode') == 'register' else 'Server login so‘rayapti. Kirish /login tugmasini bosing.'
+        elif status == 'joining_mode': text = '/boxpvp buyrug‘i yuborildi. Server javobini kuting.'
+        elif status == 'reconnecting':
+            text = 'Ulanish uzildi.' + ('\nSabab: ' + reason if reason else '')
+            text += '\nQayta urinish: ' + str(event.get('retry_seconds') or 30) + ' soniyadan keyin.'
+        else: text = 'Ulanishda xato.' + ('\n' + reason if reason else '')
+        try:
+            await self.bot.send_message(self.admin, account['username'] + ': ' + text, parse_mode=None)
+            LOG.info('Minecraft status delivered: account=%s status=%s', account_id, status)
+        except Exception: LOG.warning('Could not send Minecraft status')
+
+    def enqueue_chat(self, event):
+        if event.get('position') == 'game_info': return
+        account_id = event.get('id')
+        text = str(event.get('text') or '').strip()[:1200]
+        text = re.sub(r'/(login|register|reg|l)\s+\S+(?:\s+\S+)?', r'/\1 [yashirildi]', text, flags=re.I)
+        if not account_id or not text: return
+        # NullCordX repeats the same verification notice once a second.
+        if re.search(r'tekshiruv davom etmoqda', text, re.I):
+            now = time.monotonic()
+            if now - self.last_verification_message.get(account_id, -10000) < 15: return
+            self.last_verification_message[account_id] = now
+        buffer = self.chat_buffers.setdefault(account_id, [])
+        if len(buffer) >= 100: return
+        buffer.append(text)
+        task = self.chat_tasks.get(account_id)
+        if not task or task.done():
+            self.chat_tasks[account_id] = asyncio.create_task(self.flush_chat(account_id))
+
+    async def flush_chat(self, account_id):
+        try:
+            while self.chat_buffers.get(account_id) and not self.closing:
+                await asyncio.sleep(1)
+                account = next((x for x in await asyncio.to_thread(accounts) if x.get('id') == account_id), None)
+                if not account: self.chat_buffers.pop(account_id, None); return
+                buffer = self.chat_buffers[account_id]
+                batch, size = [], 0
+                while buffer and len(batch) < 15 and size + len(buffer[0]) < 3500:
+                    item = buffer.pop(0); batch.append(item); size += len(item) + 1
+                if not batch: batch.append(buffer.pop(0)[:1200])
+                try:
+                    await self.bot.send_message(self.admin, 'Minecraft chat · ' + account['username'] + '\n\n' + '\n'.join(batch), parse_mode=None)
+                    if account_id not in self.chat_delivery_logged:
+                        self.chat_delivery_logged.add(account_id)
+                        LOG.info('Minecraft chat relay active: account=%s', account_id)
+                except Exception: LOG.warning('Could not relay Minecraft chat')
+        finally:
+            self.chat_tasks.pop(account_id, None)
 
     async def deliver_captcha(self, event):
         account_id, challenge = event.get('id'), event.get('challenge')
@@ -185,11 +253,12 @@ class MinecraftBridge:
             self.clear_captchas(account_id)
             message = await self.bot.send_photo(
                 self.admin, BufferedInputFile(image, filename='captcha.png'),
-                caption=f"{account['username']} — captcha. Javobni shu rasmga Reply qiling yoki AFK menyusida oddiy yozing.",
+                caption=f"{account['username']} — captcha. Javobni tezroq shu rasmga Reply qiling yoki AFK menyusida oddiy yozing.",
             )
             # An event from a closed connection must not become a fresh challenge.
-            if self.statuses.get(account_id) not in ('connecting', 'connected', 'login_needed'): return
+            if self.statuses.get(account_id) not in ('connecting', 'verifying', 'connected', 'login_needed', 'joining_mode'): return
             self.pending_captchas[message.message_id] = {'id': account_id, 'challenge': challenge}
+            LOG.info('Minecraft captcha image delivered: account=%s', account_id)
         except Exception:
             LOG.warning('Could not send captcha image')
 
@@ -209,6 +278,7 @@ class MinecraftBridge:
     async def shutdown(self):
         self.closing = True
         if self.restore_task: self.restore_task.cancel()
+        for task in list(self.chat_tasks.values()): task.cancel()
         if self.proc and self.proc.returncode is None:
             try:
                 self.proc.stdin.write(b'{"action":"shutdown"}\n')
@@ -263,6 +333,23 @@ def register(core, dispatcher, bot):
         if text == 'Orqaga qaytish':
             db.update_user(core.ADMIN, state='admin')
             return await message.answer('Admin boshqaruv menyusi.', reply_markup=core.admin_kb())
+        if state in ('minecraft_login_password', 'minecraft_register_password'):
+            selected = next((a for a in accounts() if a.get('id') == bridge.selected), None)
+            if not selected:
+                db.update_user(core.ADMIN, state='minecraft_menu')
+                return await message.answer('Avval akkauntni tanlang.', reply_markup=menu())
+            if any(item['id'] == selected['id'] for item in bridge.pending_captchas.values()):
+                return await message.answer('Avval captcha rasmiga Reply qilib javob bering.')
+            if not text or len(text) > 100 or re.search(r'\s', text):
+                return await message.answer('Parolni bo‘sh joysiz, 1–100 belgi bilan yuboring.')
+            try: await message.delete()
+            except Exception: pass
+            command = '/login ' + text if state == 'minecraft_login_password' else '/register ' + text + ' ' + text
+            result = await bridge.send('message', id=selected['id'], text=command)
+            if result:
+                db.update_user(core.ADMIN, state='minecraft_menu')
+                return await message.answer('Buyruq serverga yuborildi. Server javobini kuting.', reply_markup=menu())
+            return await message.answer('Ulanish yo‘q. Qayta ulangandan keyin parolni qayta yuboring.', reply_markup=back_keyboard())
         if text in ('Serverga kirish', 'Akkaunt qo‘shish'):
             if len(accounts()) >= 5: return await message.answer('Bir vaqtda ko‘pi bilan 5 ta akkaunt qo‘shish mumkin.')
             db.update_user(core.ADMIN, state='minecraft_ip')
@@ -303,6 +390,13 @@ def register(core, dispatcher, bot):
         selected = next((a for a in accounts() if a.get('id') == bridge.selected), None)
         if not selected and len(accounts()) == 1:
             selected = accounts()[0]; bridge.selected = selected['id']
+        if text in ('Kirish /login', 'Ro‘yxatdan o‘tish'):
+            if not selected: return await message.answer('Avval akkauntni tanlang.')
+            if any(item['id'] == selected['id'] for item in bridge.pending_captchas.values()):
+                return await message.answer('Avval captcha rasmiga Reply qilib javob bering.')
+            action = 'minecraft_login_password' if text == 'Kirish /login' else 'minecraft_register_password'
+            db.update_user(core.ADMIN, state=action)
+            return await message.answer('Server parolini yuboring. Bot uni alohida saqlamaydi; xabarni o‘chirishga harakat qilaman.', reply_markup=back_keyboard())
         if text == 'TAB':
             if not selected: return await message.answer('Avval Akkauntlar tugmasidan akkauntni tanlang.')
             players = await bridge.send('tab', id=selected['id'])
@@ -335,6 +429,9 @@ def register(core, dispatcher, bot):
             return await answer_captcha(message, matching[-1][0])
         if state == 'minecraft_chat':
             if not selected: return await message.answer('Avval akkauntni tanlang.')
+            if re.match(r'^/(?:login|register|reg|l)\s+', text, re.I):
+                try: await message.delete()
+                except Exception: pass
             result = await bridge.send('message', id=selected['id'], text=text)
             return await message.answer('Minecraft chatiga yuborildi.' if result else 'Xabar yuborilmadi: ulanish yoki matnni tekshiring.')
         await message.answer('Pastki menyudan amalni tanlang.', reply_markup=menu())

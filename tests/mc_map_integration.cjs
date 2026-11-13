@@ -15,7 +15,7 @@ test('a real framed-map renderer emits a PNG and forwards the answer', { timeout
   }
   const manager = new Manager({ Captcha,
     createBot: () => {
-      const bot = new EventEmitter(); bot._client = new EventEmitter();
+      const bot = new EventEmitter(); bot._client = new EventEmitter(); bot._client.state = 'play';
       bot.entity = { position: { x: 0, y: 64, z: 0 }, yaw: Math.PI, pitch: 0 };
       bot.chat = msg => sent.push(msg); bot.quit = () => {};
       fakeBot = bot; return bot;
