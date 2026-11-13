@@ -1673,9 +1673,12 @@ def register(core,dp,bot,webapp_url):
    if is_mock:
     reserved=db.start_mock_attempt_if_slot(t['test_id'],tid,datetime.now(TZ).isoformat())
     if reserved=='full':return {'ok':False,'error':'mock_participants_full','message':'MOCK test uchun qatnashchilar limiti to‘lgan.'}
-    if reserved!='started':return {'ok':False,'error':'mock_timer_ended','message':'MOCK test yopilgan.'}
+    if reserved=='closed':return {'ok':False,'error':'mock_timer_ended','message':'MOCK test yopilgan.'}
+    if reserved!='started':return {'ok':False,'error':'test_not_started','is_mock':True,'message':'Test boshlanmadi. Qayta oching.'}
    else:db.update_attempt(a['attempt_id'],started_at=datetime.now(TZ).isoformat(),status='active')
    a=db.get_attempt(t['test_id'],tid)
+   if not a or not a['started_at']:
+    return {'ok':False,'error':'test_not_started','is_mock':is_mock,'test_name':t['name']}
   if expired(a,t):
    sc,gr=finalize_expired(a,t);a=db.get_attempt(t['test_id'],tid);await notify_mock_finished(tid,t,a)
    if is_mock:return {'ok':False,'error':'already_submitted','is_mock':True,'test_name':t['name'],'full_name':display_name}
@@ -3018,3 +3021,4 @@ def register(core,dp,bot,webapp_url):
   await q.message.answer(f"Tarif yangilandi: {user['full_name'] or target} — {'PREMIUM' if tier=='premium' else 'ODDIY'}.")
   await q.answer('Saqlandi')
  dp.include_router(r)
+

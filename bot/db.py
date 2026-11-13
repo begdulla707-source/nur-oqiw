@@ -299,7 +299,7 @@ def mock_has_slot(tid,telegram_id):
         if not limit:return True
         a=c.execute("SELECT started_at FROM test_attempts WHERE test_id=? AND telegram_id=?",(str(tid),int(telegram_id))).fetchone()
         if a and a["started_at"]:return True
-        count=c.execute("SELECT COUNT(*) AS n FROM test_attempts WHERE test_id=? AND started_at IS NOT NULL",(str(tid),)).fetchone()
+        count=c.execute("SELECT COUNT(*) AS n FROM test_attempts WHERE test_id=? AND started_at IS NOT NULL AND started_at<>''",(str(tid),)).fetchone()
         return int(count["n"])<limit
 
 def start_mock_attempt_if_slot(tid,telegram_id,started_at):
@@ -320,10 +320,13 @@ def start_mock_attempt_if_slot(tid,telegram_id,started_at):
         if int(a["submitted"] or 0):return "submitted"
         limit=int(t["participant_limit"] or 0)
         if limit:
-            count=c.execute("SELECT COUNT(*) AS n FROM test_attempts WHERE test_id=? AND started_at IS NOT NULL",(str(tid),)).fetchone()
+            count=c.execute("SELECT COUNT(*) AS n FROM test_attempts WHERE test_id=? AND started_at IS NOT NULL AND started_at<>''",(str(tid),)).fetchone()
             if int(count["n"])>=limit:return "full"
-        c.execute("UPDATE test_attempts SET started_at=?,status='active' WHERE test_id=? AND telegram_id=? AND started_at IS NULL",
-                  (str(started_at),str(tid),int(telegram_id)))
+        changed=c.execute("UPDATE test_attempts SET started_at=?,status='active' WHERE test_id=? AND telegram_id=? AND (started_at IS NULL OR started_at='') AND submitted=0",
+                          (str(started_at),str(tid),int(telegram_id)))
+        if not changed.rowcount:
+            current=c.execute("SELECT started_at,submitted FROM test_attempts WHERE test_id=? AND telegram_id=?",(str(tid),int(telegram_id))).fetchone()
+            return 'started' if current and current['started_at'] and not int(current['submitted'] or 0) else 'missing'
     return "started"
 
 def close_mock_round(tid,closed_at):
@@ -666,3 +669,4 @@ def seed():
     # Test status is controlled only by the admin panel.
     return
 def seed_defaults():init();ensure_schema();seed()
+
