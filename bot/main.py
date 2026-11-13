@@ -568,17 +568,6 @@ async def close_telegram_client():
     _polling_task=None
     await bot.session.close()
 
-from .minecraft_afk import register as register_minecraft_afk
-minecraft_afk=register_minecraft_afk(__import__(__name__,fromlist=['*']),dp,bot)
-
-@app.on_event('startup')
-async def restore_minecraft_afk():
-    minecraft_afk.restore_task=asyncio.create_task(minecraft_afk.start_saved(),name='minecraft-restore')
-
-@app.on_event('shutdown')
-async def stop_minecraft_afk():
-    await minecraft_afk.shutdown()
-
 from .features_v2 import register as register_features
 register_features(__import__(__name__,fromlist=['*']),dp,bot,WEBAPP)
 menus.install(dp,__import__('bot.db',fromlist=['get_setting']),ADMIN,WEBAPP)
