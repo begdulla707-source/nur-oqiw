@@ -22,6 +22,7 @@ DEFAULTS = {
         ('Guruhlar holati', 'primary'), ('Guruhga xabar yuborish', 'primary'),
         ('Bildirishnoma', 'success'), ('Majburiy obuna', 'success'),
         ('Mini App admini', 'primary'), ('Menyu sozlamalari', 'primary'), ('MOCK menyu sozlamalari', 'primary'),
+        ('APK sozlamalari', 'primary'),
     ],
     'mock_admin': [
         ('Yangi MOCK test','primary'), ('MOCK testlar ro‘yxati','success'),
@@ -69,7 +70,8 @@ def items(db, role):
         style = cfg.get('style',default_style)
         if style not in COLORS: style = default_style
         label = str(cfg.get('label',name)).strip()[:55] or name
-        icon_id = str(cfg.get('emoji_id','')).strip()
+        default_icon = '5341715473882955310' if role == 'admin' and name == 'APK sozlamalari' else ''
+        icon_id = str(cfg.get('emoji_id',default_icon)).strip()
         visible = bool(cfg.get('visible',True)) or name in ('Menyu sozlamalari','Aktiv testlar','MOCK menyu sozlamalari','Orqaga qaytish')
         order = int(cfg.get('order',len(result))) if str(cfg.get('order',len(result))).lstrip('-').isdigit() else len(result)
         result.append({'key':name,'label':label,'style':style,'emoji_id':icon_id,'visible':visible,'order':order})
@@ -86,10 +88,12 @@ def keyboard(db, role, webapp_url, *, admin_entry=False):
     entries=[x for x in items(db,role) if x['visible']]
     rows=[]
     back=[x for x in entries if x['key']=='Orqaga qaytish']
-    entries=[x for x in entries if x['key']!='Orqaga qaytish']
+    afk=[x for x in entries if role=='admin' and x['key']=='APK sozlamalari']
+    entries=[x for x in entries if x['key']!='Orqaga qaytish' and not (role=='admin' and x['key']=='APK sozlamalari')]
     for n in range(0,len(entries),2):
         rows.append([button(x,webapp_url=webapp_url) for x in entries[n:n+2]])
     if back:rows.append([button(back[0],webapp_url=webapp_url)])
+    if afk:rows.append([button(afk[0],webapp_url=webapp_url)])
     if admin_entry:
         rows.append([KeyboardButton(text='Admin paneliga o‘tish')])
     return ReplyKeyboardMarkup(keyboard=rows,resize_keyboard=True,is_persistent=True)
@@ -283,3 +287,4 @@ def install(dp,db,admin_id,webapp_url):
         db.update_user(admin_id,state='admin')
         new_index=next(i for i,x in enumerate(items(db,role)) if x['key']==key)
         await m.answer('Saqlandi. Yangilangan tugmalar /start yoki menyu qayta ochilganda ko‘rinadi.\n\n'+details(role,new_index),reply_markup=editor(role,new_index))
+
