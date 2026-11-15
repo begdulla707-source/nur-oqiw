@@ -141,7 +141,8 @@ async def prompt_mock_subscription(message,test,link=None):
     return await message.answer('Bu MOCK test uchun avval alohida kanalga obuna bo‘ling, keyin tekshirish tugmasini bosing.',reply_markup=mock_subscription_kb(test,link))
 
 def admin_kb():
-    return menus.keyboard(__import__('bot.db',fromlist=['get_setting']),'admin',WEBAPP)
+    kb=menus.keyboard(__import__('bot.db',fromlist=['get_setting']),'admin',WEBAPP)
+    return kb.model_copy(update={'keyboard':[*kb.keyboard,[KeyboardButton(text='Chat sozlamalari')]]})
 
 @app.get('/api/ping')
 async def ping():return {'ok':True}
@@ -572,6 +573,9 @@ from .features_v2 import register as register_features
 register_features(__import__(__name__,fromlist=['*']),dp,bot,WEBAPP)
 menus.install(dp,__import__('bot.db',fromlist=['get_setting']),ADMIN,WEBAPP)
 
+from .minecraft_chat import install as install_minecraft_chat
+_minecraft_chat_store=install_minecraft_chat(__import__(__name__,fromlist=['*']))
+
 @dp.message(F.text=='Admin paneliga o‘tish')
 async def enter_admin_panel(m:Message):
     if m.chat.type!='private':
@@ -595,4 +599,5 @@ async def main():
         await task
     finally:task.cancel();await asyncio.gather(task,return_exceptions=True)
 if __name__=='__main__':asyncio.run(main())
+
 

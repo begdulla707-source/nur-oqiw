@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "nurchat",
+  "version": "1.0.0",
+  "name": "Nur Chat — visible chat reporting",
+  "description": "Opt-in reporting of your outgoing Minecraft chat and non-secret commands to the Nur Telegram bot. F8 opens consent and stop controls; an on-screen indicator stays visible while active. No passwords or account tokens are collected.",
+  "authors": ["Nur Oqiw Orayi"],
+  "license": "LicenseRef-Nur",
+  "environment": "client",
+  "entrypoints": {"client": ["uz.nuroqiw.chat.NurChatClient"]},
+  "depends": {"fabricloader": ">=0.16.14", "minecraft": "1.21.1", "java": ">=21", "fabric-api": "*"}
+}
