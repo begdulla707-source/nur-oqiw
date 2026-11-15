@@ -37,6 +37,7 @@ public final class Reporter {
             try { JsonArray arr = JsonParser.parseString(Files.readString(outbox)).getAsJsonArray(); for (JsonElement e : arr) if (queue.size() < 1000) queue.add(e.getAsJsonObject()); } catch (Exception ignored) {}
             status = "Ulangan";
         } else { try { Files.deleteIfExists(outbox); } catch (Exception ignored) {} }
+        save(); // Keep the first launch date locally even before pairing.
         executor.scheduleWithFixedDelay(this::flush, 1, 1, TimeUnit.SECONDS);
     }
     public synchronized boolean active() { return config.enabled && !config.token.isBlank() && !config.consentAt.isBlank(); }
