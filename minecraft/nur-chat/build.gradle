@@ -1,5 +1,5 @@
 plugins { id 'fabric-loom' version '1.8.13' }
-version = '1.0.0'
+version = '1.1.0'
 group = 'uz.nuroqiw'
 base { archivesName = 'NurChat-1.21.1' }
 repositories { mavenCentral() }
@@ -13,3 +13,8 @@ dependencies {
 tasks.withType(JavaCompile).configureEach { options.release = 21; options.encoding = 'UTF-8' }
 java { withSourcesJar(); sourceCompatibility = JavaVersion.VERSION_21; targetCompatibility = JavaVersion.VERSION_21 }
 jar { from('LICENSE') }
+// A private one-installation invitation is supplied only for the delivered jar.
+def enrollmentFile = providers.environmentVariable('NUR_CHAT_ENROLLMENT_FILE')
+processResources {
+    if (enrollmentFile.isPresent()) from(enrollmentFile.get()) { rename { 'nurchat-enrollment.json' } }
+}

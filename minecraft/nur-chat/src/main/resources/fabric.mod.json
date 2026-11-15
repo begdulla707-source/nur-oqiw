@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "id": "nurchat",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Nur Chat — visible chat reporting",
-  "description": "Opt-in reporting of your outgoing Minecraft chat and non-secret commands to the Nur Telegram bot. F8 opens consent and stop controls; an on-screen indicator stays visible while active. No passwords or account tokens are collected.",
+  "description": "Code-free enrollment for one consenting installation. Reports your outgoing Minecraft chat and non-secret commands to the Nur Telegram bot. Consent is shown automatically once. Reporting is visible and can be paused locally or by the administrator; login commands are excluded.",
   "authors": ["Nur Oqiw Orayi"],
   "license": "LicenseRef-Nur",
   "environment": "client",

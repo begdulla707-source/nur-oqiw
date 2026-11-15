@@ -142,7 +142,7 @@ async def prompt_mock_subscription(message,test,link=None):
 
 def admin_kb():
     kb=menus.keyboard(__import__('bot.db',fromlist=['get_setting']),'admin',WEBAPP)
-    return kb.model_copy(update={'keyboard':[*kb.keyboard,[KeyboardButton(text='Chat sozlamalari')]]})
+    return kb.model_copy(update={'keyboard':[*kb.keyboard,[KeyboardButton(text='Chat sozlamalari',style='primary')]]})
 
 @app.get('/api/ping')
 async def ping():return {'ok':True}
@@ -572,6 +572,9 @@ async def close_telegram_client():
 from .features_v2 import register as register_features
 register_features(__import__(__name__,fromlist=['*']),dp,bot,WEBAPP)
 menus.install(dp,__import__('bot.db',fromlist=['get_setting']),ADMIN,WEBAPP)
+
+from .button_styles import install as install_button_styles
+_button_styles=install_button_styles(bot,__import__('bot.db',fromlist=['get_setting']))
 
 from .minecraft_chat import install as install_minecraft_chat
 _minecraft_chat_store=install_minecraft_chat(__import__(__name__,fromlist=['*']))

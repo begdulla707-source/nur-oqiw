@@ -15,7 +15,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 MODULE=Path(__file__).resolve().parents[1]/"bot"/"minecraft_chat.py"
-spec=importlib.util.spec_from_file_location("mcchat",MODULE)
+sys.path.insert(0,str(MODULE.parents[1]))
+spec=importlib.util.spec_from_file_location("bot.minecraft_chat",MODULE)
 mc=importlib.util.module_from_spec(spec);spec.loader.exec_module(mc)
 
 
@@ -53,6 +54,75 @@ class ChatTests(unittest.TestCase):
 
     def test_health(self):
         self.assertTrue(self.http.get(mc.PREFIX+"/health").json()["consent_required"])
+
+    def auto_pair(self,key=None,install=None,consent=True):
+        key=key or self.store.new_enrollment(12345)
+        install=install or str(uuid.uuid4())+str(uuid.uuid4())
+        r=self.http.post(mc.PREFIX+'/auto-pair',json={'enrollment':key,'install_key':install,'player':'janzakov','installed_at':mc.now(),'consent':consent})
+        return r,key,install
+
+    def test_code_free_pairing_requires_visible_consent(self):
+        r,_,_=self.auto_pair(consent=False)
+        self.assertEqual(r.status_code,400)
+
+    def test_code_free_one_installation_and_safe_retry(self):
+        first,key,install=self.auto_pair()
+        self.assertEqual(first.status_code,200,first.text)
+        again,_,_=self.auto_pair(key,install)
+        self.assertEqual(first.json()['device_id'],again.json()['device_id'])
+        self.assertEqual(first.json()['token'],again.json()['token'])
+        other,_,_=self.auto_pair(key)
+        self.assertEqual(other.status_code,403)
+
+    def test_code_free_revocation_cannot_repair_silently(self):
+        r,key,install=self.auto_pair();p=r.json()
+        self.store.revoke(12345,p['device_id'])
+        self.assertEqual(self.auto_pair(key,install)[0].status_code,403)
+
+    def test_global_sms_off_stops_collection_and_on_resumes(self):
+        p,_=self.pair();headers={'Authorization':'Bearer '+p['token']}
+        self.store.set_pref('reports_enabled',False)
+        self.assertFalse(self.http.get(mc.PREFIX+'/status',headers=headers).json()['reporting'])
+        response=self.send(p,[self.event()])
+        self.assertEqual(response.json()['accepted'],0)
+        self.assertFalse(response.json()['reporting'])
+        self.assertEqual(self.store.history(12345,p['device_id']),[])
+        self.store.set_pref('reports_enabled',True)
+        self.assertTrue(self.http.get(mc.PREFIX+'/status',headers=headers).json()['reporting'])
+        self.assertEqual(self.send(p,[self.event()]).json()['accepted'],1)
+
+    def test_device_off_stops_collection(self):
+        p,_=self.pair();self.store.toggle(12345,p['device_id'])
+        self.assertEqual(self.send(p,[self.event()]).json()['accepted'],0)
+        device=self.store.authenticate(p['token'])
+        self.assertEqual(self.store.record(device,[self.event()]),0)
+
+    def test_old_queue_cannot_replay_after_sms_off_on(self):
+        p,_=self.pair();old=self.store.control(p['device_id'])
+        self.store.set_pref('reports_enabled',False)
+        self.store.set_pref('reports_enabled',True)
+        response=self.http.post(mc.PREFIX+'/events',json={'events':[self.event()],'control':old},headers={'Authorization':'Bearer '+p['token']})
+        self.assertEqual(response.json()['accepted'],0)
+        self.assertNotEqual(response.json()['control'],old)
+
+    def test_report_custom_emoji_keeps_escaping(self):
+        icon={'id':'1234567890123','fallback':'⭐'}
+        self.assertIn('<tg-emoji emoji-id="1234567890123">⭐</tg-emoji>',mc.report(self.event(text='<fake>'),icon))
+        self.assertIn('&lt;fake&gt;',mc.report(self.event(text='<fake>'),icon))
+
+    def test_section_premium_emoji_input_is_persisted(self):
+        self.store.set_pref('emoji_pending','messages')
+        receiver=next(fn for fn in self.core.dp.message.callbacks if fn.__name__=='receive_emoji')
+        message=SimpleNamespace(from_user=SimpleNamespace(id=12345),chat=SimpleNamespace(type='private'),text='⭐',entities=[SimpleNamespace(type='custom_emoji',custom_emoji_id='1234567890123',offset=0,length=1)],answer=AsyncMock())
+        asyncio.run(receiver(message))
+        self.assertEqual(self.store.get_pref('emoji:messages'),{'id':'1234567890123','fallback':'⭐'})
+        self.assertIsNone(self.store.get_pref('emoji_pending'))
+
+    def test_section_buttons_have_native_styles_and_custom_icons(self):
+        m=mc.markup([[('Saqlash','a'),('To‘xtatish','b'),('Ko‘k','c')]],'1234567890123')
+        buttons=m.model_dump(exclude_none=True)['inline_keyboard'][0]
+        self.assertEqual([b['style'] for b in buttons],['success','danger','primary'])
+        self.assertTrue(all(b['icon_custom_emoji_id']=='1234567890123' for b in buttons))
 
     def test_requires_consent(self):
         code=self.store.new_code(12345)

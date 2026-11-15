@@ -77,6 +77,7 @@ def items(db, role):
 
 def button(info, *, webapp_url=None):
     kwargs={'text':info['label']}
+    if info.get('style') in ('primary','success','danger'):kwargs['style']=info['style']
     if info['emoji_id']:kwargs['icon_custom_emoji_id']=info['emoji_id']
     if webapp_url and info['key']=='Mini App admini':
         kwargs['web_app']=WebAppInfo(url=webapp_url.rstrip('/')+'/admin')
@@ -283,4 +284,5 @@ def install(dp,db,admin_id,webapp_url):
         db.update_user(admin_id,state='admin')
         new_index=next(i for i,x in enumerate(items(db,role)) if x['key']==key)
         await m.answer('Saqlandi. Yangilangan tugmalar /start yoki menyu qayta ochilganda ko‘rinadi.\n\n'+details(role,new_index),reply_markup=editor(role,new_index))
+
 

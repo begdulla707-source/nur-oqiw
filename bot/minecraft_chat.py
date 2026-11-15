@@ -6,6 +6,7 @@ never leave the server. Individual devices have revocable, hashed credentials.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import io
 import json
@@ -24,6 +25,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from aiogram import F
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.filters import Command
 from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 from fastapi import Request
@@ -88,6 +91,8 @@ class ChatStore:
             CREATE INDEX IF NOT EXISTS idx_mc_device_events ON events(device,seq DESC);
             CREATE INDEX IF NOT EXISTS idx_mc_pending ON events(notified,seq);
             CREATE INDEX IF NOT EXISTS idx_mc_owner ON devices(owner,last_seen DESC);
+            CREATE TABLE IF NOT EXISTS preferences(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS enrollment(code_hash TEXT PRIMARY KEY,owner INTEGER NOT NULL,expires REAL NOT NULL,install_hash TEXT NOT NULL DEFAULT '',device TEXT NOT NULL DEFAULT '');
             """)
         try:
             self.path.chmod(0o600)
@@ -113,6 +118,60 @@ class ChatStore:
             c.execute("INSERT INTO pairing(code_hash,owner,expires) VALUES(?,?,?)", (digest(code), owner, time.time()+600))
         return code
 
+    def get_pref(self,key,default=None):
+        with self.connect() as c:
+            row=c.execute('SELECT value FROM preferences WHERE key=?',(key,)).fetchone()
+        if not row:return default
+        try:return json.loads(row['value'])
+        except (ValueError,TypeError):return default
+
+    def set_pref(self,key,value):
+        with self.connect() as c:
+            c.execute('INSERT INTO preferences(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,json.dumps(value,ensure_ascii=False)))
+            if key=='reports_enabled':
+                c.execute("INSERT INTO preferences(key,value) VALUES('control_global',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(json.dumps(secrets.token_hex(8)),))
+
+    @staticmethod
+    def _control(c,device):
+        values={r['key']:json.loads(r['value']) for r in c.execute('SELECT key,value FROM preferences WHERE key IN (?,?)',('control_global','control:'+device))}
+        return str(values.get('control_global','0'))+'.'+str(values.get('control:'+device,'0'))
+
+    def control(self,device):
+        with self.connect() as c:return self._control(c,device)
+
+    def reports_enabled(self):
+        return bool(self.get_pref('reports_enabled',True))
+
+    def reporting_allowed(self,device):
+        with self.connect() as c:
+            row=c.execute('SELECT notify,revoked FROM devices WHERE id=?',(device,)).fetchone()
+        return bool(row and row['notify'] and not row['revoked'] and self.reports_enabled())
+
+    def new_enrollment(self,owner):
+        key=secrets.token_urlsafe(32)
+        with self.connect() as c:
+            c.execute('INSERT INTO enrollment(code_hash,owner,expires) VALUES(?,?,?)',(digest(key),owner,time.time()+90*86400))
+        return key
+
+    def auto_pair(self,key,install_key,player,installed_at):
+        # The embedded invitation can enroll one consenting installation. It is
+        # not an admin credential. The installation secret stays in local config.
+        if not re.fullmatch(r'[A-Za-z0-9_-]{32,128}',key) or not re.fullmatch(r'[A-Za-z0-9_-]{32,128}',install_key):return None
+        token=base64.urlsafe_b64encode(hashlib.sha256(('NurChat-device:'+key+':'+install_key).encode()).digest()).decode().rstrip('=')
+        with self.connect() as c:
+            c.execute('BEGIN IMMEDIATE')
+            invite=c.execute('SELECT * FROM enrollment WHERE code_hash=? AND expires>?',(digest(key),time.time())).fetchone()
+            if not invite:return None
+            if invite['device']:
+                if invite['install_hash']!=digest(install_key):return None
+                device=invite['device']
+                if not c.execute('SELECT 1 FROM devices WHERE id=? AND revoked=0',(device,)).fetchone():return None
+            else:
+                device=str(uuid.uuid4());timestamp=now()
+                c.execute('INSERT INTO devices(id,owner,token_hash,player,installed_at,consent_at,created_at,last_seen) VALUES(?,?,?,?,?,?,?,?)',(device,invite['owner'],digest(token),player,installed_at,timestamp,timestamp,timestamp))
+                c.execute('UPDATE enrollment SET install_hash=?,device=? WHERE code_hash=?',(digest(install_key),device,digest(key)))
+        return {'ok':True,'device_id':device,'token':token,'recipient':'Nur bot administratori','reporting':self.reporting_allowed(device),'control':self.control(device)}
+
     def pair(self, code: str, player: str, installed_at: str):
         device, token = str(uuid.uuid4()), secrets.token_urlsafe(32)
         timestamp = now()
@@ -123,7 +182,7 @@ class ChatStore:
                 return None
             c.execute("UPDATE pairing SET used=1 WHERE code_hash=?", (digest(code.upper()),))
             c.execute("INSERT INTO devices(id,owner,token_hash,player,installed_at,consent_at,created_at,last_seen) VALUES(?,?,?,?,?,?,?,?)", (device,pair["owner"],digest(token),player,installed_at,timestamp,timestamp,timestamp))
-        return {"ok":True,"device_id":device,"token":token,"recipient":"Nur bot administratori"}
+        return {"ok":True,"device_id":device,"token":token,"recipient":"Nur bot administratori","reporting":self.reporting_allowed(device),'control':self.control(device)}
 
     def authenticate(self, token: str):
         if len(token) < 32 or len(token) > 128:
@@ -132,7 +191,7 @@ class ChatStore:
             row = c.execute("SELECT * FROM devices WHERE token_hash=? AND revoked=0", (digest(token),)).fetchone()
             return dict(row) if row else None
 
-    def record(self, device: dict, events: list[dict]):
+    def record(self, device: dict, events: list[dict], expected_control=None):
         # Validate the entire request before writing anything: retries are atomic.
         validated=[]
         for event in events:
@@ -154,8 +213,13 @@ class ChatStore:
             validated.append((event_id,session,kind,player,server,when,text))
         accepted=0
         with self.connect() as c:
-            if not c.execute("SELECT 1 FROM devices WHERE id=? AND revoked=0",(device["id"],)).fetchone():
+            c.execute('BEGIN IMMEDIATE')
+            current=c.execute("SELECT notify FROM devices WHERE id=? AND revoked=0",(device["id"],)).fetchone()
+            if not current:
                 raise PermissionError("revoked")
+            flag=c.execute("SELECT value FROM preferences WHERE key='reports_enabled'").fetchone()
+            if not current['notify'] or flag and not json.loads(flag['value']):return 0
+            if expected_control is not None and expected_control!=self._control(c,device['id']):return 0
             for event_id,session,kind,player,server,when,text in validated:
                 c.execute("UPDATE devices SET player=?,last_seen=?,last_server=? WHERE id=?",(player,now(),server,device["id"]))
                 if kind=="heartbeat":
@@ -187,26 +251,35 @@ class ChatStore:
 
     def toggle(self, owner: int, device: str):
         with self.connect() as c:
-            c.execute("UPDATE devices SET notify=1-notify WHERE id=? AND owner=?",(device,owner))
+            changed=c.execute("UPDATE devices SET notify=1-notify WHERE id=? AND owner=?",(device,owner))
+            if changed.rowcount:
+                c.execute('INSERT INTO preferences(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',('control:'+device,json.dumps(secrets.token_hex(8))))
 
     def revoke(self, owner: int, device: str):
         with self.connect() as c:
             c.execute("UPDATE devices SET revoked=1 WHERE id=? AND owner=?",(device,owner))
 
 
-def report(event: dict) -> str:
+def report(event: dict,icon=None) -> str:
     name,server=escape(event["player"]),escape(event["server"])
     moment=stamp(event["at"])
     if event["kind"]=="join":
-        return f"<b>O‘yinchi ({name})</b>\nIP: <code>{server}</code>\nKirdi: {moment}"
+        return emoji_tag(icon)+f"<b>O‘yinchi ({name})</b>\nIP: <code>{server}</code>\nKirdi: {moment}"
     if event["kind"]=="leave":
-        return f"<b>O‘yinchi ({name})</b>\nIP: <code>{server}</code>\nChiqdi: {moment}"
+        return emoji_tag(icon)+f"<b>O‘yinchi ({name})</b>\nIP: <code>{server}</code>\nChiqdi: {moment}"
     label="Buyruq" if event["kind"]=="command" else "Chat"
-    return f"<b>{label} · {name}</b>\nIP: <code>{server}</code>\n{moment}\n\n{escape(event['text'])}"
+    return emoji_tag(icon)+f"<b>{label} · {name}</b>\nIP: <code>{server}</code>\n{moment}\n\n{escape(event['text'])}"
 
 
-def markup(rows):
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label,callback_data=data) for label,data in row] for row in rows])
+def emoji_tag(icon):
+    if not isinstance(icon,dict) or not str(icon.get('id','')).isdigit():return ''
+    return '<tg-emoji emoji-id="'+str(icon['id'])+'">'+escape(icon.get('fallback') or '⭐')+'</tg-emoji> '
+
+
+def markup(rows,icon_id=''):
+    from .button_styles import default_style
+    kwargs={'icon_custom_emoji_id':icon_id} if str(icon_id).isdigit() else {}
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label,callback_data=data,style=default_style(label),**kwargs) for label,data in row] for row in rows])
 
 
 def install(core):
@@ -214,6 +287,13 @@ def install(core):
     store=ChatStore(path)
     task=None
     limits=defaultdict(deque)
+
+    def chat_markup(rows):
+        return markup(rows,store.get_pref('emoji:buttons',{}).get('id',''))
+
+    def report_text(event):
+        category='sessions' if event['kind'] in ('join','leave') else 'messages'
+        return report(event,store.get_pref('emoji:'+category,{}))
 
     def allowed(key, count, window):
         t=time.monotonic(); q=limits[key]
@@ -236,7 +316,27 @@ def install(core):
 
     @core.app.get(PREFIX+"/health")
     async def chat_health():
-        return {"ok":True,"minecraft":"1.21.1","consent_required":True,"version":"1.0.0"}
+        return {"ok":True,"minecraft":"1.21.1","consent_required":True,"version":"1.1.0","code_free_pairing":True}
+
+    @core.app.get(PREFIX+'/status')
+    async def client_status(request:Request):
+        auth=request.headers.get('authorization','')
+        device=await asyncio.to_thread(store.authenticate,auth[7:] if auth.startswith('Bearer ') else '')
+        if not device:return JSONResponse({'ok':False},status_code=403)
+        return {'ok':True,'reporting':await asyncio.to_thread(store.reporting_allowed,device['id']),'control':await asyncio.to_thread(store.control,device['id'])}
+
+    @core.app.post(PREFIX+'/auto-pair')
+    async def automatic_pair(request:Request):
+        ip=request.client.host if request.client else 'unknown'
+        if not allowed(('auto-pair',ip),12,600):return JSONResponse({'ok':False},status_code=429)
+        try:
+            data=await body(request)
+            if data.get('consent') is not True:raise ValueError('consent required')
+            player=str(data.get('player',''))
+            if not NICK.fullmatch(player):raise ValueError('player')
+            result=await asyncio.to_thread(store.auto_pair,str(data.get('enrollment','')),str(data.get('install_key','')),player,parse_time(data.get('installed_at','')))
+            return result if result else JSONResponse({'ok':False,'error':'invitation_claimed_or_expired'},status_code=403)
+        except (ValueError,TypeError,KeyError):return JSONResponse({'ok':False},status_code=400)
 
     @core.app.post(PREFIX+"/pair")
     async def pair_client(request: Request):
@@ -260,12 +360,15 @@ def install(core):
         if not allowed(("auth",request.client.host if request.client else "unknown"),600,60):return JSONResponse({"ok":False},status_code=429)
         device=await asyncio.to_thread(store.authenticate,token)
         if not device:return JSONResponse({"ok":False},status_code=403)
+        if not await asyncio.to_thread(store.reporting_allowed,device['id']):
+            return {'ok':True,'accepted':0,'reporting':False,'control':await asyncio.to_thread(store.control,device['id'])}
         if not allowed(("device",device["id"]),90,60):return JSONResponse({"ok":False},status_code=429)
         try:
             data=await body(request); events=data.get("events")
             if not isinstance(events,list) or not 1<=len(events)<=32:raise ValueError("events")
-            accepted=await asyncio.to_thread(store.record,device,events)
-            return {"ok":True,"accepted":accepted}
+            control=str(data['control']) if 'control' in data else None
+            accepted=await asyncio.to_thread(store.record,device,events,control)
+            return {"ok":True,"accepted":accepted,"reporting":await asyncio.to_thread(store.reporting_allowed,device['id']),'control':await asyncio.to_thread(store.control,device['id'])}
         except PermissionError:return JSONResponse({"ok":False},status_code=403)
         except (ValueError,TypeError,KeyError):return JSONResponse({"ok":False,"error":"invalid_events"},status_code=400)
 
@@ -274,8 +377,13 @@ def install(core):
             try:
                 events=await asyncio.to_thread(store.pending)
                 for event in events:
-                    if event["notify"] and not event["revoked"]:
-                        await core.bot.send_message(event["owner"],report(event),parse_mode="HTML",disable_web_page_preview=True)
+                    if event['owner']>0 and await asyncio.to_thread(store.reporting_allowed,event['device']):
+                        text=report_text(event)
+                        try:
+                            await core.bot.send_message(event['owner'],text,parse_mode='HTML',disable_web_page_preview=True)
+                        except TelegramBadRequest:
+                            if '<tg-emoji' not in text:raise
+                            await core.bot.send_message(event['owner'],report(event),parse_mode='HTML',disable_web_page_preview=True)
                         await asyncio.sleep(0.65)
                     await asyncio.to_thread(store.delivered,event["seq"])
             except asyncio.CancelledError:raise
@@ -299,7 +407,32 @@ def install(core):
         return bool(message and message.from_user and message.from_user.id==core.ADMIN and message.chat.type=="private")
 
     async def show_root(message):
-        await message.answer("CHAT SOZLAMALARI\n\nMinecraft 1.21.1 / Fabric\nO‘yinchi rozilik berganidan keyin uning yuborgan chatlari, buyruqlari va server tarixi shu yerda ko‘rinadi.\n\n/login, /register, parol va tokenlar olinmaydi. Vaqt: Toshkent.",reply_markup=markup([[('O‘yinchilar','mcchat:players:0')],[('Modni ulash kodi','mcchat:code')],[('O‘rnatish yo‘riqnomasi','mcchat:help')],[('Admin menyusi','mcchat:back')]]))
+        active=store.reports_enabled()
+        title=emoji_tag(store.get_pref('emoji:root',{}))+'<b>CHAT SOZLAMALARI</b>'
+        state='YOQILGAN' if active else 'TO‘XTATILGAN'
+        await message.answer(title+'\n\nMinecraft 1.21.1 / Fabric\nSMS kelishi: <b>'+state+'</b>\n\nBir o‘yinchi uchun kodsiz ulanish. O‘yinchi bir marta ochiq rozilik beradi, keyingi kirishlar avtomatik.\n/login, /register va aniqlanadigan maxfiy ma’lumotlar yuborilmaydi. Vaqt: Toshkent.',parse_mode='HTML',reply_markup=chat_markup([[('SMS ni to‘xtatish' if active else 'SMS ni yoqish','mcchat:global')],[('O‘yinchilar','mcchat:players:0')],[('Premium emoji','mcchat:emoji')],[('Ko‘rinishni tekshirish','mcchat:preview')],[('O‘rnatish yo‘riqnomasi','mcchat:help')],[('Admin menyusi','mcchat:back')]]))
+
+    @core.dp.message(lambda m:private_admin(m) and bool(store.get_pref('emoji_pending')))
+    async def receive_emoji(message):
+        pending=store.get_pref('emoji_pending')
+        raw=(message.text or '').strip()
+        defaults=getattr(getattr(core,'menus',None),'DEFAULTS',{})
+        known={item[0] for entries in defaults.values() for item in entries}
+        if raw in known and raw!='Chat sozlamalari':
+            store.set_pref('emoji_pending',None)
+            raise SkipHandler()
+        if raw.lower() in ('/cancel','chat sozlamalari','bekor qilish'):
+            store.set_pref('emoji_pending',None)
+            return await show_root(message)
+        if raw.upper()=='OFF':
+            store.set_pref('emoji:'+pending,{})
+        else:
+            entity=next((e for e in message.entities or [] if e.type=='custom_emoji' and e.custom_emoji_id),None)
+            if not entity:return await message.answer('Telegram Premium emojining o‘zini yuboring yoki OFF yozing. Bekor qilish: /cancel')
+            fallback=(message.text or '').encode('utf-16-le')[entity.offset*2:(entity.offset+entity.length)*2].decode('utf-16-le') or '⭐'
+            store.set_pref('emoji:'+pending,{'id':entity.custom_emoji_id,'fallback':fallback})
+        store.set_pref('emoji_pending',None)
+        await message.answer('Premium emoji shu Chat sozlamalari bo‘limi uchun saqlandi.',reply_markup=chat_markup([[('Premium emoji','mcchat:emoji')],[('Chat sozlamalari','mcchat:root')]]))
 
     @core.dp.message(F.text=="Chat sozlamalari")
     @core.dp.message(Command("chat_settings"))
@@ -307,6 +440,7 @@ def install(core):
         if not private_admin(message):return
         core.update_user(core.ADMIN,state="admin")
         core.set_setting("mock_menu_"+str(core.ADMIN),"")
+        store.set_pref('emoji_pending',None)
         await show_root(message)
 
     async def show_device(message, owner, identifier):
@@ -315,10 +449,10 @@ def install(core):
         state="Uzilgan" if d["revoked"] else "Ulangan"
         notify="Yoqilgan" if d["notify"] else "O‘chirilgan"
         text=f"<b>O‘yinchi ({escape(d['player'])})</b>\nIP: <code>{escape(d['last_server']) or '—'}</code>\nHolat: {state}\nMod ilk ishga tushgan: {stamp(d['installed_at'])}\nRozilik / ulanish: {stamp(d['consent_at'])}\nOxirgi aloqa: {stamp(d['last_seen'])}\nYangi xabarlar: {notify}"
-        rows=[[('Chat va buyruqlar',f'mcchat:history:{identifier}:0')],[('Tarixni TXT olish',f'mcchat:export:{identifier}')],[('Bildirishnoma ON/OFF',f'mcchat:notify:{identifier}')]]
+        rows=[[('Chat va buyruqlar',f'mcchat:history:{identifier}:0')],[('Tarixni TXT olish',f'mcchat:export:{identifier}')],[('Hisobot ON/OFF',f'mcchat:notify:{identifier}')]]
         if not d['revoked']:rows.append([('Qurilmani uzish',f'mcchat:revoke:{identifier}')])
         rows.append([('O‘yinchilar','mcchat:players:0')])
-        await message.answer(text,parse_mode="HTML",reply_markup=markup(rows))
+        await message.answer(text,parse_mode="HTML",reply_markup=chat_markup(rows))
 
     @core.dp.callback_query(F.data.startswith("mcchat:"))
     async def chat_callback(q):
@@ -326,10 +460,30 @@ def install(core):
             return await q.answer("Faqat administrator uchun.",show_alert=True)
         await q.answer()
         parts=q.data.split(":"); action=parts[1]; owner=core.ADMIN
-        if action=="root":return await show_root(q.message)
+        if action=="root":
+            store.set_pref('emoji_pending',None)
+            return await show_root(q.message)
+        if action=='global':
+            store.set_pref('reports_enabled',not store.reports_enabled())
+            return await show_root(q.message)
+        if action=='emoji':
+            rows=[[('Bo‘lim sarlavhasi','mcchat:emoji_set:root')],[('Kirish / chiqish xabarlari','mcchat:emoji_set:sessions')],[('Chat / buyruq xabarlari','mcchat:emoji_set:messages')],[('Shu bo‘lim tugmalari','mcchat:emoji_set:buttons')],[('Ko‘rinishni tekshirish','mcchat:preview')],[('Chat sozlamalari','mcchat:root')]]
+            return await q.message.answer('PREMIUM EMOJI\n\nFaqat shu bo‘lim ichidagi emoji sozlanadi. Kerakli joyni tanlang, keyin Premium emojining o‘zini yuboring. O‘chirish uchun OFF.\n\nTelegram talabi: bot egasida Premium obuna yoki botda Fragment orqali olingan username bo‘lishi kerak.',reply_markup=chat_markup(rows))
+        if action=='emoji_set':
+            category=parts[2] if len(parts)>2 else ''
+            if category not in ('root','sessions','messages','buttons'):return
+            store.set_pref('emoji_pending',category)
+            return await q.message.answer('Premium emojini yuboring. O‘chirish: OFF. Bekor qilish: /cancel')
+        if action=='preview':
+            example={'player':'janzakov','server':'mineblaze.net','kind':'chat','text':'Namunaviy chat xabari','at':now()}
+            try:
+                await q.message.answer(report_text(example),parse_mode='HTML',reply_markup=chat_markup([[('Ko‘k','mcchat:root'),('Saqlash — yashil','mcchat:root'),('To‘xtatish — qizil','mcchat:root')]]))
+            except TelegramBadRequest as exc:
+                await q.message.answer('Telegram ushbu Premium emojini ishlatishga ruxsat bermadi. Bot egasining Premium holatini yoki emojini tekshiring. Oddiy xabarlar ishlashda davom etadi.')
+            return
         if action=="back":return await q.message.answer("Admin boshqaruv menyusi.",reply_markup=core.admin_kb())
         if action=="help":
-            return await q.message.answer("1. NurChat-1.21.1.jar faylini Minecraft mods papkasiga qo‘ying. Fabric 1.21.1 va Java 21 kerak; Fabric API jar ichiga qo‘shilgan.\n2. Botdagi «Modni ulash kodi» tugmasini bosing.\n3. Minecraft ichida F8 bosing, kodni kiriting va ma’lumot yuborishga rozilik bering.\n4. Serverga kirganda xabar keladi; keyin chat va maxfiy bo‘lmagan buyruqlar alohida yuboriladi.\n\nMod ishlayotganida ekranda Nur Chat belgisi turadi. F8 orqali to‘xtatiladi. Mod o‘rnatilishidan / rozilikdan oldingi chatlar olinmaydi. Maxfiy kalitlarni modga yozmang.")
+            return await q.message.answer('1. Yangilangan NurChat-1.21.1.jar faylini mods papkasiga qo‘ying. Eski versiyasini olib tashlang.\n2. Fabric 1.21.1 / Java 21 bilan o‘yinni ochib serverga kiring.\n3. Avtomatik ochiladigan oynada bir marta rozilik bering. Kod kiritish va F8 bosish talab qilinmaydi.\n4. Keyingi kirishlarda avtomatik ishlaydi.\n\nSMS ni shu bo‘limdan ON/OFF qiling. OFF paytida yangi chatlar yuborilmaydi va saqlanmaydi; ON holatiga mod taxminan 10 soniyada javob beradi.\n\nMod faol holatini ekranda ko‘rsatadi; o‘yinchi F8 yoki chatdagi tugmadan to‘xtata oladi. /login va /register yozuvlari yuborilmaydi.')
         if action=="code":
             code=await asyncio.to_thread(store.new_code,owner)
             return await q.message.answer(f"<b>Modni ulash kodi</b>\n\n<code>{code}</code>\n\n10 daqiqa amal qiladi, faqat bir marta ishlaydi. O‘yinchi F8 oynasida kodni kiritib, rozilik beradi. Bot tokeni kerak emas.",parse_mode="HTML")
@@ -346,7 +500,7 @@ def install(core):
             if len(devices)>8:nav.append(('Keyingi',f'mcchat:players:{page+1}'))
             if nav:rows.append(nav)
             rows.append([('Chat sozlamalari','mcchat:root')])
-            return await q.message.answer("O‘YINCHILAR\n\n"+("O‘yinchini tanlang:" if devices else "Hali mod ulanmagan. Ulash kodi yarating va o‘yinchi F8 oynasida rozilik bersin."),reply_markup=markup(rows))
+            return await q.message.answer("O‘YINCHILAR\n\n"+("O‘yinchini tanlang:" if devices else "Hali mod ulanmagan. Ulash kodi yarating va o‘yinchi F8 oynasida rozilik bersin."),reply_markup=chat_markup(rows))
         if len(parts)<3:return
         identifier=parts[2]
         if not await asyncio.to_thread(store.device,owner,identifier):return await q.message.answer("Qurilma topilmadi.")
@@ -355,7 +509,7 @@ def install(core):
             await asyncio.to_thread(store.toggle,owner,identifier)
             return await show_device(q.message,owner,identifier)
         if action=="revoke":
-            return await q.message.answer("Ulanish bekor qilinsinmi? Mod yangi ma’lumot yubora olmaydi. Tarix saqlanadi.",reply_markup=markup([[('Ha, uzish',f'mcchat:confirm:{identifier}')],[('Orqaga',f'mcchat:device:{identifier}')]]))
+            return await q.message.answer("Ulanish bekor qilinsinmi? Mod yangi ma’lumot yubora olmaydi. Tarix saqlanadi.",reply_markup=chat_markup([[('Ha, uzish',f'mcchat:confirm:{identifier}')],[('Orqaga',f'mcchat:device:{identifier}')]]))
         if action=="confirm":
             await asyncio.to_thread(store.revoke,owner,identifier)
             return await show_device(q.message,owner,identifier)
@@ -363,15 +517,15 @@ def install(core):
             try:page=max(0,int(parts[3]))
             except (IndexError,ValueError):return
             events=await asyncio.to_thread(store.history,owner,identifier,page,10)
-            if not events:return await q.message.answer("Hali tarix yo‘q.",reply_markup=markup([[('Orqaga',f'mcchat:device:{identifier}')]]))
+            if not events:return await q.message.answer("Hali tarix yo‘q.",reply_markup=chat_markup([[('Orqaga',f'mcchat:device:{identifier}')]]))
             # Separate messages preserve readability even for long chat lines.
-            for event in reversed(events):await q.message.answer(report(event),parse_mode="HTML",disable_web_page_preview=True)
+            for event in reversed(events):await q.message.answer(report_text(event),parse_mode="HTML",disable_web_page_preview=True)
             nav=[]
             if page:nav.append(('Yangiroq',f'mcchat:history:{identifier}:{page-1}'))
             if len(events)==10:nav.append(('Oldinroq',f'mcchat:history:{identifier}:{page+1}'))
             rows=[nav] if nav else []
             rows.append([('O‘yinchi',f'mcchat:device:{identifier}')])
-            return await q.message.answer(f"Tarix: {page+1}-sahifa",reply_markup=markup(rows))
+            return await q.message.answer(f"Tarix: {page+1}-sahifa",reply_markup=chat_markup(rows))
         if action=="export":
             def export():
                 with store.connect() as c:
