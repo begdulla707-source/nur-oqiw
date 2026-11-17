@@ -322,7 +322,15 @@ def rasch_scores(test_id):
   matrix.append([1 if norm(answers.get(str(q['number']),' '))==norm(q['answer']) else 0 for q in qs])
  n=len(matrix)
  if count<2 or n<2:
-  return {str(row['attempt_id']):{'score':round(sum(response)/count*100,2),'grade':mock_grade(sum(response)/count*100),'correct_count':sum(response),'total_questions':count} for row,response in zip(rows,matrix)}
+  # Sparse cohorts cannot identify item difficulties. Use an anchored
+  # Rasch person logit with a 0.5 continuity correction, never raw %.
+  out={}
+  for row,response in zip(rows,matrix):
+   correct=sum(response)
+   theta=math.log((correct+0.5)/(count-correct+0.5))
+   value=max(0.0,min(100.0,50.0+10.0*theta))
+   out[str(row['attempt_id'])]={'score':round(value,2),'grade':mock_grade(value),'correct_count':correct,'total_questions':count}
+  return out
  totals=[sum(r[j] for r in matrix) for j in range(count)]
  difficulties=[]
  for success in totals:
@@ -348,7 +356,9 @@ def rasch_scores(test_id):
  mean=sum(abilities)/len(abilities);variance=sum((v-mean)**2 for v in abilities)/len(abilities);sd=math.sqrt(variance)
  out={}
  for row,theta,response in zip(rows,abilities,matrix):
-  value=50.0 if sd<1e-7 else max(0.0,min(100.0,50+10*((theta-mean)/sd)))
+  # Equal abilities are not necessarily average performance: retain
+  # the Rasch logit rather than assigning everyone exactly 50.
+  value=max(0.0,min(100.0,50.0+10.0*(theta if sd<1e-7 else (theta-mean)/sd)))
   out[str(row['attempt_id'])]={'score':round(value,2),'grade':mock_grade(value),'correct_count':sum(response),'total_questions':count}
  return out
 
