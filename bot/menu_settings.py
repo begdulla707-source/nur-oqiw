@@ -11,13 +11,13 @@ from aiogram.filters import Command
 # Canonical keys are handler action names; only their display labels change.
 DEFAULTS = {
     'user': [
-        ('Profilim', 'primary'), ('Pulli testlar', 'primary'),
-        ('Aktiv testlar', 'success'), ('MOCK testlar', 'success'), ('Testni boshlash', 'primary'),
+        ('MOCK testlar', 'success'), ('Profilim', 'primary'), ('Pulli testlar', 'primary'),
+        ('Aktiv testlar', 'success'), ('Testni boshlash', 'primary'),
         ('Test kodini kiritish', 'primary'), ('Mening natijam', 'success'),
         ('Yordam', 'primary'),
     ],
     'admin': [
-        ('Test sozlamalari', 'primary'), ('MOCK testlar', 'success'), ('Pulli testlar', 'primary'),
+        ('MOCK testlar', 'success'), ('Test sozlamalari', 'primary'), ('Pulli testlar', 'primary'),
         ('Ishtirokchilar', 'primary'), ('Statistika', 'primary'),
         ('Guruhlar holati', 'primary'), ('Guruhga xabar yuborish', 'primary'),
         ('Bildirishnoma', 'success'), ('Majburiy obuna', 'success'),
@@ -70,10 +70,11 @@ def items(db, role):
         if style not in COLORS: style = default_style
         label = str(cfg.get('label',name)).strip()[:55] or name
         icon_id = str(cfg.get('emoji_id','')).strip()
-        visible = bool(cfg.get('visible',True)) or name in ('Menyu sozlamalari','Aktiv testlar','MOCK menyu sozlamalari','Orqaga qaytish')
+        visible = bool(cfg.get('visible',True)) or name in ('Menyu sozlamalari','Aktiv testlar','MOCK testlar','MOCK menyu sozlamalari','Orqaga qaytish')
         order = int(cfg.get('order',len(result))) if str(cfg.get('order',len(result))).lstrip('-').isdigit() else len(result)
         result.append({'key':name,'label':label,'style':style,'emoji_id':icon_id,'visible':visible,'order':order})
-    return sorted(result,key=lambda item:item['order'])
+    # MOCK stays first in both main menus even with previously saved custom order.
+    return sorted(result,key=lambda item:(0 if role in ('user','admin') and item['key']=='MOCK testlar' else 1,item['order']))
 
 def button(info, *, webapp_url=None):
     kwargs={'text':info['label']}
