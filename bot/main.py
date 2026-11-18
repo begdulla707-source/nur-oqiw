@@ -328,6 +328,14 @@ async def contact(m:Message):
 
 MENU_TEXTS={'MOCK testlar','Orqaga qaytish','Shaxsiy MOCK natijam','Profilim','Pulli testlar','Testni boshlash','Test kodini kiritish','Mening natijam','Yordam','Aktiv testlar','Telegram ismim bilan davom etish'}
 
+# Register support before generic registration/code handlers, so names and
+# support messages never get misread as test codes.
+from . import support as support_service
+support_service.install(
+    dp, bot, __import__('bot.db', fromlist=['get_setting']), ADMIN,
+    user_menu, admin_kb,
+    lambda: menus.keyboard(__import__('bot.db', fromlist=['get_setting']), 'mock_user', WEBAPP),
+)
 
 @dp.message(F.text=='MOCK testlar',F.from_user.id!=ADMIN)
 async def enter_mock_user_menu(m:Message):
