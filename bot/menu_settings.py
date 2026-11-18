@@ -66,10 +66,10 @@ def items(db, role):
     for name, default_style in DEFAULTS[role]:
         cfg = stored.get(name, {}) if isinstance(stored,dict) else {}
         cfg = cfg if isinstance(cfg,dict) else {}
-        # Fixed owner-approved reply palette: saved legacy colors must not
-        # repaint buttons after restarts or on the next day.
-        # User main menu has only four colored buttons; other roles are plain.
-        style = default_style
+        # Persist the owner's selections. A missing style falls back to
+        # the minimal default palette instead of painting every button blue.
+        style = cfg.get('style', default_style)
+        if style not in COLORS: style = default_style
         label = str(cfg.get('label',name)).strip()[:55] or name
         icon_id = str(cfg.get('emoji_id','')).strip()
         visible = bool(cfg.get('visible',True)) or name in ('Menyu sozlamalari','Aktiv testlar','MOCK testlar','MOCK menyu sozlamalari','Orqaga qaytish')
