@@ -17,7 +17,10 @@ def default_style(text):
 
 def styled_markup(markup,configured=None):
     if not isinstance(markup,(ReplyKeyboardMarkup,InlineKeyboardMarkup)):return markup
-    field='keyboard' if isinstance(markup,ReplyKeyboardMarkup) else 'inline_keyboard'
+    # Reply keyboard colors belong exclusively to explicitly configured
+    # buttons. Never infer blue/green from text on a plain reply button.
+    if isinstance(markup,ReplyKeyboardMarkup):return markup
+    field='inline_keyboard'
     configured=configured or {}
     rows=[]
     for row in getattr(markup,field):
