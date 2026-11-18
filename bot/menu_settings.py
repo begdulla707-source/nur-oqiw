@@ -11,28 +11,28 @@ from aiogram.filters import Command
 # Canonical keys are handler action names; only their display labels change.
 DEFAULTS = {
     'user': [
-        ('MOCK testlar', 'success'), ('Profilim', 'primary'), ('Pulli testlar', 'primary'),
-        ('Aktiv testlar', 'success'), ('Testni boshlash', 'primary'),
-        ('Test kodini kiritish', 'primary'), ('Mening natijam', 'success'),
-        ('Yordam', 'primary'),
+        ('MOCK testlar', 'success'), ('Profilim', 'success'), ('Pulli testlar', 'default'),
+        ('Aktiv testlar', 'default'), ('Testni boshlash', 'default'),
+        ('Test kodini kiritish', 'default'), ('Mening natijam', 'success'),
+        ('Yordam', 'danger'),
     ],
     'admin': [
-        ('MOCK testlar', 'success'), ('Test sozlamalari', 'primary'), ('Pulli testlar', 'primary'),
-        ('Ishtirokchilar', 'primary'), ('Statistika', 'primary'),
-        ('Guruhlar holati', 'primary'), ('Guruhga xabar yuborish', 'primary'),
-        ('Bildirishnoma', 'success'), ('Majburiy obuna', 'success'),
-        ('Mini App admini', 'primary'), ('Menyu sozlamalari', 'primary'), ('MOCK menyu sozlamalari', 'primary'),
+        ('MOCK testlar', 'default'), ('Test sozlamalari', 'default'), ('Pulli testlar', 'default'),
+        ('Ishtirokchilar', 'default'), ('Statistika', 'default'),
+        ('Guruhlar holati', 'default'), ('Guruhga xabar yuborish', 'default'),
+        ('Bildirishnoma', 'default'), ('Majburiy obuna', 'default'),
+        ('Mini App admini', 'default'), ('Menyu sozlamalari', 'default'), ('MOCK menyu sozlamalari', 'default'),
     ],
     'mock_admin': [
-        ('Yangi MOCK test','primary'), ('MOCK testlar ro‘yxati','success'),
-        ('MOCK ishtirokchilari','primary'), ('MOCK natijalari','primary'),
-        ('MOCK testni boshlash','success'), ('MOCK vaqt qo‘shish','primary'),
-        ('MOCK testni to‘xtatish','danger'), ('MOCK qayta o‘tkazish','primary'),
-        ('MOCK boshlanish vaqti','primary'), ('MOCK qatnashchi limiti','primary'),
-        ('MOCK javoblarni tekshirish','primary'), ('Orqaga qaytish','default'),
+        ('Yangi MOCK test','default'), ('MOCK testlar ro‘yxati','default'),
+        ('MOCK ishtirokchilari','default'), ('MOCK natijalari','default'),
+        ('MOCK testni boshlash','default'), ('MOCK vaqt qo‘shish','default'),
+        ('MOCK testni to‘xtatish','default'), ('MOCK qayta o‘tkazish','default'),
+        ('MOCK boshlanish vaqti','default'), ('MOCK qatnashchi limiti','default'),
+        ('MOCK javoblarni tekshirish','default'), ('Orqaga qaytish','default'),
     ],
     'mock_user': [
-        ('Test kodini kiritish','primary'), ('Shaxsiy MOCK natijam','success'),
+        ('Test kodini kiritish','default'), ('Shaxsiy MOCK natijam','default'),
         ('Orqaga qaytish','default'),
     ],
 }
@@ -66,8 +66,10 @@ def items(db, role):
     for name, default_style in DEFAULTS[role]:
         cfg = stored.get(name, {}) if isinstance(stored,dict) else {}
         cfg = cfg if isinstance(cfg,dict) else {}
-        style = cfg.get('style',default_style)
-        if style not in COLORS: style = default_style
+        # Fixed owner-approved reply palette: saved legacy colors must not
+        # repaint buttons after restarts or on the next day.
+        # User main menu has only four colored buttons; other roles are plain.
+        style = default_style
         label = str(cfg.get('label',name)).strip()[:55] or name
         icon_id = str(cfg.get('emoji_id','')).strip()
         visible = bool(cfg.get('visible',True)) or name in ('Menyu sozlamalari','Aktiv testlar','MOCK testlar','MOCK menyu sozlamalari','Orqaga qaytish')
