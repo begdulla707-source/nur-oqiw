@@ -142,7 +142,7 @@ async def prompt_mock_subscription(message,test,link=None):
 
 def admin_kb():
     kb=menus.keyboard(__import__('bot.db',fromlist=['get_setting']),'admin',WEBAPP)
-    return kb.model_copy(update={'keyboard':[*kb.keyboard,[KeyboardButton(text='Chat sozlamalari',style='primary')]]})
+    return kb.model_copy(update={'keyboard':[*kb.keyboard,[KeyboardButton(text='Chat sozlamalari')]]})
 
 @app.get('/api/ping')
 async def ping():return {'ok':True}
