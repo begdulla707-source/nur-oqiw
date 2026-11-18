@@ -25,11 +25,20 @@ class StyleTests(unittest.TestCase):
     def test_styling_preserves_webapp_and_callback_actions(self):
         app=WebAppInfo(url='https://example.org/admin')
         m=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Admin',web_app=app)]],resize_keyboard=True)
-        s=styled_markup(m);self.assertEqual(s.keyboard[0][0].web_app,app);self.assertEqual(s.keyboard[0][0].style,'primary')
+        s=styled_markup(m);self.assertEqual(s.keyboard[0][0].web_app,app);self.assertIsNone(s.keyboard[0][0].style)
         inline=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Boshlash',callback_data='run',style='danger')]])
         result=styled_markup(inline)
         self.assertEqual(result.inline_keyboard[0][0].style,'danger')
         self.assertEqual(result.inline_keyboard[0][0].callback_data,'run')
+
+    def test_plain_reply_stays_plain_regardless_of_label(self):
+        m=ReplyKeyboardMarkup(keyboard=[[
+            KeyboardButton(text='Boshlash'),
+            KeyboardButton(text='Pulli testlar'),
+            KeyboardButton(text='Test kodini kiritish'),
+        ]])
+        checked=styled_markup(m,{'Boshlash':'success','Pulli testlar':'primary'})
+        self.assertTrue(all(b.style is None for b in checked.keyboard[0]))
 
     def test_explicit_default_configuration_is_respected(self):
         m=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='Oddiy')]])
@@ -42,7 +51,7 @@ class StyleTests(unittest.TestCase):
         make=AsyncMock(return_value='OK')
         self.assertEqual(asyncio.run(middleware(make,None,method)),'OK')
         sent=make.call_args.args[1]
-        self.assertEqual(sent.reply_markup.keyboard[0][0].style,'success')
+        self.assertIsNone(sent.reply_markup.keyboard[0][0].style)
         self.assertIsNone(method.reply_markup.keyboard[0][0].style)
 
     def test_premium_fallback_preserves_color_and_actions(self):
