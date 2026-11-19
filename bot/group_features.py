@@ -15,6 +15,7 @@ from aiogram.types import (
 from . import db
 
 LOG=logging.getLogger("nur-oqiw.groups")
+_META_CACHE={}
 COMMANDS={
     "staff":"Guruh egasi va administratorlar",
     "status":"Guruh a'zolari va oxirgi 24 soat faolligi",
@@ -195,25 +196,33 @@ def _copy_markup(text):
             [InlineKeyboardButton(text="Nusxalash",copy_text=CopyTextButton(text=plain))]])
     return None
 
-async def _group_data(chat,bot,user=None):
+async def _group_data(chat,bot,user=None,key="status"):
     started=time.perf_counter()
+    # Group metadata is cached for 30 seconds, while .ping/.rules/.help remain instant.
     admins=[]
-    try:
-        admins=await asyncio.wait_for(bot.get_chat_administrators(chat.id),timeout=5)
-    except Exception as exc:
-        LOG.warning("Cannot read group admins %s: %s",chat.id,type(exc).__name__)
-    owner=next((x.user for x in admins if str(x.status) in ("creator","owner")),None)
     count="—"
-    try:
-        count=str(await asyncio.wait_for(bot.get_chat_member_count(chat.id),timeout=5))
-    except Exception as exc:
-        LOG.warning("Cannot count group %s: %s",chat.id,type(exc).__name__)
     details=None
-    try:
-        details=await asyncio.wait_for(bot.get_chat(chat.id),timeout=5)
-    except Exception:
-        pass
-    stats=await asyncio.to_thread(_stats,chat.id,user.id if user else 0)
+    if key not in ("ping","rules","help","me","top"):
+        cache=_META_CACHE.get(int(chat.id))
+        if cache and time.monotonic()-cache[0]<30:
+            admins,count,details=cache[1:]
+        else:
+            tasks=[
+                asyncio.wait_for(bot.get_chat_administrators(chat.id),timeout=4),
+                asyncio.wait_for(bot.get_chat_member_count(chat.id),timeout=4),
+                asyncio.wait_for(bot.get_chat(chat.id),timeout=4),
+            ]
+            results=await asyncio.gather(*tasks,return_exceptions=True)
+            if not isinstance(results[0],Exception):admins=results[0]
+            if not isinstance(results[1],Exception):count=str(results[1])
+            if not isinstance(results[2],Exception):details=results[2]
+            _META_CACHE[int(chat.id)]=(time.monotonic(),admins,count,details)
+    owner=next((x.user for x in admins if str(x.status) in ("creator","owner")),None)
+    if key in ("status","me","top"):
+        stats=await asyncio.to_thread(_stats,chat.id,user.id if user else 0)
+    else:
+        stats={"participants":0,"total_messages":0,"active_24h":0,
+               "top":[],"own":None,"rank":0}
     staff=[x.user for x in admins if str(x.status) not in ("creator","owner")]
     staff_rows=[str(i)+". "+_user_link(x) for i,x in enumerate(staff[:40],1)]
     admin_rows=[]
@@ -269,7 +278,7 @@ async def handle_group_message(m,bot):
     try:
         await asyncio.to_thread(_record_activity,m.chat.id,m.from_user)
         if not _enabled(key,m.chat.id):return
-        values,_=await _group_data(m.chat,bot,m.from_user)
+        values,_=await _group_data(m.chat,bot,m.from_user,key=key)
         answer=_render(key,m.chat.id,values)
         if len(_plain(answer))>4000:
             answer="<b>Javob uzunligi chegaradan oshdi. Admin xabarni qisqartirsin.</b>"
