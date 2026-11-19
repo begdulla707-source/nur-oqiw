@@ -19,7 +19,7 @@ DEFAULTS = {
     'admin': [
         ('MOCK testlar', 'default'), ('Test sozlamalari', 'default'), ('Pulli testlar', 'default'),
         ('Ishtirokchilar', 'default'), ('Statistika', 'default'),
-        ('Guruhlar holati', 'default'), ('Guruhga xabar yuborish', 'default'),
+        ('Guruh sozlamalari', 'default'),
         ('Bildirishnoma', 'default'), ('Majburiy obuna', 'default'),
         ('Mini App admini', 'default'), ('Menyu sozlamalari', 'default'), ('MOCK menyu sozlamalari', 'default'),
     ],
