@@ -279,7 +279,7 @@ class PrivateChatAccessGuard(BaseMiddleware):
     """Fail closed for every message/callback in a group, regardless of text.
 
     Old reply keyboards and inline admin buttons cannot authorize group users.
-    The only group command permitted is /group_status from the configured owner.
+    Only ten non-privileged dot commands are handled in groups.
     """
     async def __call__(self,handler,event,data):
         if isinstance(event,Message) and event.chat.type in ('group','supergroup','channel'):
@@ -290,6 +290,8 @@ class PrivateChatAccessGuard(BaseMiddleware):
                 if (event.from_user and event.from_user.id==ADMIN and
                     text.split(maxsplit=1)[0].split('@')[0]=='/group_status'):
                     return await handler(event,data)
+                from .group_features import handle_group_message
+                return await handle_group_message(event,bot)
             return None
         if isinstance(event,CallbackQuery):
             chat=getattr(getattr(event,'message',None),'chat',None)
@@ -580,6 +582,9 @@ async def close_telegram_client():
 from .features_v2 import register as register_features
 register_features(__import__(__name__,fromlist=['*']),dp,bot,WEBAPP)
 menus.install(dp,__import__('bot.db',fromlist=['get_setting']),ADMIN,WEBAPP)
+
+from .group_features import install as install_group_features
+install_group_features(__import__(__name__,fromlist=['*']),dp,bot)
 
 from .button_styles import install as install_button_styles
 _button_styles=install_button_styles(bot,__import__('bot.db',fromlist=['get_setting']))
