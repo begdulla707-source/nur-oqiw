@@ -1607,7 +1607,7 @@ def register(core,dp,bot,webapp_url):
    questions=db.questions_for_test(t['test_id'])
    if not questions:continue
    items.append({'test_id':str(t['test_id']),'name':str(t['name']),'code':str(t['code']),'questions':len(questions)})
-  return {'ok':True,'tests':items,'contact':'https://t.me/up17b'}
+  return {'ok':True,'tests':items,'contact':'https://t.me/up17x'}
 
  @core.app.get('/api/admin/paid/access')
  async def admin_paid_access(req:Request):
@@ -1885,7 +1885,7 @@ def register(core,dp,bot,webapp_url):
    rows.append([InlineKeyboardButton(
     text=(str(t['name'])+' · '+str(t['code']))[:55],
     web_app=WebAppInfo(url=WEBAPP.rstrip('/')+'/test?code='+str(t['code'])),style='primary')])
-  rows.append([InlineKeyboardButton(text='SOTIB OLISH / ADMIN @up17b',url='https://t.me/up17b')])
+  rows.append([InlineKeyboardButton(text='SOTIB OLISH / ADMIN @up17x',url='https://t.me/up17x')])
   return await m.answer(
    '<b>PULLI TESTLAR</b>\n\n'
    +('Siz uchun ochilgan testni tanlang.' if rows.__len__()>1
