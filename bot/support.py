@@ -50,20 +50,22 @@ def install(dp, bot, db, admin_id, user_keyboard, admin_keyboard, mock_user_keyb
     async def support_begin(m):
         if m.chat.type != 'private':
             return
+        # A reply-keyboard button cannot contain a Telegram URL.
+        # Respond with an inline URL button instead of opening the
+        # former name/message submission form.
         uid = m.from_user.id
         u = db.ensure_user(uid)
-        previous = str(u['state'] or 'code')
-        if previous in STATES:
+        if str(u['state'] or '') in STATES:
             previous = str(draft(db, uid).get('previous_state') or 'code')
-        db.set_setting(draft_key(uid), json.dumps({
-            'previous_state': previous,
-            'name': '',
-            'message': '',
-        }, ensure_ascii=False))
-        db.update_user(uid, state='support_name')
+            if previous in STATES or previous == 'support_reply':
+                previous = 'ready' if u['test_id'] else 'code'
+            db.update_user(uid, state=previous)
+            db.set_setting(draft_key(uid), '{}')
         await m.answer(
-            'Adminga murojaat yuborish uchun avval ism-familiyangizni yozing.',
-            reply_markup=keyboard(['Bekor qilish']),
+            'Yordam uchun administratorga Telegram orqali yozing: @up17x',
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text='ADMIN — @up17x', url='https://t.me/up17x')
+            ]]),
         )
 
     @dp.message(lambda m: bool(m.from_user) and m.from_user.id != admin_id and active(db, m.from_user.id))
