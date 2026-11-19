@@ -239,6 +239,7 @@ def group_admin_keyboard(groups):
       callback_data='group_leave:'+str(g['id']),style='danger')])
  rows.append([InlineKeyboardButton(text='GURUHLARGA XABAR YOZISH',callback_data='group_compose',style='primary')])
  rows.append([InlineKeyboardButton(text='RO‘YXATNI YANGILASH',callback_data='group_refresh')])
+ rows.append([InlineKeyboardButton(text='GURUH SOZLAMALARIGA QAYTISH',callback_data='gs:home')])
  return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def test_kb(t):
